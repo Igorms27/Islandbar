@@ -7,15 +7,26 @@ $exeDir = Resolve-Path "target\release"
 function Log($text) { $text | Tee-Object -Append "$out\log.txt" }
 
 # A máquina do GitHub não tem placa de vídeo: usa o OpenGL por software (Mesa).
-Log (gh release download --repo pal1000/mesa-dist-win --pattern "mesa3d-*-release-msvc.7z" --dir mesa 2>&1 | Out-String)
-Log ("mesa download: " + ((Get-ChildItem mesa -ErrorAction SilentlyContinue | ForEach-Object { "$($_.Name) ($($_.Length))" }) -join ", "))
-$archive = (Get-ChildItem mesa\*.7z).FullName
-Log ("archive entries: " + (7z l $archive | Select-String 'opengl32|gallium|x64\\' | Select-Object -First 40 | Out-String))
-Log ("extract: " + (7z x $archive -omesa\x -y 2>&1 | Select-Object -Last 12 | Out-String))
-Log ("mesa folders: " + ((Get-ChildItem mesa\x -ErrorAction SilentlyContinue).Name -join ", "))
-$gl = Get-ChildItem mesa\x -Recurse -Filter opengl32.dll | Where-Object { $_.FullName -match 'x64' }
-Log ("opengl32.dll found at: " + (($gl.FullName | Resolve-Path -Relative) -join ", "))
-Copy-Item (Join-Path $gl[0].DirectoryName '*.dll') $exeDir
+# Nem todo pacote do Mesa traz o OpenGL de desktop: tenta alguns até achar.
+Log ("mesa releases: " + ((gh release list --repo pal1000/mesa-dist-win --limit 40 --json tagName -q '.[].tagName' 2>&1) -join " "))
+$candidates = @(
+  @("", "mesa3d-*-release-mingw.7z"),
+  @("25.3.0", "mesa3d-*-release-msvc.7z"), @("25.2.0", "mesa3d-*-release-msvc.7z"),
+  @("25.1.0", "mesa3d-*-release-msvc.7z"), @("25.0.0", "mesa3d-*-release-msvc.7z"),
+  @("24.3.4", "mesa3d-*-release-msvc.7z"), @("24.2.7", "mesa3d-*-release-msvc.7z")
+)
+foreach ($c in $candidates) {
+  Remove-Item mesa -Recurse -Force -ErrorAction SilentlyContinue
+  if ($c[0]) { gh release download $c[0] --repo pal1000/mesa-dist-win --pattern $c[1] --dir mesa 2>&1 | Out-Null }
+  else { gh release download --repo pal1000/mesa-dist-win --pattern $c[1] --dir mesa 2>&1 | Out-Null }
+  $archive = (Get-ChildItem mesa\*.7z -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+  if (-not $archive) { Log "mesa '$($c[0])' $($c[1]): not found"; continue }
+  $hasGl = [bool](7z l $archive | Select-String 'x64\\opengl32\.dll')
+  Log "mesa '$($c[0])' $(Split-Path $archive -Leaf): desktop OpenGL = $hasGl"
+  if ($hasGl) { 7z x $archive -omesa\x -y | Out-Null; break }
+}
+Copy-Item mesa\x\x64\opengl32.dll, mesa\x\x64\libgallium_wgl.dll $exeDir
+Copy-Item mesa\x\x64\libglapi.dll $exeDir -ErrorAction SilentlyContinue
 Log ("dlls next to exe: " + ((Get-ChildItem $exeDir\*.dll).Name -join ", "))
 
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
