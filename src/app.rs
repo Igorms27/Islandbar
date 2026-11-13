@@ -10,6 +10,7 @@ use eframe::egui::{
 use crate::anim::{meter, smoothstep, Spring};
 use crate::backend::{Backend, Command, Snapshot, System};
 use crate::platform;
+use crate::updater;
 
 /// Tamanho da janela invisível que contém a ilha.
 pub const WINDOW_SIZE: [f32; 2] = [560.0, 540.0];
@@ -84,10 +85,14 @@ pub struct IslandApp {
     window_pos: Option<Pos2>,
     passthrough: Option<bool>,
     clip: Option<[i32; 5]>,
+    clip_size: Vec2,
+    /// Segundos restantes do aviso "Atualizado" na pílula.
+    notice_timer: f32,
+    restarting: bool,
 }
 
 impl IslandApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>, show_welcome: bool) -> Self {
+    pub fn new(_cc: &eframe::CreationContext<'_>, show_welcome: bool, updated: bool) -> Self {
         let mode = match std::env::var("ISLANDBAR_MODE").as_deref() {
             Ok("collapsed") => Mode::Collapsed,
             _ if show_welcome => Mode::Welcome,
@@ -118,6 +123,9 @@ impl IslandApp {
             window_pos: None,
             passthrough: None,
             clip: None,
+            clip_size: Vec2::ZERO,
+            notice_timer: if updated { 6.0 } else { 0.0 },
+            restarting: false,
         }
     }
 
@@ -157,16 +165,33 @@ impl IslandApp {
     }
 
     /// Deixa a janela existir só onde está a ilha (mais o brilho em volta).
-    fn clip_window(&mut self, ctx: &egui::Context, frame: &eframe::Frame, island: Rect, radius: f32) {
+    ///
+    /// O recorte muda poucas vezes: abre espaço de uma vez quando uma animação
+    /// começa e só aperta de novo quando ela termina. Mudar a cada frame fazia
+    /// a ilha piscar.
+    fn clip_window(&mut self, ctx: &egui::Context, frame: &eframe::Frame, island: Rect) {
+        let settled = self.width.settled() && self.height.settled();
+        let target = vec2(self.width.target, self.height.target);
+        let (size, margin) = if settled {
+            (target, GLOW_MARGIN)
+        } else {
+            // Folga extra para o "quique" da mola não ser cortado.
+            (self.clip_size.max(target).max(island.size()), GLOW_MARGIN + 45.0)
+        };
+        self.clip_size = size;
+
+        let area = Rect::from_min_size(pos2(island.center().x - size.x / 2.0, TOP_MARGIN), size).expand(margin);
+        let radius = (size.y / 2.0).min(26.0) + margin;
         let scale = ctx.pixels_per_point();
-        let area = island.expand(GLOW_MARGIN);
         let px = |v: f32| (v * scale).round() as i32;
         let clip = [
             px(area.left()),
-            px(area.top().max(0.0)),
+            // As primeiras linhas da janela ficam de fora: o Windows desenha
+            // uma faixa clara ali em janelas sem borda.
+            px(area.top().max(TOP_MARGIN - 5.0)),
             px(area.right()),
             px(area.bottom()),
-            px((radius + GLOW_MARGIN) * 2.0),
+            px(radius * 2.0),
         ];
         if self.clip != Some(clip) {
             self.clip = Some(clip);
@@ -226,6 +251,17 @@ impl eframe::App for IslandApp {
         let ctx = ui.ctx().clone();
         let (dt, time) = ctx.input(|i| (i.stable_dt.min(1.0 / 30.0), i.time as f32));
         self.uptime += dt;
+        self.notice_timer = (self.notice_timer - dt).max(0.0);
+
+        // Uma ilha mais nova abriu (ex.: depois de atualizar): esta sai de cena.
+        if platform::quit_requested() {
+            std::process::exit(0);
+        }
+        // Atualização baixada: reinicia quando a ilha não está em uso.
+        if updater::ready() && self.mode == Mode::Collapsed && !self.restarting {
+            self.restarting = true;
+            updater::restart();
+        }
         let snap = self.backend.snapshot();
 
         self.place_window(&ctx);
@@ -252,7 +288,7 @@ impl eframe::App for IslandApp {
         let (w, h) = (self.width.value.max(8.0), self.height.value.max(8.0));
         let island = Rect::from_min_size(pos2(ui.max_rect().center().x - w / 2.0, TOP_MARGIN), vec2(w, h));
         let radius = (h / 2.0).min(26.0);
-        self.clip_window(&ctx, frame, island, radius);
+        self.clip_window(&ctx, frame, island);
 
         // --- Mouse e troca de estados ---
         let pointer_down = ctx.input(|i| i.pointer.any_down());
@@ -375,7 +411,14 @@ impl IslandApp {
             fade(TEXT, alpha),
         );
 
-        if let Some(media) = &snap.media {
+        if self.notice_timer > 0.0 {
+            let x = left + 32.0;
+            let notice = match updater::BUILD {
+                Some(build) => format!("Atualizado: versão {build}"),
+                None => "Atualizado".to_string(),
+            };
+            text_fit(p, pos2(x, cy), Align2::LEFT_CENTER, &notice, 12.5, fade(accent, alpha), clock_rect.left() - 10.0 - x);
+        } else if let Some(media) = &snap.media {
             let x = left + 32.0;
             let max_width = clock_rect.left() - 10.0 - x;
             let color = if media.playing { TEXT } else { TEXT_DIM };
@@ -564,7 +607,10 @@ impl IslandApp {
         // ---- Rodapé ----
         let a = next_alpha(open);
         let footer_y = island.bottom() - FOOTER_HEIGHT / 2.0 - 3.0;
-        let clock = chrono::Local::now().format("%H:%M").to_string();
+        let mut clock = chrono::Local::now().format("%H:%M").to_string();
+        if let Some(build) = updater::BUILD {
+            clock += &format!("  ·  versão {build}");
+        }
         p.text(pos2(left, footer_y), Align2::LEFT_CENTER, clock, FontId::proportional(12.0), fade(TEXT_DIM, a));
 
         let quit = Rect::from_min_max(pos2(right - 40.0, footer_y - 11.0), pos2(right, footer_y + 11.0));

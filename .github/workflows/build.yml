@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -14,7 +17,23 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build
         run: cargo build --release
+        env:
+          # Número da versão, usado pela atualização automática.
+          ISLANDBAR_BUILD: ${{ github.run_number }}
       - uses: actions/upload-artifact@v4
         with:
           name: islandbar-windows
           path: target/release/islandbar.exe
+      # Publica a versão: é daqui que as ilhas instaladas se atualizam.
+      - name: Release
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "${{ github.run_number }}" > version.txt
+          gh release create "build-${{ github.run_number }}" \
+            target/release/islandbar.exe version.txt \
+            --title "Versão ${{ github.run_number }}" \
+            --notes "Compilada automaticamente a partir de ${{ github.sha }}." \
+            --latest

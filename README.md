@@ -15,6 +15,8 @@ visível, e se expande com animações elásticas.
   A temperatura depende de o PC informar esse dado ao Windows; quando não informa, aparece "n/d".
 - **Iniciar com o Windows**: ao abrir o executável, um cartão pergunta se a ilha deve abrir
   sozinha no login. Para mudar depois, é só abrir o executável de novo.
+- **Atualização automática**: a ilha confere se saiu versão nova no GitHub, baixa, troca o
+  executável e reinicia sozinha. O número da versão aparece no rodapé do painel.
 - A janela é recortada no formato da ilha: fora dela não existe nada na tela.
 
 ## Como rodar
@@ -28,8 +30,10 @@ cargo run --release
 
 O executável final fica em `target\release\islandbar.exe`.
 
-Sem instalar nada: cada push no GitHub gera um `islandbar.exe` pronto na aba
-**Actions** do repositório (artefato `islandbar-windows`).
+Sem instalar nada: baixe o executável mais recente em
+<https://github.com/Igorms27/Islandbar/releases/latest/download/islandbar.exe>.
+Cada push na branch `main` publica uma versão nova automaticamente, e as ilhas
+já instaladas se atualizam sozinhas.
 
 Para fechar: abra a ilha e clique em **Sair** no canto inferior direito.
 
@@ -43,6 +47,7 @@ Para fechar: abra a ilha e clique em **Sair** no canto inferior direito.
 | `src/backend/windows.rs` | Conversa com o Windows: WASAPI (volume) e controle de mídia. |
 | `src/backend/mock.rs` | Dados de mentira para testar a interface fora do Windows. |
 | `src/backend/sysmon.rs` | CPU, RAM e temperatura. |
+| `src/updater.rs` | Atualização automática. |
 | `src/platform.rs` | Mouse, recorte da janela e inicialização com o Windows. |
 
 Feito com [egui/eframe](https://github.com/emilk/egui) e o crate

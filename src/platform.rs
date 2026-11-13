@@ -51,7 +51,9 @@ pub fn clip_window(frame: &eframe::Frame, rect: [i32; 4], corner_diameter: i32) 
         // O +1 é porque a região não inclui a última linha/coluna.
         let region = CreateRoundRectRgn(left, top, right + 1, bottom + 1, corner_diameter, corner_diameter);
         // Depois desta chamada o Windows passa a ser o dono da região.
-        SetWindowRgn(hwnd, Some(region), true);
+        // `false`: não pede para o Windows repintar a área (isso causava
+        // piscadas); o próximo frame da ilha já cobre tudo.
+        SetWindowRgn(hwnd, Some(region), false);
     }
 }
 
@@ -112,3 +114,55 @@ pub fn set_autostart(enabled: bool) {
 
 #[cfg(not(windows))]
 pub fn clip_window(_frame: &eframe::Frame, _rect: [i32; 4], _corner_diameter: i32) {}
+
+#[cfg(windows)]
+mod instance {
+    use std::sync::atomic::{AtomicIsize, Ordering};
+    use windows::core::w;
+    use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS, HANDLE, WAIT_OBJECT_0};
+    use windows::Win32::System::Threading::{
+        CreateEventW, CreateMutexW, ResetEvent, SetEvent, WaitForSingleObject,
+    };
+
+    /// Evento "pode fechar", compartilhado entre todas as ilhas abertas.
+    static QUIT_EVENT: AtomicIsize = AtomicIsize::new(0);
+
+    pub fn take_over() {
+        unsafe {
+            let Ok(quit) = CreateEventW(None, true, false, w!("Local\\IslandbarQuit")) else { return };
+            let mutex = CreateMutexW(None, false, w!("Local\\IslandbarInstance"));
+            let already_running = GetLastError() == ERROR_ALREADY_EXISTS;
+            if let Ok(mutex) = mutex {
+                if already_running {
+                    // Pede para a ilha antiga fechar e espera ela sair.
+                    let _ = SetEvent(quit);
+                    WaitForSingleObject(mutex, 5000);
+                    let _ = ResetEvent(quit);
+                } else {
+                    WaitForSingleObject(mutex, 0);
+                }
+                // O mutex fica aberto de propósito até o programa terminar.
+            }
+            QUIT_EVENT.store(quit.0 as isize, Ordering::Relaxed);
+        }
+    }
+
+    pub fn quit_requested() -> bool {
+        let quit = QUIT_EVENT.load(Ordering::Relaxed);
+        quit != 0 && unsafe { WaitForSingleObject(HANDLE(quit as *mut std::ffi::c_void), 0) } == WAIT_OBJECT_0
+    }
+}
+
+/// Garante uma ilha só: se já existe uma aberta, ela é fechada e esta assume.
+pub fn take_over_single_instance() {
+    #[cfg(windows)]
+    instance::take_over();
+}
+
+/// Outra ilha (mais nova) abriu e pediu para esta fechar?
+pub fn quit_requested() -> bool {
+    #[cfg(windows)]
+    return instance::quit_requested();
+    #[cfg(not(windows))]
+    false
+}

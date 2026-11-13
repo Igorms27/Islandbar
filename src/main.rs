@@ -5,6 +5,7 @@ mod anim;
 mod app;
 mod backend;
 mod platform;
+mod updater;
 
 use eframe::egui;
 
@@ -21,13 +22,19 @@ fn main() -> eframe::Result {
         .with_taskbar(false);
 
     // Aberta pelo Windows no login: vai direto, sem perguntar nada.
-    let show_welcome = !std::env::args().any(|arg| arg == platform::AUTOSTART_ARG);
+    // Depois de uma atualização automática também, mas aí mostra um aviso.
+    let args: Vec<String> = std::env::args().collect();
+    let updated = args.iter().any(|arg| arg == updater::UPDATED_ARG);
+    let show_welcome = !updated && !args.iter().any(|arg| arg == platform::AUTOSTART_ARG);
+
+    platform::take_over_single_instance();
+    updater::start();
 
     let options = eframe::NativeOptions { viewport, ..Default::default() };
 
     eframe::run_native(
         "Islandbar",
         options,
-        Box::new(move |cc| Ok(Box::new(app::IslandApp::new(cc, show_welcome)))),
+        Box::new(move |cc| Ok(Box::new(app::IslandApp::new(cc, show_welcome, updated)))),
     )
 }
