@@ -58,6 +58,13 @@ impl Presents {
 
 type Counts = Mutex<HashMap<u32, Presents>>;
 
+/// Total de eventos recebidos, de qualquer tipo (só para diagnóstico).
+pub static EVENTS_SEEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+fn debug() -> bool {
+    std::env::var_os("ISLANDBAR_DEBUG_GAME").is_some()
+}
+
 #[derive(Debug)]
 pub enum StartError {
     AccessDenied,
@@ -141,6 +148,9 @@ unsafe fn enable(session: CONTROLTRACE_HANDLE, provider: &GUID, ids: &[u16]) {
     let level = TRACE_LEVEL_VERBOSE as u8;
     let code = EVENT_CONTROL_CODE_ENABLE_PROVIDER.0;
     let status = EnableTraceEx2(session, provider, code, level, 0, 0, 0, Some(&params));
+    if debug() {
+        eprintln!("fps: enable {provider:?} with filter -> {}", status.0);
+    }
     if status != ERROR_SUCCESS {
         // Sem o filtro chegam mais eventos, mas `on_event` descarta o resto.
         let _ = EnableTraceEx2(session, provider, code, level, 0, 0, 0, None);
@@ -150,6 +160,7 @@ unsafe fn enable(session: CONTROLTRACE_HANDLE, provider: &GUID, ids: &[u16]) {
 /// Chamada pelo Windows a cada evento recebido.
 unsafe extern "system" fn on_event(record: *mut EVENT_RECORD) {
     let record = &*record;
+    EVENTS_SEEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let header = &record.EventHeader;
     let id = header.EventDescriptor.Id;
     let provider = header.ProviderId;
@@ -196,9 +207,15 @@ impl FpsTracer {
                 log.Context = context as *mut c_void;
 
                 let trace = OpenTraceW(&mut log);
+                if debug() {
+                    eprintln!("fps: open trace -> {:#x}", trace.Value);
+                }
                 if trace.Value != u64::MAX {
                     // Fica aqui dentro, recebendo eventos, até a sessão ser encerrada.
-                    let _ = ProcessTrace(&[trace], None, None);
+                    let status = ProcessTrace(&[trace], None, None);
+                    if debug() {
+                        eprintln!("fps: process trace ended -> {}", status.0);
+                    }
                     let _ = CloseTrace(trace);
                 }
                 drop(Arc::from_raw(context as *const Counts));

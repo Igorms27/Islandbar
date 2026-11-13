@@ -132,7 +132,7 @@ Start-Sleep 2
 Shot "game-2-panel"
 [W]::SetCursorPos(900, 700) | Out-Null
 Start-Sleep 2
-Log ("game detection: " + (Get-Content "$out\island-stderr.txt" | Select-String '^game:' | Select-Object -Last 3 | Out-String))
+Log ("game detection: " + (Get-Content "$out\island-stderr.txt" | Select-String '^game:|^fps:' | Select-Object -Last 12 | Out-String))
 Stop-Process -Id $game.Id -ErrorAction SilentlyContinue
 Start-Sleep 4
 Shot "game-3-after"
