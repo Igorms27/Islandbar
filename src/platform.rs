@@ -60,7 +60,7 @@ mod window {
         let Some(hwnd) = hwnd(frame) else { return };
         unsafe {
             let mut frame_changed = false;
-            if !HOOKED.swap(true, Ordering::Relaxed) && std::env::var_os("ISLANDBAR_DEBUG_NO_HOOK").is_none() {
+            if !HOOKED.swap(true, Ordering::Relaxed) {
                 let _ = SetWindowSubclass(hwnd, Some(window_hook), 1, 0);
                 frame_changed = true;
             }

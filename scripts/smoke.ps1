@@ -7,24 +7,11 @@ $exeDir = Resolve-Path "target\release"
 function Log($text) { $text | Tee-Object -Append "$out\log.txt" }
 
 # A máquina do GitHub não tem placa de vídeo: usa o OpenGL por software (Mesa).
-# Nem todo pacote do Mesa traz o OpenGL de desktop: tenta alguns até achar.
-Log ("mesa releases: " + ((gh release list --repo pal1000/mesa-dist-win --limit 40 --json tagName -q '.[].tagName' 2>&1) -join " "))
-$candidates = @(
-  @("", "mesa3d-*-release-mingw.7z"),
-  @("25.3.0", "mesa3d-*-release-msvc.7z"), @("25.2.0", "mesa3d-*-release-msvc.7z"),
-  @("25.1.0", "mesa3d-*-release-msvc.7z"), @("25.0.0", "mesa3d-*-release-msvc.7z"),
-  @("24.3.4", "mesa3d-*-release-msvc.7z"), @("24.2.7", "mesa3d-*-release-msvc.7z")
-)
-foreach ($c in $candidates) {
-  Remove-Item mesa -Recurse -Force -ErrorAction SilentlyContinue
-  if ($c[0]) { gh release download $c[0] --repo pal1000/mesa-dist-win --pattern $c[1] --dir mesa 2>&1 | Out-Null }
-  else { gh release download --repo pal1000/mesa-dist-win --pattern $c[1] --dir mesa 2>&1 | Out-Null }
-  $archive = (Get-ChildItem mesa\*.7z -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
-  if (-not $archive) { Log "mesa '$($c[0])' $($c[1]): not found"; continue }
-  $hasGl = [bool](7z l $archive | Select-String 'x64\\opengl32\.dll')
-  Log "mesa '$($c[0])' $(Split-Path $archive -Leaf): desktop OpenGL = $hasGl"
-  if ($hasGl) { 7z x $archive -omesa\x -y | Out-Null; break }
-}
+# (O pacote "mingw" é o que traz o OpenGL de desktop.)
+gh release download --repo pal1000/mesa-dist-win --pattern "mesa3d-*-release-mingw.7z" --dir mesa
+$archive = (Get-ChildItem mesa\*.7z | Select-Object -First 1).FullName
+Log ("mesa: " + (Split-Path $archive -Leaf))
+7z x $archive -omesa\x -y | Out-Null
 Copy-Item mesa\x\x64\*.dll $exeDir
 Log ("dlls next to exe: " + ((Get-ChildItem $exeDir\*.dll).Name -join ", "))
 
@@ -52,7 +39,7 @@ function Shot($name) {
   $g.Dispose(); $bmp.Dispose()
 }
 function Styles($label) {
-  $h = [W]::FindWindowW($null, "Islandbar")
+  $h = [W]::FindWindowW([NullString]::Value, "Islandbar")
   $r = New-Object W+RECT
   $c = New-Object W+RECT
   [W]::GetWindowRect($h, [ref]$r) | Out-Null
@@ -89,7 +76,7 @@ $bg = Start-Process powershell -PassThru -ArgumentList '-NoProfile', '-Execution
 Start-Sleep 4
 Shot "0-background"
 
-# Roda a ilha e fotografa cada etapa. $tag separa as duas rodadas.
+# Roda a ilha e fotografa cada etapa.
 function Run($tag) {
   [W]::SetCursorPos(900, 700) | Out-Null
   $app = Start-Process "$exeDir\islandbar.exe" -PassThru -ArgumentList '--autostart' -RedirectStandardError "$out\$tag-stderr.txt"
@@ -123,12 +110,7 @@ function Run($tag) {
   Get-Content "$out\$tag-stderr.txt" -ErrorAction SilentlyContinue | Select-Object -First 20
 }
 
-# Rodada "a": sem o gancho da janela, para confirmar que o defeito aparece
-# neste Windows. Rodada "b": o programa como ele é.
-$env:ISLANDBAR_DEBUG_NO_HOOK = "1"
-Run "a-nohook"
-Remove-Item Env:ISLANDBAR_DEBUG_NO_HOOK
-Run "b-normal"
+Run "island"
 
 Stop-Process -Id $bg.Id -ErrorAction SilentlyContinue
 exit 0
