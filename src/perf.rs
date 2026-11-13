@@ -18,6 +18,20 @@ static BACKEND_CPU: AtomicU64 = AtomicU64::new(0);
 /// Inclui a espera pelas respostas do Windows, que também é trabalho de alguém.
 static BACKEND_BUSY: AtomicU64 = AtomicU64::new(0);
 
+/// Partes do trabalho do backend, medidas uma a uma.
+pub const SECTIONS: [&str; 6] = ["audio", "gpu_pdh", "gpu_kmt", "game", "media", "volume"];
+static SECTION_TIME: [AtomicU64; 6] = [const { AtomicU64::new(0) }; 6];
+
+/// Soma à parte `name` o tempo passado desde `started`.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn add_section(name: &str, started: Instant) {
+    if enabled() {
+        if let Some(index) = SECTIONS.iter().position(|section| *section == name) {
+            SECTION_TIME[index].fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        }
+    }
+}
+
 pub fn enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| std::env::var_os("ISLANDBAR_DEBUG_PERF").is_some())
@@ -78,6 +92,13 @@ impl Perf {
             megabytes(private),
             state()
         );
+        // Milissegundos de trabalho por segundo em cada parte do backend.
+        let sections: Vec<String> = SECTIONS
+            .iter()
+            .zip(&SECTION_TIME)
+            .map(|(name, time)| format!("{name}={:.2}", time.swap(0, Ordering::Relaxed) as f64 / 1e6 / seconds))
+            .collect();
+        eprintln!("perf backend ms/s: {}", sections.join(" "));
         self.since = Instant::now();
         self.frames = 0;
         self.process_cpu = process_cpu;

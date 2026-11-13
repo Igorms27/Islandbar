@@ -128,10 +128,11 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
         }
         let now = Instant::now();
 
-        // Uma ilha mais nova abriu (ex.: depois de atualizar): esta sai de cena.
+        // Uma ilha mais nova abriu (ex.: depois de atualizar) e pediu para
+        // esta fechar. Quem encerra o programa é a interface; aqui só a
+        // acordamos, porque parada ela demoraria a perceber.
         if crate::platform::quit_requested() {
-            super::shutdown();
-            std::process::exit(0);
+            wake();
         }
 
         // Dispositivo de saída e, com o painel aberto, a lista de apps. Assim a
@@ -141,6 +142,7 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
             if unsafe { refresh_audio(&mut enumerator, &mut audio, &mut names, panel) }.is_err() {
                 audio = None;
             }
+            crate::perf::add_section("audio", now);
         }
 
         // Algo que a interface mostra mudou nesta volta?
@@ -148,25 +150,31 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
 
         if now >= system_due {
             system_due = now + SYSTEM_EVERY;
+            let started = Instant::now();
             let fullscreen = games.look();
+            crate::perf::add_section("game", started);
             // A GPU aparece na pílula (sem música), no painel e no modo jogo;
             // a temperatura, só no painel.
             let wanted = Wanted { gpu: panel || media.is_none() || fullscreen, temp: panel };
             system = monitor.read(wanted);
+            let started = Instant::now();
             game = games.update(&monitor.gpu_by_pid);
+            crate::perf::add_section("game", started);
             changed = true;
             crate::perf::record_backend_thread();
             if debug_system {
                 eprintln!(
-                    "{system:?} game={game:?} fps_access={:?} audio={} {wanted:?}",
+                    "{system:?} game={game:?} fps_access={:?} audio={} {wanted:?} kmt={:?}",
                     games.access(),
-                    audio.is_some()
+                    audio.is_some(),
+                    monitor.gpu_kmt
                 );
             }
         }
 
         if now >= media_due {
             media_due = now + if panel { MEDIA_EVERY_OPEN } else { MEDIA_EVERY };
+            let started = Instant::now();
             if media_mgr.is_none() {
                 media_mgr = MediaManager::RequestAsync().and_then(|op| op.join()).ok();
             }
@@ -175,9 +183,11 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
                 media = current;
                 changed = true;
             }
+            crate::perf::add_section("media", started);
         }
 
         // Volume e pico do som: três consultas rápidas por volta.
+        let started = Instant::now();
         let master = match audio.as_ref().map(|a| unsafe { read_master(a) }) {
             Some(Ok(master)) => Some(master),
             Some(Err(_)) => {
@@ -190,6 +200,7 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
         };
         // O volume e o pico de cada app só interessam com o painel aberto.
         let sessions = if panel { audio.as_ref().map(|a| unsafe { read_sessions(a) }) } else { None };
+        crate::perf::add_section("volume", started);
 
         let peak = master.map_or(0.0, |(_, _, peak)| peak);
         let sound = peak > SOUND;
