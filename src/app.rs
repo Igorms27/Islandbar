@@ -8,10 +8,11 @@ use eframe::egui::{
 };
 
 use crate::anim::{meter, smoothstep, Spring};
-use crate::backend::{Backend, Command, Snapshot};
+use crate::backend::{Backend, Command, Snapshot, System};
+use crate::platform;
 
 /// Tamanho da janela invisível que contém a ilha.
-pub const WINDOW_SIZE: [f32; 2] = [560.0, 480.0];
+pub const WINDOW_SIZE: [f32; 2] = [560.0, 540.0];
 
 const TOP_MARGIN: f32 = 10.0;
 const PILL_HEIGHT: f32 = 34.0;
@@ -20,7 +21,11 @@ const EXPANDED_WIDTH: f32 = 420.0;
 const PADDING: f32 = 18.0;
 const HEADER_HEIGHT: f32 = 52.0;
 const ROW_HEIGHT: f32 = 38.0;
+const STATS_HEIGHT: f32 = 58.0;
 const FOOTER_HEIGHT: f32 = 30.0;
+const WELCOME_SIZE: Vec2 = vec2(380.0, 166.0);
+/// Quanto do brilho em volta da ilha fica visível, em pontos.
+const GLOW_MARGIN: f32 = 30.0;
 const MAX_APPS: usize = 7;
 const BARS: usize = 5;
 
@@ -34,6 +39,8 @@ const MASTER_KEY: &str = "\0master";
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Mode {
+    /// Cartão inicial: pergunta se deve abrir junto com o Windows.
+    Welcome,
     /// Pílula pequena: relógio + visualizador.
     Collapsed,
     /// Aviso rápido de volume (quando você usa as teclas do teclado).
@@ -52,6 +59,10 @@ pub struct IslandApp {
     open: Spring,
     /// 0..1, opacidade do aviso de volume.
     hud: Spring,
+    /// 0..1, opacidade do cartão de boas-vindas.
+    welcome: Spring,
+    /// Opção marcada no cartão de boas-vindas.
+    autostart: bool,
     /// 0..1, mouse em cima da ilha.
     hover: Spring,
 
@@ -64,17 +75,22 @@ pub struct IslandApp {
     master_peak: f32,
     app_peaks: HashMap<String, f32>,
     bars: [f32; BARS],
+    /// CPU, RAM e temperatura suavizados (0..1) para os mostradores.
+    gauges: [f32; 3],
 
     /// Enquanto arrasta um slider, mostramos o valor do mouse (sem atraso).
     dragging: Option<(String, f32)>,
 
     window_pos: Option<Pos2>,
     passthrough: Option<bool>,
+    clip: Option<[i32; 5]>,
 }
 
 impl IslandApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(_cc: &eframe::CreationContext<'_>, show_welcome: bool) -> Self {
         let mode = match std::env::var("ISLANDBAR_MODE").as_deref() {
+            Ok("collapsed") => Mode::Collapsed,
+            _ if show_welcome => Mode::Welcome,
             Ok("expanded") => Mode::Expanded,
             Ok("hud") => Mode::Hud,
             _ => Mode::Collapsed,
@@ -87,6 +103,8 @@ impl IslandApp {
             height: Spring::bouncy(10.0),
             open: Spring::smooth(0.0),
             hud: Spring::smooth(0.0),
+            welcome: Spring::smooth(0.0),
+            autostart: platform::autostart_enabled(),
             hover: Spring::smooth(0.0),
             hud_timer: if mode == Mode::Hud { f32::INFINITY } else { 0.0 },
             leave_timer: 0.0,
@@ -95,9 +113,11 @@ impl IslandApp {
             master_peak: 0.0,
             app_peaks: HashMap::new(),
             bars: [0.0; BARS],
+            gauges: [0.0; 3],
             dragging: None,
             window_pos: None,
             passthrough: None,
+            clip: None,
         }
     }
 
@@ -136,16 +156,34 @@ impl IslandApp {
         }
     }
 
+    /// Deixa a janela existir só onde está a ilha (mais o brilho em volta).
+    fn clip_window(&mut self, ctx: &egui::Context, frame: &eframe::Frame, island: Rect, radius: f32) {
+        let scale = ctx.pixels_per_point();
+        let area = island.expand(GLOW_MARGIN);
+        let px = |v: f32| (v * scale).round() as i32;
+        let clip = [
+            px(area.left()),
+            px(area.top().max(0.0)),
+            px(area.right()),
+            px(area.bottom()),
+            px((radius + GLOW_MARGIN) * 2.0),
+        ];
+        if self.clip != Some(clip) {
+            self.clip = Some(clip);
+            platform::clip_window(frame, [clip[0], clip[1], clip[2], clip[3]], clip[4]);
+        }
+    }
+
     fn target_size(&self, snap: &Snapshot) -> Vec2 {
         match self.mode {
+            Mode::Welcome => WELCOME_SIZE,
             Mode::Collapsed => {
-                let width = if snap.media.is_some() { 250.0 } else { 124.0 };
-                vec2(width, PILL_HEIGHT) + vec2(14.0, 4.0) * self.hover.target
+                vec2(250.0, PILL_HEIGHT) + vec2(14.0, 4.0) * self.hover.target
             }
             Mode::Hud => HUD_SIZE,
             Mode::Expanded => {
                 let rows = 1 + snap.sessions.len().min(MAX_APPS);
-                let height = PADDING + HEADER_HEIGHT + 14.0 + rows as f32 * ROW_HEIGHT + FOOTER_HEIGHT;
+                let height = PADDING + HEADER_HEIGHT + 14.0 + rows as f32 * ROW_HEIGHT + STATS_HEIGHT + FOOTER_HEIGHT;
                 vec2(EXPANDED_WIDTH, height)
             }
         }
@@ -158,6 +196,12 @@ impl IslandApp {
             *peak = meter(*peak, if s.muted { 0.0 } else { s.peak }, dt);
         }
         self.app_peaks.retain(|name, _| snap.sessions.iter().any(|s| &s.name == name));
+
+        let sys = &snap.system;
+        let targets = [sys.cpu, sys.ram(), sys.temp_c.map_or(0.0, temp_fraction)];
+        for (gauge, target) in self.gauges.iter_mut().zip(targets) {
+            *gauge += (target - *gauge) * (1.0 - (-5.0 * dt).exp());
+        }
 
         // Barrinhas: cada uma dança em um ritmo, todas seguem o volume real.
         let energy = (snap.master_peak * 2.2).min(1.0);
@@ -178,7 +222,7 @@ impl eframe::App for IslandApp {
         [0.0; 4]
     }
 
-    fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let (dt, time) = ctx.input(|i| (i.stable_dt.min(1.0 / 30.0), i.time as f32));
         self.uptime += dt;
@@ -191,7 +235,8 @@ impl eframe::App for IslandApp {
         let master_now = (snap.master, snap.master_muted);
         if let Some(before) = self.last_master {
             let changed = (before.0 - master_now.0).abs() > 0.004 || before.1 != master_now.1;
-            if changed && self.mode != Mode::Expanded && self.uptime > 1.5 {
+            let idle = matches!(self.mode, Mode::Collapsed | Mode::Hud);
+            if changed && idle && self.uptime > 1.5 {
                 self.mode = Mode::Hud;
                 self.hud_timer = HUD_SECONDS;
             }
@@ -207,6 +252,7 @@ impl eframe::App for IslandApp {
         let (w, h) = (self.width.value.max(8.0), self.height.value.max(8.0));
         let island = Rect::from_min_size(pos2(ui.max_rect().center().x - w / 2.0, TOP_MARGIN), vec2(w, h));
         let radius = (h / 2.0).min(26.0);
+        self.clip_window(&ctx, frame, island, radius);
 
         // --- Mouse e troca de estados ---
         let pointer_down = ctx.input(|i| i.pointer.any_down());
@@ -230,10 +276,10 @@ impl eframe::App for IslandApp {
                     self.mode = Mode::Collapsed;
                 }
             }
-            Mode::Collapsed => {}
+            Mode::Collapsed | Mode::Welcome => {}
         }
 
-        if self.mode != Mode::Expanded {
+        if matches!(self.mode, Mode::Collapsed | Mode::Hud) {
             let click = ui.interact(island, ui.scope_id().with("island"), Sense::click());
             if click.clicked() {
                 self.mode = Mode::Expanded;
@@ -248,6 +294,8 @@ impl eframe::App for IslandApp {
         self.hud.target = if self.mode == Mode::Hud { 1.0 } else { 0.0 };
         self.hover.target = if hovered { 1.0 } else { 0.0 };
         self.open.update(dt);
+        self.welcome.target = if self.mode == Mode::Welcome { 1.0 } else { 0.0 };
+        self.welcome.update(dt);
         self.hud.update(dt);
         self.hover.update(dt);
 
@@ -277,19 +325,23 @@ impl eframe::App for IslandApp {
         let open = smoothstep(self.open.value);
         let hud = smoothstep(self.hud.value);
 
-        let pill_alpha = (1.0 - open * 2.0).clamp(0.0, 1.0) * (1.0 - hud);
+        let welcome = smoothstep(self.welcome.value);
+        let pill_alpha = (1.0 - open * 2.0).clamp(0.0, 1.0) * (1.0 - hud) * (1.0 - welcome * 2.0).max(0.0);
         if pill_alpha > 0.01 {
             self.draw_pill(&content, island, &snap, accent, pill_alpha);
         }
         if hud > 0.01 && open < 0.5 {
             self.draw_hud(&content, island, &snap, accent, hud * (1.0 - open * 2.0));
         }
+        if welcome > 0.01 {
+            self.draw_welcome(ui, &content, island, accent);
+        }
         if open > 0.01 {
             self.draw_panel(ui, &content, island, &snap, accent);
         }
 
         // --- Quando redesenhar ---
-        let animating = [&self.width, &self.height, &self.open, &self.hud, &self.hover]
+        let animating = [&self.width, &self.height, &self.open, &self.hud, &self.hover, &self.welcome]
             .iter()
             .any(|s| !s.settled());
         if animating || hovered || self.mode != Mode::Collapsed || self.master_peak > 0.005 {
@@ -328,6 +380,12 @@ impl IslandApp {
             let max_width = clock_rect.left() - 10.0 - x;
             let color = if media.playing { TEXT } else { TEXT_DIM };
             text_fit(p, pos2(x, cy), Align2::LEFT_CENTER, &media.title, 12.5, fade(color, alpha), max_width);
+        } else {
+            // Sem música: mostra o uso do PC.
+            let sys = &snap.system;
+            let usage = format!("CPU {:.0}%  RAM {:.0}%", sys.cpu * 100.0, sys.ram() * 100.0);
+            let x = left + 32.0;
+            text_fit(p, pos2(x, cy), Align2::LEFT_CENTER, &usage, 12.0, fade(TEXT_DIM, alpha), clock_rect.left() - 10.0 - x);
         }
     }
 
@@ -499,6 +557,10 @@ impl IslandApp {
             self.dragging = None;
         }
 
+        // ---- Monitor do sistema ----
+        let a = next_alpha(open);
+        self.draw_stats(p, pos2(left, y + 6.0 + (1.0 - a) * 12.0), right - left, &snap.system, a);
+
         // ---- Rodapé ----
         let a = next_alpha(open);
         let footer_y = island.bottom() - FOOTER_HEIGHT / 2.0 - 3.0;
@@ -517,6 +579,95 @@ impl IslandApp {
         if quit_resp.is_some_and(|r| r.clicked()) {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         }
+    }
+}
+
+impl IslandApp {
+    /// Três mostradores lado a lado: CPU, RAM e temperatura.
+    fn draw_stats(&self, p: &Painter, origin: Pos2, width: f32, sys: &System, alpha: f32) {
+        let gap = 8.0;
+        let tile = vec2((width - 2.0 * gap) / 3.0, STATS_HEIGHT - 12.0);
+        let tiles = [
+            ("CPU", format!("{:.0}%", sys.cpu * 100.0), true),
+            ("RAM", format!("{:.1}/{:.0} GB", sys.ram_used_gb, sys.ram_total_gb), true),
+            ("Temp", sys.temp_c.map_or("n/d".to_string(), |t| format!("{t:.0}°C")), sys.temp_c.is_some()),
+        ];
+        for (i, (label, value, available)) in tiles.into_iter().enumerate() {
+            let rect = Rect::from_min_size(origin + vec2(i as f32 * (tile.x + gap), 0.0), tile);
+            p.rect_filled(rect, 12.0, fade(Color32::WHITE, alpha * 0.05));
+
+            let level = if available { self.gauges[i] } else { 0.0 };
+            let center = pos2(rect.left() + 24.0, rect.center().y);
+            draw_ring(p, center, 12.5, level, fade(level_color(level), alpha), fade(Color32::WHITE, alpha * 0.12));
+
+            let x = rect.left() + 46.0;
+            p.text(pos2(x, rect.center().y - 8.0), Align2::LEFT_CENTER, label, FontId::proportional(11.0), fade(TEXT_DIM, alpha));
+            let value_color = if available { TEXT } else { TEXT_DIM };
+            text_fit(p, pos2(x, rect.center().y + 8.0), Align2::LEFT_CENTER, &value, 12.5, fade(value_color, alpha), rect.right() - 6.0 - x);
+        }
+    }
+
+    /// Cartão inicial com a opção de abrir junto com o Windows.
+    fn draw_welcome(&mut self, ui: &mut Ui, p: &Painter, island: Rect, accent: Color32) {
+        let interactive = self.mode == Mode::Welcome;
+        let a = smoothstep(self.welcome.value * 1.6 - 0.4);
+        let left = island.left() + PADDING + 4.0;
+        let right = island.right() - PADDING - 4.0;
+        let top = island.top() + PADDING;
+
+        p.text(pos2(left, top + 10.0), Align2::LEFT_CENTER, "Islandbar", FontId::proportional(17.0), fade(TEXT, a));
+        p.text(
+            pos2(left, top + 32.0),
+            Align2::LEFT_CENTER,
+            "Tudo pronto. Só uma pergunta antes de começar:",
+            FontId::proportional(12.5),
+            fade(TEXT_DIM, a),
+        );
+
+        // Linha da opção: clicar em qualquer lugar dela liga/desliga.
+        let row = Rect::from_min_max(pos2(left, top + 52.0), pos2(right, top + 84.0));
+        let id = ui.scope_id().with("autostart");
+        if interactive {
+            let resp = ui.interact(row, id, Sense::click());
+            if resp.clicked() {
+                self.autostart = !self.autostart;
+            }
+            if resp.hovered() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+        }
+        let on = ui.ctx().animate_bool_with_time(id, self.autostart, 0.16);
+        p.text(
+            pos2(left, row.center().y),
+            Align2::LEFT_CENTER,
+            "Iniciar junto com o Windows",
+            FontId::proportional(14.0),
+            fade(TEXT, a),
+        );
+        let switch = Rect::from_center_size(pos2(right - 22.0, row.center().y), vec2(44.0, 24.0));
+        p.rect_filled(switch, 12.0, fade(Color32::WHITE, a * 0.16 * (1.0 - on)));
+        p.rect_filled(switch, 12.0, fade(accent, a * on));
+        let knob = pos2(switch.left() + 12.0 + 20.0 * on, switch.center().y);
+        p.circle_filled(knob, 9.0, fade(Color32::WHITE, a));
+
+        // Botão "Iniciar".
+        let button = Rect::from_min_max(pos2(right - 104.0, island.bottom() - PADDING - 32.0), pos2(right, island.bottom() - PADDING));
+        let button_id = ui.scope_id().with("start");
+        let mut hover = false;
+        if interactive {
+            let resp = ui.interact(button, button_id, Sense::click());
+            hover = resp.hovered();
+            if hover {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+            if resp.clicked() {
+                platform::set_autostart(self.autostart);
+                self.mode = Mode::Collapsed;
+            }
+        }
+        let lift = ui.ctx().animate_bool_with_time(button_id, hover, 0.12);
+        p.rect_filled(button.expand(lift * 1.5), 16.0, fade(accent, a * (0.85 + 0.15 * lift)));
+        p.text(button.center(), Align2::CENTER_CENTER, "Iniciar", FontId::proportional(14.0), fade(ISLAND, a));
     }
 }
 
@@ -604,6 +755,24 @@ fn icon_button(
         p.circle_filled(center, radius * (1.0 - 0.1 * press), fade(Color32::WHITE, alpha * 0.12 * hover));
     }
     (resp.clicked(), 1.0 + 0.12 * hover - 0.2 * press)
+}
+
+/// Mostrador circular: um anel que enche no sentido horário.
+fn draw_ring(p: &Painter, center: Pos2, radius: f32, level: f32, color: Color32, track: Color32) {
+    let arc = |fraction: f32| -> Vec<Pos2> {
+        let steps = (48.0 * fraction).ceil().max(1.0) as usize;
+        (0..=steps)
+            .map(|k| {
+                let angle = -std::f32::consts::FRAC_PI_2 + std::f32::consts::TAU * fraction * k as f32 / steps as f32;
+                center + vec2(angle.cos(), angle.sin()) * radius
+            })
+            .collect()
+    };
+    p.add(Shape::line(arc(1.0), Stroke::new(3.5, track)));
+    let level = level.clamp(0.0, 1.0);
+    if level > 0.005 {
+        p.add(Shape::line(arc(level), Stroke::new(3.5, color)));
+    }
 }
 
 /// Barrinhas de equalizador, a partir da esquerda, centradas na vertical.
@@ -726,6 +895,17 @@ fn text_fit(p: &Painter, pos: Pos2, anchor: Align2, text: &str, size: f32, color
 /// Cor de destaque que passeia devagar pelo arco-íris.
 fn accent_color(time: f32) -> Color32 {
     Hsva::new((time * 0.025).fract(), 0.62, 1.0, 1.0).into()
+}
+
+/// Verde quando está tranquilo, amarelo no meio, vermelho no limite.
+fn level_color(level: f32) -> Color32 {
+    let heat = smoothstep((level - 0.45) / 0.45);
+    Hsva::new(0.38 * (1.0 - heat), 0.6, 1.0, 1.0).into()
+}
+
+/// Converte °C em 0..1 para o mostrador (30 °C = vazio, 95 °C = cheio).
+fn temp_fraction(celsius: f32) -> f32 {
+    ((celsius - 30.0) / 65.0).clamp(0.0, 1.0)
 }
 
 /// Cada app ganha sempre a mesma cor, derivada do nome.

@@ -9,14 +9,20 @@ eframe = { version = "0.37", default-features = false, features = ["glow", "defa
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [target.'cfg(windows)'.dependencies]
+raw-window-handle = "0.6"
 windows = { version = "0.62", features = [
     "Foundation",
     "Media_Control",
     "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
     "Win32_Media_Audio",
     "Win32_Media_Audio_Endpoints",
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
+    "Win32_System_Performance",
+    "Win32_System_Registry",
+    "Win32_System_SystemInformation",
     "Win32_System_Variant",
     "Win32_System_Threading",
     "Win32_UI_WindowsAndMessaging",

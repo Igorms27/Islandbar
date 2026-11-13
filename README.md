@@ -11,7 +11,11 @@ visível, e se expande com animações elásticas.
 - **Mídia**: título/artista do que está tocando e botões anterior / play-pause / próxima
   (funciona com Spotify, navegadores e qualquer app que apareça no controle de mídia do Windows).
 - **Aviso de volume**: ao usar as teclas de volume do teclado, a ilha se estica e mostra o nível.
-- Cliques fora da ilha atravessam a janela; ela não atrapalha o que está embaixo.
+- **Monitor do sistema**: CPU, RAM e temperatura no painel (e CPU/RAM na pílula quando não há música).
+  A temperatura depende de o PC informar esse dado ao Windows; quando não informa, aparece "n/d".
+- **Iniciar com o Windows**: ao abrir o executável, um cartão pergunta se a ilha deve abrir
+  sozinha no login. Para mudar depois, é só abrir o executável de novo.
+- A janela é recortada no formato da ilha: fora dela não existe nada na tela.
 
 ## Como rodar
 
@@ -38,7 +42,8 @@ Para fechar: abra a ilha e clique em **Sair** no canto inferior direito.
 | `src/anim.rs` | A "mola" que dá o efeito elástico. |
 | `src/backend/windows.rs` | Conversa com o Windows: WASAPI (volume) e controle de mídia. |
 | `src/backend/mock.rs` | Dados de mentira para testar a interface fora do Windows. |
-| `src/platform.rs` | Posição do mouse na tela. |
+| `src/backend/sysmon.rs` | CPU, RAM e temperatura. |
+| `src/platform.rs` | Mouse, recorte da janela e inicialização com o Windows. |
 
 Feito com [egui/eframe](https://github.com/emilk/egui) e o crate
 [windows](https://github.com/microsoft/windows-rs).

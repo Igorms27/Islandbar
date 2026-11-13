@@ -9,6 +9,8 @@ use std::sync::{Arc, Mutex};
 #[cfg(not(windows))]
 mod mock;
 #[cfg(windows)]
+mod sysmon;
+#[cfg(windows)]
 mod windows;
 
 /// Um aplicativo que está tocando áudio (uma linha do mixer).
@@ -30,8 +32,26 @@ pub struct Media {
     pub playing: bool,
 }
 
+/// Uso do computador.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct System {
+    /// Uso da CPU, 0..1.
+    pub cpu: f32,
+    pub ram_used_gb: f32,
+    pub ram_total_gb: f32,
+    /// Temperatura em °C. `None` quando o PC não informa ao Windows.
+    pub temp_c: Option<f32>,
+}
+
+impl System {
+    pub fn ram(&self) -> f32 {
+        if self.ram_total_gb > 0.0 { self.ram_used_gb / self.ram_total_gb } else { 0.0 }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Snapshot {
+    pub system: System,
     pub master: f32,
     pub master_muted: bool,
     pub master_peak: f32,

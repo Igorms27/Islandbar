@@ -20,11 +20,14 @@ fn main() -> eframe::Result {
         .with_resizable(false)
         .with_taskbar(false);
 
+    // Aberta pelo Windows no login: vai direto, sem perguntar nada.
+    let show_welcome = !std::env::args().any(|arg| arg == platform::AUTOSTART_ARG);
+
     let options = eframe::NativeOptions { viewport, ..Default::default() };
 
     eframe::run_native(
         "Islandbar",
         options,
-        Box::new(|cc| Ok(Box::new(app::IslandApp::new(cc)))),
+        Box::new(move |cc| Ok(Box::new(app::IslandApp::new(cc, show_welcome)))),
     )
 }

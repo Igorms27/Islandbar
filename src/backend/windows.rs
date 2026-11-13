@@ -4,7 +4,8 @@
 //! - "Tocando agora" e botões de mídia: Global System Media Transport Controls
 //!   (o mesmo sistema que o Windows usa no flyout de mídia).
 
-use super::{Command, Media, Session, Shared, Snapshot};
+use super::sysmon::SystemMonitor;
+use super::{Command, Media, Session, Shared, Snapshot, System};
 use std::collections::HashMap;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
@@ -57,6 +58,8 @@ pub fn run(state: Shared, rx: Receiver<Command>) {
     let mut media: Option<Media> = None;
     let mut last_refresh: Option<Instant> = None;
     let mut last_media: Option<Instant> = None;
+    let mut monitor = SystemMonitor::new();
+    let mut system = System::default();
 
     loop {
         let now = Instant::now();
@@ -66,6 +69,7 @@ pub fn run(state: Shared, rx: Receiver<Command>) {
         if last_refresh.is_none_or(|t| now - t >= REFRESH_EVERY) {
             last_refresh = Some(now);
             audio = unsafe { open_audio(&mut names) }.ok();
+            system = monitor.read();
         }
 
         if last_media.is_none_or(|t| now - t >= MEDIA_EVERY) {
@@ -87,6 +91,7 @@ pub fn run(state: Shared, rx: Receiver<Command>) {
             .map(|a| unsafe { read_audio(a) })
             .unwrap_or_default();
         snap.media = media.clone();
+        snap.system = system;
         if let Ok(mut shared) = state.lock() {
             *shared = snap;
         }
@@ -151,7 +156,7 @@ unsafe fn read_audio(audio: &Audio) -> Snapshot {
         master_muted: audio.endpoint.GetMute().map(|b| b.as_bool()).unwrap_or(false),
         master_peak: audio.meter.GetPeakValue().unwrap_or(0.0),
         sessions,
-        media: None,
+        ..Default::default()
     }
 }
 

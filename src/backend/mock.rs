@@ -1,6 +1,6 @@
 //! Backend de mentira para desenvolver/testar a interface fora do Windows.
 
-use super::{Command, Media, Session, Shared, Snapshot};
+use super::{Command, Media, Session, Shared, Snapshot, System};
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
@@ -60,6 +60,13 @@ pub fn run(state: Shared, rx: Receiver<Command>) {
             master_peak = master_peak.max(s.peak);
         }
         snap.master_peak = if snap.master_muted { 0.0 } else { master_peak * snap.master };
+
+        snap.system = System {
+            cpu: 0.32 + 0.25 * (t * 0.7).sin(),
+            ram_used_gb: 9.6 + (t * 0.2).sin(),
+            ram_total_gb: 16.0,
+            temp_c: Some(58.0 + 9.0 * (t * 0.4).sin()),
+        };
 
         if let Ok(mut shared) = state.lock() {
             *shared = snap.clone();
