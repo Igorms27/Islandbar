@@ -39,9 +39,12 @@ jobs:
             --latest
       # Abre a ilha no Windows da máquina de build e guarda screenshots,
       # para conferir a aparência real sem depender de um PC.
+      - name: Compila o jogo falso do teste
+        continue-on-error: true
+        run: cargo build --release --example fake_game
       - name: Teste visual
         continue-on-error: true
-        timeout-minutes: 8
+        timeout-minutes: 10
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}

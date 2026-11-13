@@ -42,6 +42,8 @@ pub struct SystemMonitor {
     cpu: f32,
     thermal_zones: Option<Counter>,
     gpu_engines: Option<Counter>,
+    /// Uso de GPU (0..1) de cada programa, pelo PID. Atualizado em `read`.
+    pub gpu_by_pid: HashMap<u32, f32>,
     gpu_adapters: Vec<LUID>,
     disk_temp: Option<f32>,
     disk_read_at: Option<Instant>,
@@ -55,6 +57,7 @@ impl SystemMonitor {
                 cpu: 0.0,
                 thermal_zones: Counter::open(w!("\\Thermal Zone Information(*)\\Temperature")),
                 gpu_engines: Counter::open(w!("\\GPU Engine(*)\\Utilization Percentage")),
+                gpu_by_pid: HashMap::new(),
                 gpu_adapters: gpu_adapters(),
                 disk_temp: None,
                 disk_read_at: None,
@@ -97,14 +100,21 @@ impl SystemMonitor {
     ///
     /// O Windows informa o uso por programa e por "motor" da placa (3D, vídeo,
     /// cópia...). Somamos os programas de cada motor e ficamos com o motor
-    /// mais ocupado.
-    fn read_gpu(&self) -> Option<f32> {
+    /// mais ocupado. De passagem, guarda o uso de cada programa.
+    fn read_gpu(&mut self) -> Option<f32> {
+        self.gpu_by_pid.clear();
         let values = unsafe { self.gpu_engines.as_ref()?.read() }?;
         let mut engines: HashMap<&str, f64> = HashMap::new();
         for (name, percent) in &values {
-            // "pid_1234_luid_0x0_0xABCD_phys_0_eng_0_engtype_3D": tira o programa.
+            // "pid_1234_luid_0x0_0xABCD_phys_0_eng_0_engtype_3D"
             let engine = name.find("luid_").map_or(name.as_str(), |start| &name[start..]);
             *engines.entry(engine).or_default() += percent;
+
+            let pid = name.strip_prefix("pid_").and_then(|rest| rest.split('_').next()).and_then(|pid| pid.parse().ok());
+            if let Some(pid) = pid {
+                let usage = self.gpu_by_pid.entry(pid).or_default();
+                *usage = usage.max((*percent / 100.0) as f32);
+            }
         }
         let busiest = engines.into_values().fold(0.0, f64::max);
         Some((busiest / 100.0).clamp(0.0, 1.0) as f32)

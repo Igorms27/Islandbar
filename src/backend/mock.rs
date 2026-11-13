@@ -1,6 +1,6 @@
 //! Backend de mentira para desenvolver/testar a interface fora do Windows.
 
-use super::{Command, Media, Session, Shared, Snapshot, System, Temp, TempSource};
+use super::{Command, FpsAccess, Game, Media, Session, Shared, Snapshot, System, Temp, TempSource};
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
@@ -25,6 +25,14 @@ pub fn run(state: Shared, rx: Receiver<Command>) {
         ..Default::default()
     };
 
+    let debug_game = std::env::var_os("ISLANDBAR_DEBUG_GAME").is_some();
+    if std::env::var_os("ISLANDBAR_DEBUG_FPS_DENIED").is_some() {
+        snap.fps_access = FpsAccess::Denied;
+    }
+    if std::env::var_os("ISLANDBAR_DEBUG_NO_MEDIA").is_some() {
+        snap.media = None;
+    }
+
     loop {
         while let Ok(cmd) = rx.try_recv() {
             match cmd {
@@ -46,6 +54,7 @@ pub fn run(state: Shared, rx: Receiver<Command>) {
                     }
                 }
                 Command::Next | Command::Prev => {}
+                Command::EnableFps => snap.fps_access = FpsAccess::Requested,
             }
         }
 
@@ -68,6 +77,11 @@ pub fn run(state: Shared, rx: Receiver<Command>) {
             gpu: Some(0.45 + 0.3 * (t * 0.5).sin()),
             temp: Some(Temp { celsius: 58.0 + 9.0 * (t * 0.4).sin(), source: TempSource::System }),
         };
+
+        // ISLANDBAR_DEBUG_GAME=1 simula um jogo em tela cheia depois de 3 segundos.
+        if debug_game && t > 3.0 {
+            snap.game = Some(Game { name: "Jogo de teste".into(), fps: Some(140.0 + 8.0 * (t * 1.3).sin()) });
+        }
 
         if let Ok(mut shared) = state.lock() {
             *shared = snap.clone();

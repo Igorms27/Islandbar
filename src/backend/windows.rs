@@ -4,8 +4,9 @@
 //! - "Tocando agora" e botões de mídia: Global System Media Transport Controls
 //!   (o mesmo sistema que o Windows usa no flyout de mídia).
 
+use super::game::GameWatcher;
 use super::sysmon::SystemMonitor;
-use super::{Command, Media, Session, Shared, Snapshot, System};
+use super::{Command, Game, Media, Session, Shared, Snapshot, System};
 use std::collections::HashMap;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
@@ -60,6 +61,8 @@ pub fn run(state: Shared, rx: Receiver<Command>) {
     let mut last_media: Option<Instant> = None;
     let mut monitor = SystemMonitor::new();
     let mut system = System::default();
+    let mut games = GameWatcher::new();
+    let mut game: Option<Game> = None;
     // Para diagnóstico: escreve as leituras no stderr.
     let debug_system = std::env::var_os("ISLANDBAR_DEBUG_SYSMON").is_some();
 
@@ -72,8 +75,9 @@ pub fn run(state: Shared, rx: Receiver<Command>) {
             last_refresh = Some(now);
             audio = unsafe { open_audio(&mut names) }.ok();
             system = monitor.read();
+            game = games.update(&monitor.gpu_by_pid);
             if debug_system {
-                eprintln!("{system:?}");
+                eprintln!("{system:?} game={game:?} fps_access={:?}", games.access());
             }
         }
 
@@ -86,6 +90,10 @@ pub fn run(state: Shared, rx: Receiver<Command>) {
         }
 
         while let Ok(cmd) = rx.try_recv() {
+            if matches!(cmd, Command::EnableFps) {
+                games.request_access();
+                continue;
+            }
             let _ = unsafe { apply(cmd, audio.as_ref(), media_mgr.as_ref()) };
             // Faz a mídia atualizar logo depois de um play/pause.
             last_media = None;
@@ -97,6 +105,8 @@ pub fn run(state: Shared, rx: Receiver<Command>) {
             .unwrap_or_default();
         snap.media = media.clone();
         snap.system = system;
+        snap.game = game.clone();
+        snap.fps_access = games.access();
         if let Ok(mut shared) = state.lock() {
             *shared = snap;
         }
@@ -203,6 +213,8 @@ unsafe fn apply(cmd: Command, audio: Option<&Audio>, media: Option<&MediaManager
         Command::Prev => {
             current_session(media)?.TrySkipPreviousAsync()?;
         }
+        // Tratado no laço principal.
+        Command::EnableFps => {}
     }
     Ok(())
 }

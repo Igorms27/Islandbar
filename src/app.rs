@@ -8,12 +8,12 @@ use eframe::egui::{
 };
 
 use crate::anim::{meter, smoothstep, Spring};
-use crate::backend::{Backend, Command, Snapshot, System, TempSource};
+use crate::backend::{Backend, Command, FpsAccess, Game, Snapshot, System, TempSource};
 use crate::platform;
 use crate::updater;
 
 /// Tamanho da janela invisível que contém a ilha.
-pub const WINDOW_SIZE: [f32; 2] = [560.0, 600.0];
+pub const WINDOW_SIZE: [f32; 2] = [940.0, 640.0];
 
 const TOP_MARGIN: f32 = 10.0;
 const PILL_HEIGHT: f32 = 34.0;
@@ -27,6 +27,11 @@ const TILE_GAP: f32 = 8.0;
 /// Duas fileiras de mostradores + respiro.
 const STATS_HEIGHT: f32 = 2.0 * TILE_HEIGHT + TILE_GAP + 12.0;
 const FOOTER_HEIGHT: f32 = 30.0;
+/// Linha do painel que oferece ativar o FPS (só aparece sem a permissão).
+const FPS_ROW_HEIGHT: f32 = 36.0;
+/// Pílula do modo jogo: um pouco menor que a principal.
+const GAME_PILL_HEIGHT: f32 = 30.0;
+const GAME_PILL_GAP: f32 = 8.0;
 const WELCOME_SIZE: Vec2 = vec2(380.0, 166.0);
 const MAX_APPS: usize = 7;
 const BARS: usize = 5;
@@ -67,6 +72,11 @@ pub struct IslandApp {
     autostart: bool,
     /// 0..1, mouse em cima da ilha.
     hover: Spring,
+    /// 0 = sem jogo, 1 = pílula do modo jogo aberta.
+    game: Spring,
+    game_width: Spring,
+    /// Último jogo visto (continua desenhado enquanto a pílula fecha).
+    last_game: Option<Game>,
 
     hud_timer: f32,
     leave_timer: f32,
@@ -109,6 +119,9 @@ impl IslandApp {
             welcome: Spring::smooth(0.0),
             autostart: platform::autostart_enabled(),
             hover: Spring::smooth(0.0),
+            game: Spring::bouncy(0.0),
+            game_width: Spring::bouncy(120.0),
+            last_game: None,
             hud_timer: if mode == Mode::Hud { f32::INFINITY } else { 0.0 },
             leave_timer: 0.0,
             uptime: 0.0,
@@ -156,13 +169,17 @@ impl IslandApp {
             Mode::Welcome => WELCOME_SIZE,
             Mode::Collapsed => {
                 // Sem música a pílula mostra o uso do PC; com GPU precisa de mais espaço.
-                let width = if snap.media.is_none() && snap.system.gpu.is_some() { 300.0 } else { 250.0 };
+                // (No modo jogo esses números vão para a pílula ao lado.)
+                let stats = snap.media.is_none() && snap.game.is_none() && snap.system.gpu.is_some();
+                let width = if stats { 300.0 } else { 250.0 };
                 vec2(width, PILL_HEIGHT) + vec2(14.0, 4.0) * self.hover.target
             }
             Mode::Hud => HUD_SIZE,
             Mode::Expanded => {
                 let rows = 1 + snap.sessions.len().min(MAX_APPS);
-                let height = PADDING + HEADER_HEIGHT + 14.0 + rows as f32 * ROW_HEIGHT + STATS_HEIGHT + FOOTER_HEIGHT;
+                let fps_row = if snap.fps_access == FpsAccess::Granted { 0.0 } else { FPS_ROW_HEIGHT };
+                let height =
+                    PADDING + HEADER_HEIGHT + 14.0 + rows as f32 * ROW_HEIGHT + STATS_HEIGHT + fps_row + FOOTER_HEIGHT;
                 vec2(EXPANDED_WIDTH, height)
             }
         }
@@ -206,6 +223,10 @@ impl eframe::App for IslandApp {
         [0.0; 4]
     }
 
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        crate::backend::shutdown();
+    }
+
     fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let (dt, time) = ctx.input(|i| (i.stable_dt.min(1.0 / 30.0), i.time as f32));
@@ -214,6 +235,7 @@ impl eframe::App for IslandApp {
 
         // Uma ilha mais nova abriu (ex.: depois de atualizar): esta sai de cena.
         if platform::quit_requested() {
+            crate::backend::shutdown();
             std::process::exit(0);
         }
         // Atualização baixada: reinicia quando a ilha não está em uso.
@@ -316,6 +338,8 @@ impl eframe::App for IslandApp {
             StrokeKind::Inside,
         );
 
+        self.draw_game_pill(&painter, island, &snap, accent, dt);
+
         let content = painter.with_clip_rect(island.shrink(1.0));
         let open = smoothstep(self.open.value);
         let hud = smoothstep(self.hud.value);
@@ -336,10 +360,10 @@ impl eframe::App for IslandApp {
         }
 
         // --- Quando redesenhar ---
-        let animating = [&self.width, &self.height, &self.open, &self.hud, &self.hover, &self.welcome]
+        let animating = [&self.width, &self.height, &self.open, &self.hud, &self.hover, &self.welcome, &self.game, &self.game_width]
             .iter()
             .any(|s| !s.settled());
-        if animating || hovered || self.mode != Mode::Collapsed || self.master_peak > 0.005 {
+        if animating || hovered || self.mode != Mode::Collapsed || self.master_peak > 0.005 || snap.game.is_some() {
             ctx.request_repaint();
         } else {
             // Parada, a ilha quase não gasta CPU: só confere o mouse 20x/s.
@@ -382,6 +406,10 @@ impl IslandApp {
             let max_width = clock_rect.left() - 10.0 - x;
             let color = if media.playing { TEXT } else { TEXT_DIM };
             text_fit(p, pos2(x, cy), Align2::LEFT_CENTER, &media.title, 12.5, fade(color, alpha), max_width);
+        } else if let Some(game) = &snap.game {
+            // Jogando sem música: o nome do jogo (os números estão na pílula ao lado).
+            let x = left + 32.0;
+            text_fit(p, pos2(x, cy), Align2::LEFT_CENTER, &game.name, 12.5, fade(TEXT_DIM, alpha), clock_rect.left() - 10.0 - x);
         } else {
             // Sem música: mostra o uso do PC.
             let sys = &snap.system;
@@ -571,6 +599,13 @@ impl IslandApp {
         let a = next_alpha(open);
         self.draw_stats(p, pos2(left, y + 6.0 + (1.0 - a) * 12.0), right - left, &snap.system, a);
 
+        // ---- Permissão de FPS (só quando falta) ----
+        if snap.fps_access != FpsAccess::Granted {
+            let a = next_alpha(open);
+            let row = Rect::from_min_size(pos2(left, y + STATS_HEIGHT), vec2(right - left, FPS_ROW_HEIGHT));
+            self.draw_fps_row(ui, p, row, snap.fps_access, accent, a, interactive);
+        }
+
         // ---- Rodapé ----
         let a = next_alpha(open);
         let footer_y = island.bottom() - FOOTER_HEIGHT / 2.0 - 3.0;
@@ -596,6 +631,110 @@ impl IslandApp {
 }
 
 impl IslandApp {
+    /// Modo jogo: uma pílula pequena que "brota" do lado direito da ilha com
+    /// FPS, CPU, GPU e RAM.
+    fn draw_game_pill(&mut self, painter: &Painter, island: Rect, snap: &Snapshot, accent: Color32, dt: f32) {
+        if snap.game.is_some() {
+            self.last_game = snap.game.clone();
+        }
+        // Com o painel aberto a pílula some, para não disputar espaço.
+        let visible = snap.game.is_some() && matches!(self.mode, Mode::Collapsed | Mode::Hud);
+        self.game.target = if visible { 1.0 } else { 0.0 };
+        self.game.update(dt);
+        let grow = self.game.value;
+        if grow <= 0.01 {
+            return;
+        }
+        let Some(game) = &self.last_game else { return };
+
+        // Monta os trechos: (rótulo, valor, cor do valor).
+        let sys = &snap.system;
+        let mut parts: Vec<(&str, String, Color32)> = Vec::new();
+        if let Some(fps) = game.fps {
+            parts.push(("FPS", format!("{fps:.0}"), fps_color(fps)));
+        }
+        parts.push(("CPU", format!("{:.0}%", sys.cpu * 100.0), TEXT));
+        if let Some(gpu) = sys.gpu {
+            parts.push(("GPU", format!("{:.0}%", gpu * 100.0), TEXT));
+        }
+        parts.push(("RAM", format!("{:.0}%", sys.ram() * 100.0), TEXT));
+
+        let label_font = FontId::proportional(10.0);
+        let value_font = FontId::proportional(12.5);
+        let (padding, inner_gap, part_gap) = (14.0, 4.0, 12.0);
+        let galleys: Vec<_> = parts
+            .iter()
+            .map(|(label, value, color)| {
+                (
+                    painter.layout_no_wrap(label.to_string(), label_font.clone(), TEXT_DIM),
+                    painter.layout_no_wrap(value.clone(), value_font.clone(), *color),
+                )
+            })
+            .collect();
+        let content_width: f32 = galleys.iter().map(|(l, v)| l.size().x + inner_gap + v.size().x).sum::<f32>()
+            + part_gap * (galleys.len() as f32 - 1.0);
+        // Arredonda para a largura não tremer a cada dígito que muda.
+        self.game_width.target = ((content_width + 2.0 * padding) / 8.0).ceil() * 8.0;
+        self.game_width.update(dt);
+
+        let size = vec2(self.game_width.value * grow.min(1.15), GAME_PILL_HEIGHT * grow.clamp(0.0, 1.0));
+        let left = island.right() + GAME_PILL_GAP * grow.min(1.0);
+        let center_y = TOP_MARGIN + PILL_HEIGHT / 2.0;
+        let rect = Rect::from_min_size(pos2(left, center_y - size.y / 2.0), size);
+        let radius = size.y / 2.0;
+        let alpha = smoothstep((grow - 0.55) / 0.45);
+
+        painter.add(
+            Shadow { offset: [0, 4], blur: 14, spread: 0, color: Color32::from_black_alpha((90.0 * grow.min(1.0)) as u8) }
+                .as_shape(rect, radius),
+        );
+        painter.rect_filled(rect, radius, ISLAND);
+        painter.rect_stroke(rect, radius, Stroke::new(1.0, fade(accent, 0.18)), StrokeKind::Inside);
+
+        let clipped = painter.with_clip_rect(rect.shrink(1.0));
+        let mut x = rect.left() + padding;
+        for (label, value) in galleys {
+            let label_pos = pos2(x, center_y - label.size().y / 2.0 + 0.5);
+            x += label.size().x + inner_gap;
+            let value_pos = pos2(x, center_y - value.size().y / 2.0);
+            x += value.size().x + part_gap;
+            clipped.galley_with_override_text_color(label_pos, label, fade(TEXT_DIM, alpha));
+            let color = value.job.sections.first().map_or(TEXT, |s| s.format.color);
+            clipped.galley_with_override_text_color(value_pos, value, fade(color, alpha));
+        }
+    }
+
+    /// Linha do painel para liberar a medição de FPS.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_fps_row(&mut self, ui: &mut Ui, p: &Painter, row: Rect, access: FpsAccess, accent: Color32, a: f32, interactive: bool) {
+        let cy = row.center().y + (1.0 - a) * 12.0;
+        if access == FpsAccess::Requested {
+            let text = "Permissão pedida. Saia e entre no Windows para o FPS aparecer.";
+            text_fit(p, pos2(row.left(), cy), Align2::LEFT_CENTER, text, 12.0, fade(TEXT_DIM, a), row.width());
+            return;
+        }
+
+        let button = Rect::from_center_size(pos2(row.right() - 36.0, cy), vec2(72.0, 24.0));
+        let text = "Mostrar FPS nos jogos exige uma permissão do Windows";
+        text_fit(p, pos2(row.left(), cy), Align2::LEFT_CENTER, text, 12.0, fade(TEXT_DIM, a), button.left() - 10.0 - row.left());
+
+        let id = ui.scope_id().with("enable-fps");
+        let mut hover = false;
+        if interactive {
+            let resp = ui.interact(button, id, Sense::click());
+            hover = resp.hovered();
+            if hover {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+            if resp.clicked() {
+                self.backend.send(Command::EnableFps);
+            }
+        }
+        let lift = ui.ctx().animate_bool_with_time(id, hover, 0.12);
+        p.rect_filled(button.expand(lift), 12.0, fade(accent, a * (0.8 + 0.2 * lift)));
+        p.text(button.center(), Align2::CENTER_CENTER, "Ativar", FontId::proportional(12.5), fade(ISLAND, a));
+    }
+
     /// Quatro mostradores em grade 2x2: CPU e GPU em cima, RAM e temperatura embaixo.
     fn draw_stats(&self, p: &Painter, origin: Pos2, width: f32, sys: &System, alpha: f32) {
         let tile = vec2((width - TILE_GAP) / 2.0, TILE_HEIGHT);
@@ -918,6 +1057,12 @@ fn text_fit(p: &Painter, pos: Pos2, anchor: Align2, text: &str, size: f32, color
 /// Cor de destaque que passeia devagar pelo arco-íris.
 fn accent_color(time: f32) -> Color32 {
     Hsva::new((time * 0.025).fract(), 0.62, 1.0, 1.0).into()
+}
+
+/// FPS: verde a partir de 60, amarelo perto de 45, vermelho abaixo de 30.
+fn fps_color(fps: f32) -> Color32 {
+    let good = smoothstep((fps - 28.0) / 32.0);
+    Hsva::new(0.38 * good, 0.6, 1.0, 1.0).into()
 }
 
 /// Verde quando está tranquilo, amarelo no meio, vermelho no limite.
