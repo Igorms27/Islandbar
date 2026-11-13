@@ -15,6 +15,11 @@ visível, e se expande com animações elásticas.
   O uso da GPU é o mesmo número do Gerenciador de Tarefas. A temperatura usa o melhor sensor que o PC
   oferece sem instalar driver: zona térmica da placa-mãe, depois placa de vídeo, depois o disco principal
   (o rótulo indica qual). Se nenhum existir, aparece "n/d".
+- **Modo jogo**: com um jogo em tela cheia em primeiro plano, uma pílula pequena aparece ao lado da ilha
+  com FPS, CPU, GPU e RAM. Navegadores e players de vídeo em tela cheia não contam como jogo.
+  O FPS é medido como na Xbox Game Bar, sem mexer no jogo; o Windows exige uma permissão para isso,
+  que a ilha oferece ativar no painel (pede confirmação de administrador uma vez e vale depois de
+  sair e entrar na conta).
 - **Iniciar com o Windows**: ao abrir o executável, um cartão pergunta se a ilha deve abrir
   sozinha no login. Para mudar depois, é só abrir o executável de novo.
 - **Atualização automática**: a ilha confere se saiu versão nova no GitHub, baixa, troca o
@@ -49,6 +54,9 @@ Para fechar: abra a ilha e clique em **Sair** no canto inferior direito.
 | `src/backend/windows.rs` | Conversa com o Windows: WASAPI (volume) e controle de mídia. |
 | `src/backend/mock.rs` | Dados de mentira para testar a interface fora do Windows. |
 | `src/backend/sysmon.rs` | CPU, GPU, RAM e temperatura. |
+| `src/backend/game.rs` | Modo jogo: detecta um jogo em tela cheia. |
+| `src/backend/fps.rs` | Mede o FPS de outros programas. |
+| `examples/fake_game.rs` | "Jogo falso" usado pelo teste visual. |
 | `src/updater.rs` | Atualização automática. |
 | `scripts/smoke.ps1` | Teste visual: o GitHub abre a ilha num Windows real e guarda screenshots na branch `ci-results`. |
 | `src/platform.rs` | Mouse, recorte da janela e inicialização com o Windows. |

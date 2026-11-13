@@ -97,6 +97,8 @@ pub struct IslandApp {
     /// Segundos restantes do aviso "Atualizado" na pílula.
     notice_timer: f32,
     restarting: bool,
+    /// Espera mínima entre dois "empurrões" do cursor (veja `ui`).
+    nudge_cooldown: f32,
 }
 
 impl IslandApp {
@@ -134,6 +136,7 @@ impl IslandApp {
             window_pos: None,
             notice_timer: if updated { 6.0 } else { 0.0 },
             restarting: false,
+            nudge_cooldown: 0.0,
         }
     }
 
@@ -276,10 +279,16 @@ impl eframe::App for IslandApp {
         // Fora da ilha, os cliques atravessam a janela e vão para o app de baixo.
         platform::sync_window(frame, !hovered && !pointer_down);
 
-        if std::env::var_os("ISLANDBAR_DEBUG_UI").is_some() {
-            let (pos, events) = ctx.input(|i| (i.pointer.latest_pos(), i.events.len()));
-            if hovered || pointer_down || events > 0 {
-                eprintln!("ui: mode={:?} hovered={hovered} down={pointer_down} pointer={pos:?} events={events}", self.mode);
+        // Enquanto os cliques atravessam a janela, ela não recebe a posição do
+        // mouse. Se o cursor já está sobre a ilha mas a interface ainda não
+        // sabe disso, "recoloca" o cursor no lugar: o Windows então avisa a
+        // janela, e um clique dado sem mexer mais o mouse funciona.
+        self.nudge_cooldown = (self.nudge_cooldown - dt).max(0.0);
+        if cfg!(windows) && hovered && self.nudge_cooldown == 0.0 {
+            let known = ctx.pointer_latest_pos().is_some_and(|p| island.expand(8.0).contains(p));
+            if !known {
+                platform::nudge_cursor();
+                self.nudge_cooldown = 0.08;
             }
         }
 
