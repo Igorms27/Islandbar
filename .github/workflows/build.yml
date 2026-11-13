@@ -52,3 +52,17 @@ jobs:
           name: smoke
           path: smoke/
           if-no-files-found: ignore
+      # Também guarda as imagens na branch "ci-results" (sempre sobrescrita).
+      - name: Publica screenshots
+        if: always()
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd smoke
+          git init -q -b ci-results
+          git add -A
+          git -c user.name="github-actions" -c user.email="github-actions@users.noreply.github.com" \
+            commit -qm "Teste visual de ${{ github.sha }}"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}" ci-results
