@@ -139,7 +139,7 @@ Click $cx $pillY
 Start-Sleep 2
 Shot "game-2-panel"
 Styles "game clicked" | Out-Null
-Log ("ui around the click: " + (Get-Content "$out\island-stderr.txt" | Select-Object -Skip ([Math]::Max(0, $before - 40)) | Select-String '^ui:' | Select-Object -Last 25 | Out-String))
+Log ("ui around the click: " + (Get-Content "$out\island-stderr.txt" | Select-Object -Skip ([Math]::Max(0, $before - 40)) | Select-String '^ui:' | Select-Object -Last 14 | Out-String))
 [W]::SetCursorPos(900, 700) | Out-Null
 Start-Sleep 2
 Log ("game detection: " + (Get-Content "$out\island-stderr.txt" | Select-String '^game:|^fps:' | Select-Object -Last 4 | Out-String))

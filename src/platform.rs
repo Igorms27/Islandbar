@@ -14,6 +14,14 @@ pub fn cursor_pos() -> Option<(i32, i32)> {
     Some((point.x, point.y))
 }
 
+/// Posição do cursor, para as mensagens de diagnóstico.
+pub fn debug_cursor() -> Option<(i32, i32)> {
+    #[cfg(windows)]
+    return cursor_pos();
+    #[cfg(not(windows))]
+    None
+}
+
 /// Faz o Windows reenviar a posição do mouse para a janela que está embaixo
 /// dele, sem mover o cursor de lugar.
 pub fn nudge_cursor() {

@@ -299,7 +299,14 @@ impl eframe::App for IslandApp {
         // Diagnóstico (ISLANDBAR_DEBUG_UI=1): registra quando o estado do mouse muda.
         if self.debug_ui {
             let (pos, events) = ctx.input(|i| (i.pointer.latest_pos(), i.events.len()));
-            let state = format!("mode={:?} hovered={hovered} down={pointer_down} pointer={pos:?}", self.mode);
+            let inner = ctx.input(|i| i.viewport().inner_rect);
+            let state = format!(
+                "mode={:?} hovered={hovered} down={pointer_down} pointer={pos:?} cursor={:?} inner={:?} island={island:?} scale={}",
+                self.mode,
+                platform::debug_cursor(),
+                inner.map(|r| (r.min, r.max)),
+                ctx.pixels_per_point()
+            );
             if state != self.debug_last || events > 0 {
                 eprintln!("ui: {state} events={events}");
                 self.debug_last = state;
