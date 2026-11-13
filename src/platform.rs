@@ -14,9 +14,8 @@ pub fn cursor_pos() -> Option<(i32, i32)> {
     Some((point.x, point.y))
 }
 
-/// Recorta a janela para ela existir só no retângulo arredondado dado (em
-/// pixels, relativo à janela). Fora dele não há nada: nem imagem, nem borda,
-/// nem área clicável.
+/// Recorta a janela para ela existir só no retângulo dado (em pixels,
+/// relativo à janela). Fora dele não há nada: nem imagem, nem borda.
 #[cfg(windows)]
 pub fn clip_window(frame: &eframe::Frame, rect: [i32; 4], corner_diameter: i32) {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};

@@ -25,8 +25,6 @@ const ROW_HEIGHT: f32 = 38.0;
 const STATS_HEIGHT: f32 = 58.0;
 const FOOTER_HEIGHT: f32 = 30.0;
 const WELCOME_SIZE: Vec2 = vec2(380.0, 166.0);
-/// Quanto do brilho em volta da ilha fica visível, em pontos.
-const GLOW_MARGIN: f32 = 30.0;
 const MAX_APPS: usize = 7;
 const BARS: usize = 5;
 
@@ -85,7 +83,6 @@ pub struct IslandApp {
     window_pos: Option<Pos2>,
     passthrough: Option<bool>,
     clip: Option<[i32; 5]>,
-    clip_size: Vec2,
     /// Segundos restantes do aviso "Atualizado" na pílula.
     notice_timer: f32,
     restarting: bool,
@@ -123,7 +120,6 @@ impl IslandApp {
             window_pos: None,
             passthrough: None,
             clip: None,
-            clip_size: Vec2::ZERO,
             notice_timer: if updated { 6.0 } else { 0.0 },
             restarting: false,
         }
@@ -164,35 +160,16 @@ impl IslandApp {
         }
     }
 
-    /// Deixa a janela existir só onde está a ilha (mais o brilho em volta).
+    /// Recorta a janela uma única vez, deixando de fora uma pequena margem.
     ///
-    /// O recorte muda poucas vezes: abre espaço de uma vez quando uma animação
-    /// começa e só aperta de novo quando ela termina. Mudar a cada frame fazia
-    /// a ilha piscar.
-    fn clip_window(&mut self, ctx: &egui::Context, frame: &eframe::Frame, island: Rect) {
-        let settled = self.width.settled() && self.height.settled();
-        let target = vec2(self.width.target, self.height.target);
-        let (size, margin) = if settled {
-            (target, GLOW_MARGIN)
-        } else {
-            // Folga extra para o "quique" da mola não ser cortado.
-            (self.clip_size.max(target).max(island.size()), GLOW_MARGIN + 45.0)
-        };
-        self.clip_size = size;
-
-        let area = Rect::from_min_size(pos2(island.center().x - size.x / 2.0, TOP_MARGIN), size).expand(margin);
-        let radius = (size.y / 2.0).min(26.0) + margin;
+    /// Uma janela recortada perde a borda, a sombra e a faixa clara no topo
+    /// que o Windows desenha. O recorte é fixo de propósito: mudá-lo durante
+    /// as animações fazia a ilha piscar.
+    fn clip_window(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
+        const INSET: f32 = 5.0;
         let scale = ctx.pixels_per_point();
         let px = |v: f32| (v * scale).round() as i32;
-        let clip = [
-            px(area.left()),
-            // As primeiras linhas da janela ficam de fora: o Windows desenha
-            // uma faixa clara ali em janelas sem borda.
-            px(area.top().max(TOP_MARGIN - 5.0)),
-            px(area.right()),
-            px(area.bottom()),
-            px(radius * 2.0),
-        ];
+        let clip = [px(INSET), px(INSET), px(WINDOW_SIZE[0] - INSET), px(WINDOW_SIZE[1] - INSET), 0];
         if self.clip != Some(clip) {
             self.clip = Some(clip);
             platform::clip_window(frame, [clip[0], clip[1], clip[2], clip[3]], clip[4]);
@@ -288,7 +265,7 @@ impl eframe::App for IslandApp {
         let (w, h) = (self.width.value.max(8.0), self.height.value.max(8.0));
         let island = Rect::from_min_size(pos2(ui.max_rect().center().x - w / 2.0, TOP_MARGIN), vec2(w, h));
         let radius = (h / 2.0).min(26.0);
-        self.clip_window(&ctx, frame, island);
+        self.clip_window(&ctx, frame);
 
         // --- Mouse e troca de estados ---
         let pointer_down = ctx.input(|i| i.pointer.any_down());

@@ -17,7 +17,7 @@ visível, e se expande com animações elásticas.
   sozinha no login. Para mudar depois, é só abrir o executável de novo.
 - **Atualização automática**: a ilha confere se saiu versão nova no GitHub, baixa, troca o
   executável e reinicia sozinha. O número da versão aparece no rodapé do painel.
-- A janela é recortada no formato da ilha: fora dela não existe nada na tela.
+- A janela é transparente, sem borda nem sombra; só a ilha aparece.
 
 ## Como rodar
 
