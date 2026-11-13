@@ -17,15 +17,17 @@ pub fn cursor_pos() -> Option<(i32, i32)> {
 #[cfg(windows)]
 mod window {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-    use windows::Win32::Foundation::HWND;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
     use windows::Win32::Graphics::Dwm::{
         DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
     };
+    use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
     use windows::Win32::UI::WindowsAndMessaging::{
         GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, GWL_STYLE, SWP_FRAMECHANGED,
         SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_CAPTION, WS_EX_APPWINDOW,
         WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE,
-        WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+        WM_NCCALCSIZE, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
     };
 
     fn hwnd(frame: &eframe::Frame) -> Option<HWND> {
@@ -34,9 +36,35 @@ mod window {
         Some(HWND(handle.hwnd.get() as *mut std::ffi::c_void))
     }
 
+    static HOOKED: AtomicBool = AtomicBool::new(false);
+
+    /// Intercepta uma única mensagem da janela: a que pergunta "quanto da
+    /// janela é moldura?". A biblioteca de janelas responde reservando 1 pixel
+    /// no topo (para uma sombra que não usamos), e esse pixel aparecia como uma
+    /// linha branca. Aqui respondemos: nada é moldura, a janela inteira é nossa.
+    unsafe extern "system" fn window_hook(
+        hwnd: HWND,
+        message: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+        _id: usize,
+        _data: usize,
+    ) -> LRESULT {
+        if message == WM_NCCALCSIZE && wparam.0 != 0 {
+            return LRESULT(0);
+        }
+        DefSubclassProc(hwnd, message, wparam, lparam)
+    }
+
     pub fn sync(frame: &eframe::Frame, passthrough: bool) {
         let Some(hwnd) = hwnd(frame) else { return };
         unsafe {
+            let mut frame_changed = false;
+            if !HOOKED.swap(true, Ordering::Relaxed) && std::env::var_os("ISLANDBAR_DEBUG_NO_HOOK").is_none() {
+                let _ = SetWindowSubclass(hwnd, Some(window_hook), 1, 0);
+                frame_changed = true;
+            }
+
             // Tudo que é de "janela normal": barra de título, botões de
             // fechar/maximizar/minimizar e borda de redimensionar. A biblioteca
             // de janelas (winit) mantém esses estilos escondidos em toda janela,
@@ -62,6 +90,7 @@ mod window {
                 SetWindowLongPtrW(hwnd, GWL_EXSTYLE, wanted_ex as i32 as isize);
             }
             if style != wanted {
+                frame_changed = true;
                 SetWindowLongPtrW(hwnd, GWL_STYLE, wanted as i32 as isize);
 
                 // Sem a borda e os cantos que o Windows 11 desenha em volta das janelas.
@@ -79,8 +108,10 @@ mod window {
                     &no_border as *const _ as *const std::ffi::c_void,
                     std::mem::size_of_val(&no_border) as u32,
                 );
+            }
 
-                // Avisa o Windows que a moldura mudou.
+            if frame_changed {
+                // Avisa o Windows para recalcular a moldura.
                 let flags = SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE;
                 let _ = SetWindowPos(hwnd, None, 0, 0, 0, 0, flags);
             }
