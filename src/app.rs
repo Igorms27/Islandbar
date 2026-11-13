@@ -276,6 +276,13 @@ impl eframe::App for IslandApp {
         // Fora da ilha, os cliques atravessam a janela e vão para o app de baixo.
         platform::sync_window(frame, !hovered && !pointer_down);
 
+        if std::env::var_os("ISLANDBAR_DEBUG_UI").is_some() {
+            let (pos, events) = ctx.input(|i| (i.pointer.latest_pos(), i.events.len()));
+            if hovered || pointer_down || events > 0 {
+                eprintln!("ui: mode={:?} hovered={hovered} down={pointer_down} pointer={pos:?} events={events}", self.mode);
+            }
+        }
+
         match self.mode {
             Mode::Expanded => {
                 if hovered || pointer_down {

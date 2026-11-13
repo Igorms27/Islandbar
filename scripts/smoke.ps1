@@ -80,6 +80,7 @@ function StartIsland($tag) {
   [W]::SetCursorPos(900, 700) | Out-Null
   $env:ISLANDBAR_DEBUG_SYSMON = "1"
   $env:ISLANDBAR_DEBUG_GAME = "1"
+  $env:ISLANDBAR_DEBUG_UI = "1"
   $app = Start-Process "$exeDir\islandbar.exe" -PassThru -ArgumentList '--autostart' -RedirectStandardError "$out\$tag-stderr.txt"
   Start-Sleep 8
   Log ("$tag app running: " + (-not $app.HasExited) + $(if ($app.HasExited) { " (exit code 0x{0:X8})" -f $app.ExitCode }))
@@ -127,9 +128,12 @@ Click 512 500   # garante que o jogo está em primeiro plano
 Start-Sleep 7
 Log ("fake game running: " + (-not $game.HasExited))
 Shot "game-1-playing"
+"--- click on pill during game ---" | Add-Content "$out\marker.txt"
+$before = (Get-Content "$out\island-stderr.txt").Count
 Click $cx $pillY
 Start-Sleep 2
 Shot "game-2-panel"
+Log ("ui during game click: " + (Get-Content "$out\island-stderr.txt" | Select-Object -Skip $before | Select-String '^ui:' | Select-Object -First 3 -Last 12 | Out-String))
 [W]::SetCursorPos(900, 700) | Out-Null
 Start-Sleep 2
 Log ("game detection: " + (Get-Content "$out\island-stderr.txt" | Select-String '^game:|^fps:' | Select-Object -Last 12 | Out-String))
