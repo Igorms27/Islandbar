@@ -25,8 +25,7 @@ foreach ($c in $candidates) {
   Log "mesa '$($c[0])' $(Split-Path $archive -Leaf): desktop OpenGL = $hasGl"
   if ($hasGl) { 7z x $archive -omesa\x -y | Out-Null; break }
 }
-Copy-Item mesa\x\x64\opengl32.dll, mesa\x\x64\libgallium_wgl.dll $exeDir
-Copy-Item mesa\x\x64\libglapi.dll $exeDir -ErrorAction SilentlyContinue
+Copy-Item mesa\x\x64\*.dll $exeDir
 Log ("dlls next to exe: " + ((Get-ChildItem $exeDir\*.dll).Name -join ", "))
 
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
@@ -95,7 +94,7 @@ function Run($tag) {
   [W]::SetCursorPos(900, 700) | Out-Null
   $app = Start-Process "$exeDir\islandbar.exe" -PassThru -ArgumentList '--autostart' -RedirectStandardError "$out\$tag-stderr.txt"
   Start-Sleep 8
-  Log ("$tag app running: " + (-not $app.HasExited))
+  Log ("$tag app running: " + (-not $app.HasExited) + $(if ($app.HasExited) { " (exit code 0x{0:X8})" -f $app.ExitCode }))
 
   $r = Styles "$tag start"
   Shot "$tag-1-collapsed"
