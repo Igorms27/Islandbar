@@ -172,7 +172,7 @@ foreach ($try in 1..6) {
   Start-Sleep -Milliseconds 1500
   if ($try -eq 1) { Shot "game-2-panel" }
   $lines = Get-Content "$out\island-stderr.txt" | Select-Object -Skip $before
-  if ($lines | Select-String 'mode=Expanded') { $opened++ } else { Log "  try $try: panel did not open" }
+  if ($lines | Select-String 'mode=Expanded') { $opened++ } else { Log "  try ${try}: panel did not open" }
 }
 Log "clicks during game that opened the panel: $opened of 6"
 [W]::SetCursorPos(900, 700) | Out-Null
