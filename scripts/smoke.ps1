@@ -162,19 +162,19 @@ Click 512 500   # garante que o jogo está em primeiro plano
 Start-Sleep 7
 Log ("fake game running: " + (-not $game.HasExited))
 Shot "game-1-playing"
-# Esta máquina desenha tudo por software e fica lenta com o jogo aberto:
-# dá um tempo para a ilha perceber o mouse antes de clicar.
-[W]::SetCursorPos($cx, $pillY) | Out-Null
-Start-Sleep -Milliseconds 1500
-Shot "game-1b-hover"
-Styles "game hover" | Out-Null
-Probe "game hover" $cx $pillY
-$before = (Get-Content "$out\island-stderr.txt").Count
-Click $cx $pillY
-Start-Sleep 2
-Shot "game-2-panel"
-Styles "game clicked" | Out-Null
-Log ("ui around the click: " + (Get-Content "$out\island-stderr.txt" | Select-Object -Skip ([Math]::Max(0, $before - 40)) | Select-String '^ui:' | Select-Object -Last 14 | Out-String))
+# Clica na ilha várias vezes durante o jogo: o painel tem que abrir em todas.
+$opened = 0
+foreach ($try in 1..6) {
+  [W]::SetCursorPos(900, 700) | Out-Null
+  Start-Sleep -Milliseconds 1500
+  $before = (Get-Content "$out\island-stderr.txt").Count
+  Click $cx $pillY
+  Start-Sleep -Milliseconds 1500
+  if ($try -eq 1) { Shot "game-2-panel" }
+  $lines = Get-Content "$out\island-stderr.txt" | Select-Object -Skip $before
+  if ($lines | Select-String 'mode=Expanded') { $opened++ } else { Log "  try $try: panel did not open" }
+}
+Log "clicks during game that opened the panel: $opened of 6"
 [W]::SetCursorPos(900, 700) | Out-Null
 Start-Sleep 2
 Log ("game detection: " + (Get-Content "$out\island-stderr.txt" | Select-String '^game:|^fps:' | Select-Object -Last 4 | Out-String))

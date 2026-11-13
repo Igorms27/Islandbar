@@ -23,12 +23,15 @@ pub fn debug_cursor() -> Option<(i32, i32)> {
 }
 
 /// Faz o Windows reenviar a posição do mouse para a janela que está embaixo
-/// dele, sem mover o cursor de lugar.
+/// dele. Move o cursor 1 pixel e volta: recolocar no mesmo ponto nem sempre
+/// conta como movimento para o Windows.
 pub fn nudge_cursor() {
     #[cfg(windows)]
     if let Some((x, y)) = cursor_pos() {
+        use windows::Win32::UI::WindowsAndMessaging::SetCursorPos;
         unsafe {
-            let _ = windows::Win32::UI::WindowsAndMessaging::SetCursorPos(x, y);
+            let _ = SetCursorPos(x + 1, y);
+            let _ = SetCursorPos(x, y);
         }
     }
 }
