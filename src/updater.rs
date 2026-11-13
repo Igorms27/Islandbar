@@ -40,7 +40,10 @@ pub fn start() {
                 }
                 Ok(false) => std::thread::sleep(CHECK_EVERY),
                 // Sem internet, por exemplo: tenta de novo daqui a pouco.
-                Err(_) => std::thread::sleep(RETRY_AFTER),
+                Err(err) => {
+                    eprintln!("islandbar: falha ao atualizar: {err}");
+                    std::thread::sleep(RETRY_AFTER);
+                }
             }
         }
     });
@@ -60,9 +63,14 @@ pub fn restart() {
 
 /// Cliente HTTP usando a criptografia (TLS) do próprio sistema operacional.
 fn http() -> ureq::Agent {
-    use ureq::tls::{TlsConfig, TlsProvider};
+    use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
     ureq::Agent::config_builder()
-        .tls_config(TlsConfig::builder().provider(TlsProvider::NativeTls).build())
+        .tls_config(
+            TlsConfig::builder()
+                .provider(TlsProvider::NativeTls)
+                .root_certs(RootCerts::PlatformVerifier)
+                .build(),
+        )
         .timeout_global(Some(Duration::from_secs(120)))
         .build()
         .new_agent()
