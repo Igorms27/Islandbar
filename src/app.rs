@@ -99,6 +99,8 @@ pub struct IslandApp {
     restarting: bool,
     /// Espera mínima entre dois "empurrões" do cursor (veja `ui`).
     nudge_cooldown: f32,
+    debug_ui: bool,
+    debug_last: String,
 }
 
 impl IslandApp {
@@ -137,6 +139,8 @@ impl IslandApp {
             notice_timer: if updated { 6.0 } else { 0.0 },
             restarting: false,
             nudge_cooldown: 0.0,
+            debug_ui: std::env::var_os("ISLANDBAR_DEBUG_UI").is_some(),
+            debug_last: String::new(),
         }
     }
 
@@ -289,6 +293,16 @@ impl eframe::App for IslandApp {
             if !known {
                 platform::nudge_cursor();
                 self.nudge_cooldown = 0.08;
+            }
+        }
+
+        // Diagnóstico (ISLANDBAR_DEBUG_UI=1): registra quando o estado do mouse muda.
+        if self.debug_ui {
+            let (pos, events) = ctx.input(|i| (i.pointer.latest_pos(), i.events.len()));
+            let state = format!("mode={:?} hovered={hovered} down={pointer_down} pointer={pos:?}", self.mode);
+            if state != self.debug_last || events > 0 {
+                eprintln!("ui: {state} events={events}");
+                self.debug_last = state;
             }
         }
 

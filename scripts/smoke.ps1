@@ -80,6 +80,7 @@ function StartIsland($tag) {
   [W]::SetCursorPos(900, 700) | Out-Null
   $env:ISLANDBAR_DEBUG_SYSMON = "1"
   $env:ISLANDBAR_DEBUG_GAME = "1"
+  $env:ISLANDBAR_DEBUG_UI = "1"
   $app = Start-Process "$exeDir\islandbar.exe" -PassThru -ArgumentList '--autostart' -RedirectStandardError "$out\$tag-stderr.txt"
   Start-Sleep 8
   Log ("$tag app running: " + (-not $app.HasExited) + $(if ($app.HasExited) { " (exit code 0x{0:X8})" -f $app.ExitCode }))
@@ -132,9 +133,13 @@ Shot "game-1-playing"
 [W]::SetCursorPos($cx, $pillY) | Out-Null
 Start-Sleep -Milliseconds 1500
 Shot "game-1b-hover"
+Styles "game hover" | Out-Null
+$before = (Get-Content "$out\island-stderr.txt").Count
 Click $cx $pillY
 Start-Sleep 2
 Shot "game-2-panel"
+Styles "game clicked" | Out-Null
+Log ("ui around the click: " + (Get-Content "$out\island-stderr.txt" | Select-Object -Skip ([Math]::Max(0, $before - 40)) | Select-String '^ui:' | Select-Object -Last 25 | Out-String))
 [W]::SetCursorPos(900, 700) | Out-Null
 Start-Sleep 2
 Log ("game detection: " + (Get-Content "$out\island-stderr.txt" | Select-String '^game:|^fps:' | Select-Object -Last 4 | Out-String))
