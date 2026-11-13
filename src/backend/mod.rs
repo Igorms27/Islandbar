@@ -9,6 +9,10 @@ use std::sync::{Arc, Mutex};
 #[cfg(not(windows))]
 mod mock;
 #[cfg(windows)]
+mod fps;
+#[cfg(windows)]
+mod game;
+#[cfg(windows)]
 mod sysmon;
 #[cfg(windows)]
 mod windows;
@@ -69,9 +73,32 @@ impl System {
     }
 }
 
+/// Jogo em tela cheia que está em primeiro plano.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Game {
+    pub name: String,
+    /// Quadros por segundo. `None` quando não dá para medir.
+    pub fps: Option<f32>,
+}
+
+/// O Windows só deixa medir o FPS de outros programas com uma permissão
+/// (a mesma que a Xbox Game Bar pede).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(not(windows), allow(dead_code))]
+pub enum FpsAccess {
+    #[default]
+    Granted,
+    /// Falta a permissão.
+    Denied,
+    /// A permissão foi pedida; só vale depois de sair e entrar no Windows.
+    Requested,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Snapshot {
     pub system: System,
+    pub game: Option<Game>,
+    pub fps_access: FpsAccess,
     pub master: f32,
     pub master_muted: bool,
     pub master_peak: f32,
@@ -88,6 +115,8 @@ pub enum Command {
     PlayPause,
     Next,
     Prev,
+    /// Pede ao Windows a permissão para medir FPS.
+    EnableFps,
 }
 
 pub type Shared = Arc<Mutex<Snapshot>>;
@@ -116,6 +145,13 @@ impl Backend {
     pub fn send(&self, cmd: Command) {
         let _ = self.tx.send(cmd);
     }
+}
+
+/// Desfaz o que não some sozinho quando o programa fecha.
+pub fn shutdown() {
+    // A sessão de medição de FPS continuaria aberta no Windows.
+    #[cfg(windows)]
+    fps::stop_session();
 }
 
 fn run(state: Shared, rx: Receiver<Command>) {

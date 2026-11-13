@@ -14,6 +14,23 @@ pub fn cursor_pos() -> Option<(i32, i32)> {
     Some((point.x, point.y))
 }
 
+/// Desloca o cursor `step` pixels na horizontal.
+///
+/// Serve para o Windows reenviar a posição do mouse à janela que está embaixo
+/// dele. Precisa ser um deslocamento de verdade: a biblioteca de janelas
+/// ignora um aviso de movimento com a mesma posição do anterior, mesmo que o
+/// mouse tenha saído e voltado nesse meio tempo.
+pub fn nudge_cursor(step: i32) {
+    #[cfg(windows)]
+    if let Some((x, y)) = cursor_pos() {
+        unsafe {
+            let _ = windows::Win32::UI::WindowsAndMessaging::SetCursorPos(x + step, y);
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = step;
+}
+
 #[cfg(windows)]
 mod window {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -77,13 +94,15 @@ mod window {
 
             // TOOLWINDOW: não aparece no Alt+Tab. NOACTIVATE: clicar na ilha
             // não tira o foco do programa que você está usando.
-            // TRANSPARENT + LAYERED: os cliques atravessam a janela.
-            let click_bits = (WS_EX_TRANSPARENT | WS_EX_LAYERED).0;
+            // LAYERED fica sempre ligado; com ele, é o TRANSPARENT que decide
+            // se os cliques atravessam a janela. Ligar e desligar o LAYERED a
+            // cada passada do mouse obrigava o Windows a recriar a janela por
+            // dentro, e às vezes ela parava de receber o mouse.
             let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
-            let mut wanted_ex = (ex_style & !(click_bits | WS_EX_WINDOWEDGE.0 | WS_EX_APPWINDOW.0))
-                | (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE).0;
+            let mut wanted_ex = (ex_style & !(WS_EX_TRANSPARENT.0 | WS_EX_WINDOWEDGE.0 | WS_EX_APPWINDOW.0))
+                | (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED).0;
             if passthrough {
-                wanted_ex |= click_bits;
+                wanted_ex |= WS_EX_TRANSPARENT.0;
             }
 
             if ex_style != wanted_ex {

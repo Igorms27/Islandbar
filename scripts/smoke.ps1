@@ -76,42 +76,95 @@ $bg = Start-Process powershell -PassThru -ArgumentList '-NoProfile', '-Execution
 Start-Sleep 4
 Shot "0-background"
 
-# Roda a ilha e fotografa cada etapa.
-function Run($tag) {
+function StartIsland($tag) {
   [W]::SetCursorPos(900, 700) | Out-Null
   $env:ISLANDBAR_DEBUG_SYSMON = "1"
+  $env:ISLANDBAR_DEBUG_GAME = "1"
+  $env:ISLANDBAR_DEBUG_UI = "1"
   $app = Start-Process "$exeDir\islandbar.exe" -PassThru -ArgumentList '--autostart' -RedirectStandardError "$out\$tag-stderr.txt"
   Start-Sleep 8
   Log ("$tag app running: " + (-not $app.HasExited) + $(if ($app.HasExited) { " (exit code 0x{0:X8})" -f $app.ExitCode }))
-
-  $r = Styles "$tag start"
-  Shot "$tag-1-collapsed"
-
-  $cx = [int](($r.L + $r.R) / 2)
-  [W]::SetCursorPos($cx, $r.T + 27) | Out-Null
-  Start-Sleep -Milliseconds 700
-  Shot "$tag-2-hover"
-  Click $cx ($r.T + 27)
-  Start-Sleep -Milliseconds 200
-  Shot "$tag-3-opening"
-  Start-Sleep -Milliseconds 1800
-  Shot "$tag-4-expanded"
-  Styles "$tag expanded" | Out-Null
-
-  # Clica fora (o fundo ganha o foco): era aqui que aparecia a barra de título.
-  Click 80 600
-  Start-Sleep -Milliseconds 120
-  Shot "$tag-5-clicked-away"
-  Start-Sleep -Milliseconds 1800
-  Shot "$tag-6-collapsed-again"
-  Styles "$tag end" | Out-Null
-
+  $app
+}
+function StopIsland($tag, $app) {
   Stop-Process -Id $app.Id -ErrorAction SilentlyContinue
   Start-Sleep 1
-  Log ("$tag system monitor: " + (Get-Content "$out\$tag-stderr.txt" -ErrorAction SilentlyContinue | Select-String 'System' | Select-Object -Last 2 | Out-String))
+  Log ("$tag last readings: " + (Get-Content "$out\$tag-stderr.txt" -ErrorAction SilentlyContinue | Select-String 'System' | Select-Object -Last 2 | Out-String))
 }
 
-Run "island"
+# ---- Rodada 1: pílula, painel, clicar fora --------------------------------
+$app = StartIsland "island"
+$r = Styles "island start"
+Shot "island-1-collapsed"
 
+$cx = [int](($r.L + $r.R) / 2)
+$pillY = $r.T + 27
+[W]::SetCursorPos($cx, $pillY) | Out-Null
+Start-Sleep -Milliseconds 700
+Shot "island-2-hover"
+Click $cx $pillY
+Start-Sleep -Milliseconds 200
+Shot "island-3-opening"
+Start-Sleep -Milliseconds 1800
+Shot "island-4-expanded"
+Styles "island expanded" | Out-Null
+
+# Clica fora (o fundo ganha o foco): era aqui que aparecia a barra de título.
+Click 80 600
+Start-Sleep -Milliseconds 120
+Shot "island-5-clicked-away"
+Start-Sleep -Milliseconds 1800
+Shot "island-6-collapsed-again"
+Styles "island end" | Out-Null
+
+# ---- Rodada 2: modo jogo ---------------------------------------------------
+# Um "jogo falso" em tela cheia (examples/fake_game.rs) entrega quadros pelo
+# DirectX; a ilha deve abrir a pílula do modo jogo com o FPS.
 Stop-Process -Id $bg.Id -ErrorAction SilentlyContinue
+Start-Sleep 1
+$game = Start-Process "$exeDir\examples\fake_game.exe" -PassThru -RedirectStandardError "$out\game-stderr.txt"
+Start-Sleep 2
+Click 512 500   # garante que o jogo está em primeiro plano
+Start-Sleep 7
+Log ("fake game running: " + (-not $game.HasExited))
+Shot "game-1-playing"
+# Clica na ilha várias vezes durante o jogo: o painel tem que abrir em todas.
+$opened = 0
+foreach ($try in 1..4) {
+  [W]::SetCursorPos(900, 700) | Out-Null
+  Start-Sleep -Milliseconds 1500
+  $before = (Get-Content "$out\island-stderr.txt").Count
+  Click $cx $pillY
+  Start-Sleep -Milliseconds 1500
+  if ($try -eq 1) { Shot "game-2-panel" }
+  $lines = Get-Content "$out\island-stderr.txt" | Select-Object -Skip $before
+  if ($lines | Select-String 'mode=Expanded') { $opened++ } else { Log "  try ${try}: panel did not open" }
+}
+Log "clicks during game that opened the panel: $opened of 4"
+[W]::SetCursorPos(900, 700) | Out-Null
+Start-Sleep 2
+Log ("game detection: " + (Get-Content "$out\island-stderr.txt" | Select-String '^game:|^fps:' | Select-Object -Last 4 | Out-String))
+Stop-Process -Id $game.Id -ErrorAction SilentlyContinue
+Start-Sleep 4
+Shot "game-3-after"
+StopIsland "island" $app
+Log ("fake game stderr: " + (Get-Content "$out\game-stderr.txt" -ErrorAction SilentlyContinue | Out-String))
+
+# ---- Rodada 3: pedir a permissão de FPS ------------------------------------
+# Finge que falta a permissão, clica em "Ativar" e confere se o usuário entrou
+# no grupo "Usuários de log de desempenho" (S-1-5-32-559).
+Log ("group before: " + ((Get-LocalGroupMember -SID 'S-1-5-32-559' -ErrorAction SilentlyContinue).Name -join ", "))
+$env:ISLANDBAR_DEBUG_FPS_DENIED = "1"
+$app = StartIsland "denied"
+Remove-Item Env:ISLANDBAR_DEBUG_FPS_DENIED
+Click $cx $pillY
+Start-Sleep 2
+Shot "denied-1-panel"
+# Botão "Ativar": à direita, na linha logo abaixo dos mostradores.
+Click ($cx + 156) ($r.T + 262)
+Start-Sleep 5
+Shot "denied-2-requested"
+Log ("group after: " + ((Get-LocalGroupMember -SID 'S-1-5-32-559' -ErrorAction SilentlyContinue).Name -join ", "))
+StopIsland "denied" $app
+
 exit 0
