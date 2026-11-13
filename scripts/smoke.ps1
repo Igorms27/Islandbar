@@ -26,6 +26,14 @@ public static class W {
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
   [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out RECT r);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
+  [DllImport("user32.dll")] public static extern IntPtr GetTopWindow(IntPtr h);
+  [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr h, uint cmd);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassNameW(IntPtr h, System.Text.StringBuilder s, int n);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowTextW(IntPtr h, System.Text.StringBuilder s, int n);
+  public struct POINT { public int X, Y; }
   public struct RECT { public int L, T, R, B; }
 }
 "@
@@ -48,6 +56,31 @@ function Styles($label) {
   $ex = [int64][W]::GetWindowLongPtrW($h, -20) -band 0xFFFFFFFFL
   Log ("{0}: hwnd={1} style=0x{2:X8} exstyle=0x{3:X8} rect={4},{5},{6},{7} client={8}x{9} foreground={10}" -f $label, $h, $style, $ex, $r.L, $r.T, $r.R, $r.B, $c.R, $c.B, [W]::GetForegroundWindow())
   $r
+}
+# Descreve uma janela: classe, título, programa, estilo e posição.
+function Describe($h) {
+  $class = New-Object System.Text.StringBuilder 128
+  $title = New-Object System.Text.StringBuilder 128
+  [W]::GetClassNameW($h, $class, 128) | Out-Null
+  [W]::GetWindowTextW($h, $title, 128) | Out-Null
+  $processId = 0
+  [W]::GetWindowThreadProcessId($h, [ref]$processId) | Out-Null
+  $name = (Get-Process -Id $processId -ErrorAction SilentlyContinue).ProcessName
+  $r = New-Object W+RECT
+  [W]::GetWindowRect($h, [ref]$r) | Out-Null
+  $ex = [int64][W]::GetWindowLongPtrW($h, -20) -band 0xFFFFFFFFL
+  "hwnd={0} class='{1}' title='{2}' proc={3} ex=0x{4:X8} rect={5},{6},{7},{8}" -f $h, $class, $title, $name, $ex, $r.L, $r.T, $r.R, $r.B
+}
+# O que o Windows vê embaixo de um ponto e as janelas visíveis do topo da pilha.
+function Probe($label, $x, $y) {
+  $p = New-Object W+POINT; $p.X = $x; $p.Y = $y
+  Log ("$label under ($x,$y): " + (Describe ([W]::WindowFromPoint($p))))
+  $h = [W]::GetTopWindow([IntPtr]::Zero)
+  $shown = 0
+  while ($h -ne [IntPtr]::Zero -and $shown -lt 8) {
+    if ([W]::IsWindowVisible($h)) { Log ("  z[$shown] " + (Describe $h)); $shown++ }
+    $h = [W]::GetWindow($h, 2)
+  }
 }
 function Click($x, $y) {
   [W]::SetCursorPos($x, $y) | Out-Null
@@ -102,6 +135,7 @@ $pillY = $r.T + 27
 [W]::SetCursorPos($cx, $pillY) | Out-Null
 Start-Sleep -Milliseconds 700
 Shot "island-2-hover"
+Probe "round1 hover" $cx $pillY
 Click $cx $pillY
 Start-Sleep -Milliseconds 200
 Shot "island-3-opening"
@@ -134,6 +168,7 @@ Shot "game-1-playing"
 Start-Sleep -Milliseconds 1500
 Shot "game-1b-hover"
 Styles "game hover" | Out-Null
+Probe "game hover" $cx $pillY
 $before = (Get-Content "$out\island-stderr.txt").Count
 Click $cx $pillY
 Start-Sleep 2
