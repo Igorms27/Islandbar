@@ -7,10 +7,12 @@ $exeDir = Resolve-Path "target\release"
 function Log($text) { $text | Tee-Object -Append "$out\log.txt" }
 
 # A máquina do GitHub não tem placa de vídeo: usa o OpenGL por software (Mesa).
-gh release download --repo pal1000/mesa-dist-win --pattern "mesa3d-*-release-msvc.7z" --dir mesa
+Log (gh release download --repo pal1000/mesa-dist-win --pattern "mesa3d-*-release-msvc.7z" --dir mesa 2>&1 | Out-String)
+Log ("mesa download: " + ((Get-ChildItem mesa -ErrorAction SilentlyContinue | ForEach-Object { "$($_.Name) ($($_.Length))" }) -join ", "))
 7z x (Get-ChildItem mesa\*.7z).FullName -omesa\x -y | Out-Null
-Copy-Item mesa\x\x64\opengl32.dll, mesa\x\x64\libgallium_wgl.dll $exeDir
-Copy-Item mesa\x\x64\libglapi.dll $exeDir -ErrorAction SilentlyContinue
+Log ("mesa folders: " + ((Get-ChildItem mesa\x -ErrorAction SilentlyContinue).Name -join ", "))
+Copy-Item mesa\x\x64\*.dll $exeDir
+Log ("dlls next to exe: " + ((Get-ChildItem $exeDir\*.dll).Name -join ", "))
 
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 Add-Type @"
@@ -57,8 +59,19 @@ function Click($x, $y) {
 Log ("screen: " + [Windows.Forms.Screen]::PrimaryScreen.Bounds)
 
 # Fundo bem colorido, para qualquer véu/retângulo da janela aparecer.
-$bgCode = 'Add-Type -AssemblyName System.Windows.Forms, System.Drawing; $f = New-Object Windows.Forms.Form; $f.BackColor = [Drawing.Color]::FromArgb(255,170,40); $f.FormBorderStyle = "None"; $f.WindowState = "Maximized"; $f.Text = "bg"; [Windows.Forms.Application]::Run($f)'
-$bg = Start-Process powershell -PassThru -ArgumentList '-NoProfile', '-Command', $bgCode
+(New-Object -ComObject Shell.Application).MinimizeAll()
+Start-Sleep 1
+@'
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+$f = New-Object Windows.Forms.Form
+$f.BackColor = [Drawing.Color]::FromArgb(255, 170, 40)
+$f.FormBorderStyle = "None"
+$f.WindowState = "Maximized"
+$f.Text = "bg"
+$f.Add_Shown({ $f.Activate() })
+[Windows.Forms.Application]::Run($f)
+'@ | Set-Content "$out\bg.ps1"
+$bg = Start-Process powershell -PassThru -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "$out\bg.ps1"
 Start-Sleep 4
 Shot "0-background"
 
