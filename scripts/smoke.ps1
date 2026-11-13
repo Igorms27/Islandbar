@@ -127,6 +127,11 @@ Click 512 500   # garante que o jogo está em primeiro plano
 Start-Sleep 7
 Log ("fake game running: " + (-not $game.HasExited))
 Shot "game-1-playing"
+# Esta máquina desenha tudo por software e fica lenta com o jogo aberto:
+# dá um tempo para a ilha perceber o mouse antes de clicar.
+[W]::SetCursorPos($cx, $pillY) | Out-Null
+Start-Sleep -Milliseconds 1500
+Shot "game-1b-hover"
 Click $cx $pillY
 Start-Sleep 2
 Shot "game-2-panel"
