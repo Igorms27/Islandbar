@@ -9,11 +9,10 @@ function Log($text) { $text | Tee-Object -Append "$out\log.txt" }
 # A máquina do GitHub não tem placa de vídeo: usa o OpenGL por software (Mesa).
 Log (gh release download --repo pal1000/mesa-dist-win --pattern "mesa3d-*-release-msvc.7z" --dir mesa 2>&1 | Out-String)
 Log ("mesa download: " + ((Get-ChildItem mesa -ErrorAction SilentlyContinue | ForEach-Object { "$($_.Name) ($($_.Length))" }) -join ", "))
-7z x (Get-ChildItem mesa\*.7z).FullName -omesa\x -y | Out-Null
+$archive = (Get-ChildItem mesa\*.7z).FullName
+Log ("archive entries: " + (7z l $archive | Select-String 'opengl32|gallium|x64\\' | Select-Object -First 40 | Out-String))
+Log ("extract: " + (7z x $archive -omesa\x -y 2>&1 | Select-Object -Last 12 | Out-String))
 Log ("mesa folders: " + ((Get-ChildItem mesa\x -ErrorAction SilentlyContinue).Name -join ", "))
-Log ("mesa assets: " + (gh release view --repo pal1000/mesa-dist-win --json assets -q '.assets[].name' 2>&1 | Out-String))
-Log ("mesa x64 files: " + ((Get-ChildItem mesa\x\x64 -Recurse -File | ForEach-Object { $_.FullName.Substring((Resolve-Path mesa\x).Path.Length) }) -join ", "))
-Log ("perappdeploy: " + (Get-Content mesa\x\perappdeploy.cmd -ErrorAction SilentlyContinue | Select-String -Pattern 'copy|mklink|opengl' | Select-Object -First 25 | Out-String))
 $gl = Get-ChildItem mesa\x -Recurse -Filter opengl32.dll | Where-Object { $_.FullName -match 'x64' }
 Log ("opengl32.dll found at: " + (($gl.FullName | Resolve-Path -Relative) -join ", "))
 Copy-Item (Join-Path $gl[0].DirectoryName '*.dll') $exeDir
