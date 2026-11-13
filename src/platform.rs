@@ -14,26 +14,21 @@ pub fn cursor_pos() -> Option<(i32, i32)> {
     Some((point.x, point.y))
 }
 
-/// Posição do cursor, para as mensagens de diagnóstico.
-pub fn debug_cursor() -> Option<(i32, i32)> {
-    #[cfg(windows)]
-    return cursor_pos();
-    #[cfg(not(windows))]
-    None
-}
-
-/// Faz o Windows reenviar a posição do mouse para a janela que está embaixo
-/// dele. Move o cursor 1 pixel e volta: recolocar no mesmo ponto nem sempre
-/// conta como movimento para o Windows.
-pub fn nudge_cursor() {
+/// Desloca o cursor `step` pixels na horizontal.
+///
+/// Serve para o Windows reenviar a posição do mouse à janela que está embaixo
+/// dele. Precisa ser um deslocamento de verdade: a biblioteca de janelas
+/// ignora um aviso de movimento com a mesma posição do anterior, mesmo que o
+/// mouse tenha saído e voltado nesse meio tempo.
+pub fn nudge_cursor(step: i32) {
     #[cfg(windows)]
     if let Some((x, y)) = cursor_pos() {
-        use windows::Win32::UI::WindowsAndMessaging::SetCursorPos;
         unsafe {
-            let _ = SetCursorPos(x + 1, y);
-            let _ = SetCursorPos(x, y);
+            let _ = windows::Win32::UI::WindowsAndMessaging::SetCursorPos(x + step, y);
         }
     }
+    #[cfg(not(windows))]
+    let _ = step;
 }
 
 #[cfg(windows)]

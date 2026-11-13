@@ -97,8 +97,10 @@ pub struct IslandApp {
     /// Segundos restantes do aviso "Atualizado" na pílula.
     notice_timer: f32,
     restarting: bool,
-    /// Espera mínima entre dois "empurrões" do cursor (veja `ui`).
+    /// Espera mínima entre dois deslocamentos do cursor (veja `ui`).
     nudge_cooldown: f32,
+    /// Próximo deslocamento, em pixels: alterna entre +1 e -1.
+    nudge_step: i32,
     debug_ui: bool,
     debug_last: String,
 }
@@ -139,6 +141,7 @@ impl IslandApp {
             notice_timer: if updated { 6.0 } else { 0.0 },
             restarting: false,
             nudge_cooldown: 0.0,
+            nudge_step: 1,
             debug_ui: std::env::var_os("ISLANDBAR_DEBUG_UI").is_some(),
             debug_last: String::new(),
         }
@@ -285,30 +288,25 @@ impl eframe::App for IslandApp {
 
         // Enquanto os cliques atravessam a janela, ela não recebe a posição do
         // mouse. Se o cursor já está sobre a ilha mas a interface ainda não
-        // sabe disso, "recoloca" o cursor no lugar: o Windows então avisa a
-        // janela, e um clique dado sem mexer mais o mouse funciona.
+        // sabe onde ele está, um clique seria ignorado. Então deslocamos o
+        // cursor 1 pixel (alternando o lado, para ele não sair do lugar): o
+        // Windows avisa a janela da posição nova e o clique passa a valer.
         self.nudge_cooldown = (self.nudge_cooldown - dt).max(0.0);
-        if cfg!(windows) && hovered && self.nudge_cooldown == 0.0 {
-            let known = ctx.pointer_latest_pos().is_some_and(|p| island.expand(8.0).contains(p));
-            if !known {
-                platform::nudge_cursor();
-                self.nudge_cooldown = 0.08;
-            }
+        let pointer_known = ctx.pointer_latest_pos().is_some_and(|p| island.expand(8.0).contains(p));
+        if cfg!(windows) && hovered && !pointer_known && self.nudge_cooldown == 0.0 {
+            self.nudge_step = -self.nudge_step;
+            platform::nudge_cursor(self.nudge_step);
+            self.nudge_cooldown = 0.08;
         }
 
         // Diagnóstico (ISLANDBAR_DEBUG_UI=1): registra quando o estado do mouse muda.
         if self.debug_ui {
-            let (pos, events) = ctx.input(|i| (i.pointer.latest_pos(), i.events.len()));
-            let inner = ctx.input(|i| i.viewport().inner_rect);
             let state = format!(
-                "mode={:?} hovered={hovered} down={pointer_down} pointer={pos:?} cursor={:?} inner={:?} island={island:?} scale={}",
-                self.mode,
-                platform::debug_cursor(),
-                inner.map(|r| (r.min, r.max)),
-                ctx.pixels_per_point()
+                "mode={:?} hovered={hovered} down={pointer_down} pointer_known={pointer_known}",
+                self.mode
             );
-            if state != self.debug_last || events > 0 {
-                eprintln!("ui: {state} events={events}");
+            if state != self.debug_last {
+                eprintln!("ui: {state}");
                 self.debug_last = state;
             }
         }
