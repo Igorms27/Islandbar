@@ -18,13 +18,13 @@ pub fn cursor_pos() -> Option<(i32, i32)> {
 mod window {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     use std::sync::atomic::{AtomicBool, Ordering};
-    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
     use windows::Win32::Graphics::Dwm::{
         DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
     };
     use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, GWL_STYLE, SWP_FRAMECHANGED,
+        GetCursorPos, SetCursorPos, GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, GWL_STYLE, SWP_FRAMECHANGED,
         SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_CAPTION, WS_EX_APPWINDOW,
         WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE,
         WM_NCCALCSIZE, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
@@ -37,6 +37,8 @@ mod window {
     }
 
     static HOOKED: AtomicBool = AtomicBool::new(false);
+    /// Último estado do "atravessar cliques" aplicado.
+    static PASSTHROUGH: AtomicBool = AtomicBool::new(false);
 
     /// Intercepta uma única mensagem da janela: a que pergunta "quanto da
     /// janela é moldura?". A biblioteca de janelas responde reservando 1 pixel
@@ -88,6 +90,17 @@ mod window {
 
             if ex_style != wanted_ex {
                 SetWindowLongPtrW(hwnd, GWL_EXSTYLE, wanted_ex as i32 as isize);
+            }
+
+            // Enquanto os cliques atravessavam a janela, ela não recebia a
+            // posição do mouse. Ao voltar a aceitar cliques, "recoloca" o
+            // cursor onde ele já está: o Windows então avisa a janela da
+            // posição, e um clique dado sem mexer mais o mouse funciona.
+            if PASSTHROUGH.swap(passthrough, Ordering::Relaxed) && !passthrough {
+                let mut point = POINT::default();
+                if GetCursorPos(&mut point).is_ok() {
+                    let _ = SetCursorPos(point.x, point.y);
+                }
             }
             if style != wanted {
                 frame_changed = true;
