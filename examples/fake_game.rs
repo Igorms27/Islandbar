@@ -5,6 +5,9 @@
 //! Windows do GitHub se a ilha entra no modo jogo e mede o FPS. Fecha sozinho
 //! depois de alguns segundos.
 
+// Sem janela de console, como um jogo de verdade.
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 #[cfg(not(windows))]
 fn main() {}
 

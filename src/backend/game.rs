@@ -125,12 +125,13 @@ impl GameWatcher {
         let looks_like_game = fullscreen.exclusive || gpu >= GAME_GPU || fps.is_some_and(|f| f >= GAME_FPS);
         if self.debug {
             let seen = fps::EVENTS_SEEN.swap(0, std::sync::atomic::Ordering::Relaxed);
-            let mut busiest: Vec<_> = presents.iter().flatten().map(|(pid, p)| (p.frames(), *pid)).collect();
+            let mut busiest: Vec<_> = presents.iter().flatten().map(|(pid, p)| (p.frames(), exe_stem(*pid))).collect();
             busiest.sort_unstable_by(|a, b| b.cmp(a));
             busiest.truncate(4);
             eprintln!(
-                "game: fullscreen pid={} exclusive={} gpu={gpu:.2} fps={fps:?} -> {looks_like_game} | tracer={} events={seen} (frames, pid)={busiest:?}",
+                "game: fullscreen pid={} ({}) exclusive={} gpu={gpu:.2} fps={fps:?} -> {looks_like_game} | tracer={} events={seen} frames={busiest:?}",
                 fullscreen.pid,
+                exe_stem(fullscreen.pid),
                 fullscreen.exclusive,
                 self.tracer.is_some()
             );
