@@ -34,6 +34,9 @@ public static class W {
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassNameW(IntPtr h, System.Text.StringBuilder s, int n);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowTextW(IntPtr h, System.Text.StringBuilder s, int n);
   public struct POINT { public int X, Y; }
+  [StructLayout(LayoutKind.Sequential)] public struct GUITHREADINFO { public int cbSize; public int flags; public IntPtr hwndActive, hwndFocus, hwndCapture, hwndMenuOwner, hwndMoveSize, hwndCaret; public RECT rcCaret; }
+  [DllImport("user32.dll")] public static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO g);
+  [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);
   public struct RECT { public int L, T, R, B; }
 }
 "@
@@ -75,9 +78,15 @@ function Describe($h) {
 function Probe($label, $x, $y) {
   $p = New-Object W+POINT; $p.X = $x; $p.Y = $y
   Log ("$label under ($x,$y): " + (Describe ([W]::WindowFromPoint($p))))
+  $g = New-Object W+GUITHREADINFO
+  $g.cbSize = [Runtime.InteropServices.Marshal]::SizeOf($g)
+  [W]::GetGUIThreadInfo(0, [ref]$g) | Out-Null
+  $c = New-Object W+POINT
+  [W]::GetCursorPos([ref]$c) | Out-Null
+  Log ("  foreground thread: flags=0x{0:X} active={1} focus={2} capture={3} movesize={4} cursor={5},{6}" -f $g.flags, $g.hwndActive, $g.hwndFocus, $g.hwndCapture, $g.hwndMoveSize, $c.X, $c.Y)
   $h = [W]::GetTopWindow([IntPtr]::Zero)
   $shown = 0
-  while ($h -ne [IntPtr]::Zero -and $shown -lt 8) {
+  while ($h -ne [IntPtr]::Zero -and $shown -lt 4) {
     if ([W]::IsWindowVisible($h)) { Log ("  z[$shown] " + (Describe $h)); $shown++ }
     $h = [W]::GetWindow($h, 2)
   }
@@ -170,7 +179,7 @@ foreach ($try in 1..6) {
   $before = (Get-Content "$out\island-stderr.txt").Count
   Click $cx $pillY
   Start-Sleep -Milliseconds 1500
-  if ($try -eq 1) { Shot "game-2-panel" }
+  if ($try -eq 1) { Shot "game-2-panel"; Probe "game try 1" $cx $pillY }
   $lines = Get-Content "$out\island-stderr.txt" | Select-Object -Skip $before
   if ($lines | Select-String 'mode=Expanded') { $opened++ } else { Log "  try ${try}: panel did not open" }
 }
