@@ -1,6 +1,6 @@
 //! Backend de mentira para desenvolver/testar a interface fora do Windows.
 
-use super::{Command, Media, Session, Shared, Snapshot, System};
+use super::{Command, Media, Session, Shared, Snapshot, System, Temp, TempSource};
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
@@ -65,7 +65,8 @@ pub fn run(state: Shared, rx: Receiver<Command>) {
             cpu: 0.32 + 0.25 * (t * 0.7).sin(),
             ram_used_gb: 9.6 + (t * 0.2).sin(),
             ram_total_gb: 16.0,
-            temp_c: Some(58.0 + 9.0 * (t * 0.4).sin()),
+            gpu: Some(0.45 + 0.3 * (t * 0.5).sin()),
+            temp: Some(Temp { celsius: 58.0 + 9.0 * (t * 0.4).sin(), source: TempSource::System }),
         };
 
         if let Ok(mut shared) = state.lock() {

@@ -79,6 +79,7 @@ Shot "0-background"
 # Roda a ilha e fotografa cada etapa.
 function Run($tag) {
   [W]::SetCursorPos(900, 700) | Out-Null
+  $env:ISLANDBAR_DEBUG_SYSMON = "1"
   $app = Start-Process "$exeDir\islandbar.exe" -PassThru -ArgumentList '--autostart' -RedirectStandardError "$out\$tag-stderr.txt"
   Start-Sleep 8
   Log ("$tag app running: " + (-not $app.HasExited) + $(if ($app.HasExited) { " (exit code 0x{0:X8})" -f $app.ExitCode }))
@@ -107,7 +108,7 @@ function Run($tag) {
 
   Stop-Process -Id $app.Id -ErrorAction SilentlyContinue
   Start-Sleep 1
-  Get-Content "$out\$tag-stderr.txt" -ErrorAction SilentlyContinue | Select-Object -First 20
+  Log ("$tag system monitor: " + (Get-Content "$out\$tag-stderr.txt" -ErrorAction SilentlyContinue | Select-String 'System' | Select-Object -Last 2 | Out-String))
 }
 
 Run "island"

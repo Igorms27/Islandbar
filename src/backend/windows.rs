@@ -60,6 +60,8 @@ pub fn run(state: Shared, rx: Receiver<Command>) {
     let mut last_media: Option<Instant> = None;
     let mut monitor = SystemMonitor::new();
     let mut system = System::default();
+    // Para diagnóstico: escreve as leituras no stderr.
+    let debug_system = std::env::var_os("ISLANDBAR_DEBUG_SYSMON").is_some();
 
     loop {
         let now = Instant::now();
@@ -70,6 +72,9 @@ pub fn run(state: Shared, rx: Receiver<Command>) {
             last_refresh = Some(now);
             audio = unsafe { open_audio(&mut names) }.ok();
             system = monitor.read();
+            if debug_system {
+                eprintln!("{system:?}");
+            }
         }
 
         if last_media.is_none_or(|t| now - t >= MEDIA_EVERY) {

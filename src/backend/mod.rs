@@ -32,6 +32,24 @@ pub struct Media {
     pub playing: bool,
 }
 
+/// De qual sensor veio a temperatura.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(not(windows), allow(dead_code))] // o backend de teste só usa `System`
+pub enum TempSource {
+    /// Zona térmica informada pela placa-mãe (em geral, perto do processador).
+    System,
+    /// Placa de vídeo.
+    Gpu,
+    /// Disco principal (SSD/HD).
+    Disk,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Temp {
+    pub celsius: f32,
+    pub source: TempSource,
+}
+
 /// Uso do computador.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct System {
@@ -39,8 +57,10 @@ pub struct System {
     pub cpu: f32,
     pub ram_used_gb: f32,
     pub ram_total_gb: f32,
-    /// Temperatura em °C. `None` quando o PC não informa ao Windows.
-    pub temp_c: Option<f32>,
+    /// Uso da placa de vídeo, 0..1. `None` quando o Windows não informa.
+    pub gpu: Option<f32>,
+    /// Melhor temperatura disponível. `None` quando o PC não expõe nenhum sensor.
+    pub temp: Option<Temp>,
 }
 
 impl System {

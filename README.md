@@ -11,8 +11,10 @@ visível, e se expande com animações elásticas.
 - **Mídia**: título/artista do que está tocando e botões anterior / play-pause / próxima
   (funciona com Spotify, navegadores e qualquer app que apareça no controle de mídia do Windows).
 - **Aviso de volume**: ao usar as teclas de volume do teclado, a ilha se estica e mostra o nível.
-- **Monitor do sistema**: CPU, RAM e temperatura no painel (e CPU/RAM na pílula quando não há música).
-  A temperatura depende de o PC informar esse dado ao Windows; quando não informa, aparece "n/d".
+- **Monitor do sistema**: CPU, GPU, RAM e temperatura no painel (e CPU/GPU/RAM na pílula quando não há música).
+  O uso da GPU é o mesmo número do Gerenciador de Tarefas. A temperatura usa o melhor sensor que o PC
+  oferece sem instalar driver: zona térmica da placa-mãe, depois placa de vídeo, depois o disco principal
+  (o rótulo indica qual). Se nenhum existir, aparece "n/d".
 - **Iniciar com o Windows**: ao abrir o executável, um cartão pergunta se a ilha deve abrir
   sozinha no login. Para mudar depois, é só abrir o executável de novo.
 - **Atualização automática**: a ilha confere se saiu versão nova no GitHub, baixa, troca o
@@ -46,7 +48,7 @@ Para fechar: abra a ilha e clique em **Sair** no canto inferior direito.
 | `src/anim.rs` | A "mola" que dá o efeito elástico. |
 | `src/backend/windows.rs` | Conversa com o Windows: WASAPI (volume) e controle de mídia. |
 | `src/backend/mock.rs` | Dados de mentira para testar a interface fora do Windows. |
-| `src/backend/sysmon.rs` | CPU, RAM e temperatura. |
+| `src/backend/sysmon.rs` | CPU, GPU, RAM e temperatura. |
 | `src/updater.rs` | Atualização automática. |
 | `scripts/smoke.ps1` | Teste visual: o GitHub abre a ilha num Windows real e guarda screenshots na branch `ci-results`. |
 | `src/platform.rs` | Mouse, recorte da janela e inicialização com o Windows. |

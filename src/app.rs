@@ -8,12 +8,12 @@ use eframe::egui::{
 };
 
 use crate::anim::{meter, smoothstep, Spring};
-use crate::backend::{Backend, Command, Snapshot, System};
+use crate::backend::{Backend, Command, Snapshot, System, TempSource};
 use crate::platform;
 use crate::updater;
 
 /// Tamanho da janela invisível que contém a ilha.
-pub const WINDOW_SIZE: [f32; 2] = [560.0, 540.0];
+pub const WINDOW_SIZE: [f32; 2] = [560.0, 600.0];
 
 const TOP_MARGIN: f32 = 10.0;
 const PILL_HEIGHT: f32 = 34.0;
@@ -22,7 +22,10 @@ const EXPANDED_WIDTH: f32 = 420.0;
 const PADDING: f32 = 18.0;
 const HEADER_HEIGHT: f32 = 52.0;
 const ROW_HEIGHT: f32 = 38.0;
-const STATS_HEIGHT: f32 = 58.0;
+const TILE_HEIGHT: f32 = 46.0;
+const TILE_GAP: f32 = 8.0;
+/// Duas fileiras de mostradores + respiro.
+const STATS_HEIGHT: f32 = 2.0 * TILE_HEIGHT + TILE_GAP + 12.0;
 const FOOTER_HEIGHT: f32 = 30.0;
 const WELCOME_SIZE: Vec2 = vec2(380.0, 166.0);
 const MAX_APPS: usize = 7;
@@ -74,8 +77,8 @@ pub struct IslandApp {
     master_peak: f32,
     app_peaks: HashMap<String, f32>,
     bars: [f32; BARS],
-    /// CPU, RAM e temperatura suavizados (0..1) para os mostradores.
-    gauges: [f32; 3],
+    /// CPU, GPU, RAM e temperatura suavizados (0..1) para os mostradores.
+    gauges: [f32; 4],
 
     /// Enquanto arrasta um slider, mostramos o valor do mouse (sem atraso).
     dragging: Option<(String, f32)>,
@@ -113,7 +116,7 @@ impl IslandApp {
             master_peak: 0.0,
             app_peaks: HashMap::new(),
             bars: [0.0; BARS],
-            gauges: [0.0; 3],
+            gauges: [0.0; 4],
             dragging: None,
             window_pos: None,
             notice_timer: if updated { 6.0 } else { 0.0 },
@@ -152,7 +155,9 @@ impl IslandApp {
         match self.mode {
             Mode::Welcome => WELCOME_SIZE,
             Mode::Collapsed => {
-                vec2(250.0, PILL_HEIGHT) + vec2(14.0, 4.0) * self.hover.target
+                // Sem música a pílula mostra o uso do PC; com GPU precisa de mais espaço.
+                let width = if snap.media.is_none() && snap.system.gpu.is_some() { 300.0 } else { 250.0 };
+                vec2(width, PILL_HEIGHT) + vec2(14.0, 4.0) * self.hover.target
             }
             Mode::Hud => HUD_SIZE,
             Mode::Expanded => {
@@ -172,7 +177,12 @@ impl IslandApp {
         self.app_peaks.retain(|name, _| snap.sessions.iter().any(|s| &s.name == name));
 
         let sys = &snap.system;
-        let targets = [sys.cpu, sys.ram(), sys.temp_c.map_or(0.0, temp_fraction)];
+        let targets = [
+            sys.cpu,
+            sys.gpu.unwrap_or(0.0),
+            sys.ram(),
+            sys.temp.map_or(0.0, |t| temp_fraction(t.celsius)),
+        ];
         for (gauge, target) in self.gauges.iter_mut().zip(targets) {
             *gauge += (target - *gauge) * (1.0 - (-5.0 * dt).exp());
         }
@@ -375,7 +385,15 @@ impl IslandApp {
         } else {
             // Sem música: mostra o uso do PC.
             let sys = &snap.system;
-            let usage = format!("CPU {:.0}%  RAM {:.0}%", sys.cpu * 100.0, sys.ram() * 100.0);
+            let usage = match sys.gpu {
+                Some(gpu) => format!(
+                    "CPU {:.0}%  GPU {:.0}%  RAM {:.0}%",
+                    sys.cpu * 100.0,
+                    gpu * 100.0,
+                    sys.ram() * 100.0
+                ),
+                None => format!("CPU {:.0}%  RAM {:.0}%", sys.cpu * 100.0, sys.ram() * 100.0),
+            };
             let x = left + 32.0;
             text_fit(p, pos2(x, cy), Align2::LEFT_CENTER, &usage, 12.0, fade(TEXT_DIM, alpha), clock_rect.left() - 10.0 - x);
         }
@@ -578,17 +596,27 @@ impl IslandApp {
 }
 
 impl IslandApp {
-    /// Três mostradores lado a lado: CPU, RAM e temperatura.
+    /// Quatro mostradores em grade 2x2: CPU e GPU em cima, RAM e temperatura embaixo.
     fn draw_stats(&self, p: &Painter, origin: Pos2, width: f32, sys: &System, alpha: f32) {
-        let gap = 8.0;
-        let tile = vec2((width - 2.0 * gap) / 3.0, STATS_HEIGHT - 12.0);
+        let tile = vec2((width - TILE_GAP) / 2.0, TILE_HEIGHT);
+        // O rótulo diz de onde a temperatura veio, para ninguém confundir a
+        // do disco com a do processador.
+        let temp_label = match sys.temp.map(|t| t.source) {
+            Some(TempSource::Gpu) => "Temp GPU",
+            Some(TempSource::Disk) => "Temp SSD",
+            Some(TempSource::System) | None => "Temp",
+        };
+        let not_available = || "n/d".to_string();
         let tiles = [
             ("CPU", format!("{:.0}%", sys.cpu * 100.0), true),
-            ("RAM", format!("{:.1}/{:.0} GB", sys.ram_used_gb, sys.ram_total_gb), true),
-            ("Temp", sys.temp_c.map_or("n/d".to_string(), |t| format!("{t:.0}°C")), sys.temp_c.is_some()),
+            ("GPU", sys.gpu.map_or_else(not_available, |g| format!("{:.0}%", g * 100.0)), sys.gpu.is_some()),
+            ("RAM", format!("{:.1} / {:.0} GB", sys.ram_used_gb, sys.ram_total_gb), true),
+            (temp_label, sys.temp.map_or_else(not_available, |t| format!("{:.0}°C", t.celsius)), sys.temp.is_some()),
         ];
         for (i, (label, value, available)) in tiles.into_iter().enumerate() {
-            let rect = Rect::from_min_size(origin + vec2(i as f32 * (tile.x + gap), 0.0), tile);
+            let (column, row) = ((i % 2) as f32, (i / 2) as f32);
+            let corner = origin + vec2(column * (tile.x + TILE_GAP), row * (tile.y + TILE_GAP));
+            let rect = Rect::from_min_size(corner, tile);
             p.rect_filled(rect, 12.0, fade(Color32::WHITE, alpha * 0.05));
 
             let level = if available { self.gauges[i] } else { 0.0 };
