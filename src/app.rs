@@ -1,6 +1,7 @@
 //! A ilha: estados, animações e desenho.
 
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use eframe::egui::{
     self, ecolor::Hsva, epaint::Shadow, pos2, vec2, Align2, Color32, FontId, Painter, Pos2, Rect,
@@ -38,6 +39,26 @@ const BARS: usize = 5;
 
 const HUD_SECONDS: f32 = 1.6;
 const LEAVE_SECONDS: f32 = 0.45;
+
+// --- Ritmo de desenho ---
+// Desenhar custa CPU e placa de vídeo, então a ilha só desenha quando há algo
+// novo para mostrar:
+//  - em uso (animação de abrir/fechar, painel aberto): na taxa do monitor;
+//  - só dançando com o som: 30 quadros por segundo;
+//  - parada: dorme. O backend a acorda quando um número muda, a música
+//    troca ou o mouse chega perto (veja `backend::Wake`).
+
+/// Intervalo entre quadros enquanto a ilha só acompanha o som. Um pouco
+/// menos que 1/30 s, para não perder a vez em monitores de 60 Hz.
+const AMBIENT_FRAME: Duration = Duration::from_millis(30);
+/// Parada, a ilha confere se está tudo certo de tempos em tempos, por garantia.
+const REST_FRAME: Duration = Duration::from_secs(2);
+/// Passo máximo de uma animação (um quadro atrasado não vira um salto).
+const MAX_DT: f32 = 0.05;
+/// Nível a partir do qual consideramos que há som tocando.
+const SOUND: f32 = 0.005;
+/// Tempo sem uso até devolver ao Windows a memória que ficou parada.
+const TRIM_AFTER: Duration = Duration::from_secs(30);
 
 const ISLAND: Color32 = Color32::from_rgb(9, 9, 11);
 const TEXT: Color32 = Color32::from_rgb(245, 245, 247);
@@ -104,10 +125,24 @@ pub struct IslandApp {
     debug_ui: bool,
     debug_last: String,
     perf: crate::perf::Perf,
+
+    /// Momento do quadro anterior.
+    last_frame: Option<Instant>,
+    /// O quadro anterior terminou com a ilha parada (dormindo).
+    resting: bool,
+    /// Último aviso mandado ao backend sobre o painel estar aberto.
+    panel_open: bool,
+    /// Última vez em que a ilha esteve em uso.
+    last_busy: Instant,
+    /// A memória parada já foi devolvida desde o último uso.
+    trimmed: bool,
+    /// Variáveis só para testes: estado fixo e fundo cinza.
+    pinned: bool,
+    debug_bg: bool,
 }
 
 impl IslandApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>, show_welcome: bool, updated: bool) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, show_welcome: bool, updated: bool) -> Self {
         let mode = match std::env::var("ISLANDBAR_MODE").as_deref() {
             Ok("collapsed") => Mode::Collapsed,
             _ if show_welcome => Mode::Welcome,
@@ -115,8 +150,12 @@ impl IslandApp {
             Ok("hud") => Mode::Hud,
             _ => Mode::Collapsed,
         };
+        // O backend acorda a interface quando há algo novo para desenhar.
+        // (Com um atraso mínimo ela desenha um quadro só; um pedido "para
+        // já" sempre rende dois.)
+        let ctx = cc.egui_ctx.clone();
         Self {
-            backend: Backend::spawn(),
+            backend: Backend::spawn(move || ctx.request_repaint_after(Duration::from_millis(1))),
             mode,
             // Começa minúscula para "nascer" com um quique.
             width: Spring::bouncy(30.0),
@@ -146,6 +185,13 @@ impl IslandApp {
             debug_ui: std::env::var_os("ISLANDBAR_DEBUG_UI").is_some(),
             debug_last: String::new(),
             perf: crate::perf::Perf::new(),
+            last_frame: None,
+            resting: false,
+            panel_open: false,
+            last_busy: Instant::now(),
+            trimmed: false,
+            pinned: std::env::var_os("ISLANDBAR_MODE").is_some(),
+            debug_bg: std::env::var_os("ISLANDBAR_DEBUG_BG").is_some(),
         }
     }
 
@@ -166,10 +212,13 @@ impl IslandApp {
         #[cfg(windows)]
         {
             let inner = ctx.input(|i| i.viewport().inner_rect);
-            if let (Some(inner), Some((x, y))) = (inner, crate::platform::cursor_pos()) {
+            if let Some(inner) = inner {
+                // Publica a área da ilha em pixels da tela. O backend vigia a
+                // mesma área para acordar a interface quando o mouse chegar.
                 let scale = ctx.pixels_per_point();
-                let local = pos2(x as f32 / scale - inner.min.x, y as f32 / scale - inner.min.y);
-                return hit.contains(local);
+                let screen = hit.translate(inner.min.to_vec2()) * scale;
+                platform::set_hover_area(screen.left(), screen.top(), screen.right(), screen.bottom());
+                return platform::cursor_over_island();
             }
         }
 
@@ -197,8 +246,9 @@ impl IslandApp {
         }
     }
 
-    fn update_meters(&mut self, snap: &Snapshot, dt: f32, time: f32) {
-        self.master_peak = meter(self.master_peak, snap.master_peak, dt);
+    /// `level` é o som que a ilha deve acompanhar agora (0 = ficar quieta).
+    fn update_meters(&mut self, snap: &Snapshot, level: f32, dt: f32, time: f32) {
+        self.master_peak = meter(self.master_peak, level, dt);
         for s in &snap.sessions {
             let peak = self.app_peaks.entry(s.name.clone()).or_default();
             *peak = meter(*peak, if s.muted { 0.0 } else { s.peak }, dt);
@@ -217,7 +267,7 @@ impl IslandApp {
         }
 
         // Barrinhas: cada uma dança em um ritmo, todas seguem o volume real.
-        let energy = (snap.master_peak * 2.2).min(1.0);
+        let energy = (level * 2.2).min(1.0);
         for (i, bar) in self.bars.iter_mut().enumerate() {
             let k = i as f32;
             let wobble = 0.35 + 0.65 * (time * (7.0 + k * 2.3) + k * 1.9).sin().abs();
@@ -228,8 +278,8 @@ impl IslandApp {
 
 impl eframe::App for IslandApp {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        // Variável só para testes: fundo cinza em vez de transparente.
-        if std::env::var_os("ISLANDBAR_DEBUG_BG").is_some() {
+        // Só para testes: fundo cinza em vez de transparente.
+        if self.debug_bg {
             return [0.45, 0.47, 0.52, 1.0];
         }
         [0.0; 4]
@@ -241,9 +291,16 @@ impl eframe::App for IslandApp {
 
     fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
-        let (dt, time) = ctx.input(|i| (i.stable_dt.min(1.0 / 30.0), i.time as f32));
-        self.uptime += dt;
-        self.notice_timer = (self.notice_timer - dt).max(0.0);
+        let time = ctx.input(|i| i.time as f32);
+        // Tempo desde o quadro anterior. Para os relógios vale o tempo real;
+        // para as animações, o tempo em que a ilha dormiu não conta (senão
+        // elas dariam um salto ao acordar).
+        let now = Instant::now();
+        let elapsed = self.last_frame.map_or(1.0 / 60.0, |last| (now - last).as_secs_f32());
+        let dt = if self.resting { 1.0 / 60.0 } else { elapsed.min(MAX_DT) };
+        self.last_frame = Some(now);
+        self.uptime += elapsed;
+        self.notice_timer = (self.notice_timer - elapsed).max(0.0);
 
         // Uma ilha mais nova abriu (ex.: depois de atualizar): esta sai de cena.
         if platform::quit_requested() {
@@ -258,7 +315,11 @@ impl eframe::App for IslandApp {
         let snap = self.backend.snapshot();
 
         self.place_window(&ctx);
-        self.update_meters(&snap, dt, time);
+        // No modo jogo a ilha fica quieta: não dança com o som e só é
+        // redesenhada quando os números mudam. Abrir o painel volta ao normal.
+        let quiet = snap.game.is_some() && self.mode != Mode::Expanded;
+        let level = if quiet { 0.0 } else { snap.master_peak };
+        self.update_meters(&snap, level, dt, time);
 
         // --- Aviso de volume quando ele muda "por fora" (teclado, outro app) ---
         let master_now = (snap.master, snap.master_muted);
@@ -319,7 +380,7 @@ impl eframe::App for IslandApp {
                     self.leave_timer = 0.0;
                 } else {
                     self.leave_timer += dt;
-                    if self.leave_timer > LEAVE_SECONDS && std::env::var_os("ISLANDBAR_MODE").is_none() {
+                    if self.leave_timer > LEAVE_SECONDS && !self.pinned {
                         self.mode = Mode::Collapsed;
                     }
                 }
@@ -342,6 +403,14 @@ impl eframe::App for IslandApp {
             if click.hovered() {
                 ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
             }
+        }
+
+        // Avisa o backend quando o painel abre ou fecha: com ele fechado, o
+        // backend não lê o que só o painel mostra.
+        let panel_open = self.mode == Mode::Expanded;
+        if panel_open != self.panel_open {
+            self.panel_open = panel_open;
+            self.backend.send(Command::Panel(panel_open));
         }
 
         self.open.target = if self.mode == Mode::Expanded { 1.0 } else { 0.0 };
@@ -400,15 +469,38 @@ impl eframe::App for IslandApp {
         let animating = [&self.width, &self.height, &self.open, &self.hud, &self.hover, &self.welcome, &self.game, &self.game_width]
             .iter()
             .any(|s| !s.settled());
+        let busy = animating || pointer_down || self.mode != Mode::Collapsed;
+        // As barrinhas ainda estão se mexendo (ou vão começar)?
+        let dancing = level > SOUND || self.master_peak > SOUND || self.bars.iter().any(|bar| *bar > 0.01);
+
         let mode = self.mode;
         self.perf.frame(|| {
-            format!("mode={mode:?} hovered={hovered} game={} sound={}", snap.game.is_some(), snap.master_peak > 0.005)
+            format!("mode={mode:?} hovered={hovered} game={} sound={}", snap.game.is_some(), snap.master_peak > SOUND)
         });
-        if animating || hovered || self.mode != Mode::Collapsed || self.master_peak > 0.005 || snap.game.is_some() {
+
+        self.resting = false;
+        if busy {
             ctx.request_repaint();
+        } else if hovered || dancing {
+            ctx.request_repaint_after(AMBIENT_FRAME);
         } else {
-            // Parada, a ilha quase não gasta CPU: só confere o mouse 20x/s.
-            ctx.request_repaint_after(std::time::Duration::from_millis(50));
+            // Nada se mexendo: dorme até o backend avisar que algo mudou.
+            self.resting = true;
+            let wait = if self.notice_timer > 0.0 {
+                REST_FRAME.min(Duration::from_secs_f32(self.notice_timer))
+            } else {
+                REST_FRAME
+            };
+            ctx.request_repaint_after(wait);
+        }
+
+        // Um tempo depois do último uso, devolve ao Windows a memória parada.
+        if busy || hovered {
+            self.last_busy = now;
+            self.trimmed = false;
+        } else if !self.trimmed && now - self.last_busy >= TRIM_AFTER {
+            self.trimmed = true;
+            platform::trim_memory();
         }
     }
 }
@@ -684,37 +776,43 @@ impl IslandApp {
         self.game.update(dt);
         let grow = self.game.value;
         if grow <= 0.01 {
+            // Escondida, a largura não é mais atualizada: não pode ficar com
+            // uma animação pela metade (a ilha nunca voltaria a descansar).
+            self.game_width.finish();
             return;
         }
         let Some(game) = &self.last_game else { return };
 
-        // Monta os trechos: (rótulo, valor, cor do valor).
+        // Monta os trechos: (rótulo, valor, valor largo típico, cor do valor).
         let sys = &snap.system;
-        let mut parts: Vec<(&str, String, Color32)> = Vec::new();
+        let mut parts: Vec<(&str, String, &str, Color32)> = Vec::new();
         if let Some(fps) = game.fps {
-            parts.push(("FPS", format!("{fps:.0}"), fps_color(fps)));
+            parts.push(("FPS", format!("{fps:.0}"), "000", fps_color(fps)));
         }
-        parts.push(("CPU", format!("{:.0}%", sys.cpu * 100.0), TEXT));
+        parts.push(("CPU", format!("{:.0}%", sys.cpu * 100.0), "00%", TEXT));
         if let Some(gpu) = sys.gpu {
-            parts.push(("GPU", format!("{:.0}%", gpu * 100.0), TEXT));
+            parts.push(("GPU", format!("{:.0}%", gpu * 100.0), "00%", TEXT));
         }
-        parts.push(("RAM", format!("{:.0}%", sys.ram() * 100.0), TEXT));
+        parts.push(("RAM", format!("{:.0}%", sys.ram() * 100.0), "00%", TEXT));
 
         let label_font = FontId::proportional(10.0);
         let value_font = FontId::proportional(12.5);
         let (padding, inner_gap, part_gap) = (14.0, 4.0, 12.0);
+        // Cada valor ganha pelo menos o espaço de um valor largo típico
+        // ("00%"). Assim a pílula não muda de largura (nem precisa ser
+        // reanimada) a cada número novo; só em casos raros, como 100%.
         let galleys: Vec<_> = parts
             .iter()
-            .map(|(label, value, color)| {
-                (
-                    painter.layout_no_wrap(label.to_string(), label_font.clone(), TEXT_DIM),
-                    painter.layout_no_wrap(value.clone(), value_font.clone(), *color),
-                )
+            .map(|(label, value, widest, color)| {
+                let label = painter.layout_no_wrap(label.to_string(), label_font.clone(), TEXT_DIM);
+                let value = painter.layout_no_wrap(value.clone(), value_font.clone(), *color);
+                let widest = painter.layout_no_wrap(widest.to_string(), value_font.clone(), *color);
+                let space = value.size().x.max(widest.size().x);
+                (label, value, space)
             })
             .collect();
-        let content_width: f32 = galleys.iter().map(|(l, v)| l.size().x + inner_gap + v.size().x).sum::<f32>()
+        let content_width: f32 = galleys.iter().map(|(label, _, space)| label.size().x + inner_gap + space).sum::<f32>()
             + part_gap * (galleys.len() as f32 - 1.0);
-        // Arredonda para a largura não tremer a cada dígito que muda.
         self.game_width.target = ((content_width + 2.0 * padding) / 8.0).ceil() * 8.0;
         self.game_width.update(dt);
 
@@ -734,11 +832,11 @@ impl IslandApp {
 
         let clipped = painter.with_clip_rect(rect.shrink(1.0));
         let mut x = rect.left() + padding;
-        for (label, value) in galleys {
+        for (label, value, space) in galleys {
             let label_pos = pos2(x, center_y - label.size().y / 2.0 + 0.5);
             x += label.size().x + inner_gap;
             let value_pos = pos2(x, center_y - value.size().y / 2.0);
-            x += value.size().x + part_gap;
+            x += space + part_gap;
             clipped.galley_with_override_text_color(label_pos, label, fade(TEXT_DIM, alpha));
             let color = value.job.sections.first().map_or(TEXT, |s| s.format.color);
             clipped.galley_with_override_text_color(value_pos, value, fade(color, alpha));

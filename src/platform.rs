@@ -14,6 +14,46 @@ pub fn cursor_pos() -> Option<(i32, i32)> {
     Some((point.x, point.y))
 }
 
+/// Área da ilha na tela (esquerda, topo, direita, base), em pixels físicos.
+/// A interface publica a cada quadro; quem confere o mouse só lê.
+#[cfg(windows)]
+static HOVER_AREA: [std::sync::atomic::AtomicI32; 4] = [const { std::sync::atomic::AtomicI32::new(0) }; 4];
+
+#[cfg(windows)]
+pub fn set_hover_area(left: f32, top: f32, right: f32, bottom: f32) {
+    use std::sync::atomic::Ordering::Relaxed;
+    for (slot, value) in HOVER_AREA.iter().zip([left.floor(), top.floor(), right.ceil(), bottom.ceil()]) {
+        slot.store(value as i32, Relaxed);
+    }
+}
+
+/// O mouse está sobre a área publicada em `set_hover_area`?
+///
+/// É uma consulta baratíssima, e pode ser feita de qualquer thread. Graças a
+/// ela a interface não precisa se redesenhar só para descobrir onde o mouse
+/// está: quem vigia é o backend, que acorda a interface na hora certa.
+#[cfg(windows)]
+pub fn cursor_over_island() -> bool {
+    use std::sync::atomic::Ordering::Relaxed;
+    let Some((x, y)) = cursor_pos() else { return false };
+    let [left, top, right, bottom] = [0, 1, 2, 3].map(|i| HOVER_AREA[i].load(Relaxed));
+    left < right && left <= x && x <= right && top <= y && y <= bottom
+}
+
+/// Devolve ao Windows a memória que o programa não está usando agora.
+///
+/// Abrir o programa e abrir o painel usam memória que depois fica parada
+/// (código de inicialização, a checagem de atualização, etc.). Isto avisa o
+/// Windows que ele pode reaproveitar essas páginas; o que voltar a ser usado
+/// é trazido de volta sozinho.
+pub fn trim_memory() {
+    #[cfg(windows)]
+    unsafe {
+        use windows::Win32::System::Threading::{GetCurrentProcess, SetProcessWorkingSetSize};
+        let _ = SetProcessWorkingSetSize(GetCurrentProcess(), usize::MAX, usize::MAX);
+    }
+}
+
 /// Desloca o cursor `step` pixels na horizontal.
 ///
 /// Serve para o Windows reenviar a posição do mouse à janela que está embaixo

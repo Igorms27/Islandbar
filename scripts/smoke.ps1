@@ -98,7 +98,8 @@ $app = StartIsland "island"
 $r = Styles "island start"
 Shot "island-1-collapsed"
 # Parada, sem ninguém mexer: é aqui que se mede o consumo em repouso.
-Start-Sleep 17
+# (Mais de 30 s, para pegar também a devolução da memória parada.)
+Start-Sleep 34
 Log ("perf idle:`n" + (Get-Content "$out\island-stderr.txt" | Select-String '^perf:' | Out-String))
 
 $cx = [int](($r.L + $r.R) / 2)

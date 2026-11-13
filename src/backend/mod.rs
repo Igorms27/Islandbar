@@ -2,6 +2,10 @@
 //!
 //! Roda em uma thread separada para a interface nunca travar. A UI só lê um
 //! `Snapshot` (uma "foto" do estado atual) e envia `Command`s.
+//!
+//! Para a ilha ser leve, o backend faz o mínimo: lê com frequência só o que
+//! está aparecendo na tela, e avisa a interface quando há algo novo para
+//! desenhar (veja `Wake`).
 
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -117,9 +121,19 @@ pub enum Command {
     Prev,
     /// Pede ao Windows a permissão para medir FPS.
     EnableFps,
+    /// A interface avisa quando o painel abre ou fecha. Com ele fechado o
+    /// backend não lê o que só aparece no painel (volume de cada app,
+    /// temperatura...).
+    Panel(bool),
 }
 
 pub type Shared = Arc<Mutex<Snapshot>>;
+
+/// Acorda a interface para ela se redesenhar.
+///
+/// Parada, a interface dorme. É o backend que percebe quando algo que está na
+/// tela mudou (um número, a música, o mouse chegando na ilha) e a chama.
+pub type Wake = Box<dyn Fn() + Send>;
 
 pub struct Backend {
     state: Shared,
@@ -127,13 +141,14 @@ pub struct Backend {
 }
 
 impl Backend {
-    pub fn spawn() -> Self {
+    pub fn spawn(wake: impl Fn() + Send + 'static) -> Self {
         let state: Shared = Arc::default();
         let (tx, rx) = channel();
         let thread_state = state.clone();
+        let wake: Wake = Box::new(wake);
         std::thread::Builder::new()
             .name("islandbar-backend".into())
-            .spawn(move || run(thread_state, rx))
+            .spawn(move || run(thread_state, rx, wake))
             .expect("não foi possível iniciar a thread de áudio");
         Self { state, tx }
     }
@@ -154,9 +169,9 @@ pub fn shutdown() {
     fps::stop_session();
 }
 
-fn run(state: Shared, rx: Receiver<Command>) {
+fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
     #[cfg(windows)]
-    windows::run(state, rx);
+    windows::run(state, rx, wake);
     #[cfg(not(windows))]
-    mock::run(state, rx);
+    mock::run(state, rx, wake);
 }

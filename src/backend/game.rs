@@ -62,6 +62,8 @@ pub struct GameWatcher {
     /// Janela confirmada como jogo e o nome a mostrar.
     active: Option<(isize, String)>,
     misses: u32,
+    /// Tela cheia vista por `look`, esperando o `update`.
+    seen: Option<Fullscreen>,
     debug: bool,
 }
 
@@ -78,6 +80,7 @@ impl GameWatcher {
             candidate: None,
             active: None,
             misses: 0,
+            seen: None,
             debug: std::env::var_os("ISLANDBAR_DEBUG_GAME").is_some(),
         }
     }
@@ -93,13 +96,22 @@ impl GameWatcher {
         }
     }
 
-    /// Chamar cerca de uma vez por segundo. `gpu_by_pid` é o uso de GPU de cada programa.
+    /// Primeiro passo de cada leitura: olha a janela em primeiro plano.
+    /// Devolve `true` se há uma tela cheia que pode ser um jogo; só nesse
+    /// caso vale a pena medir o uso de GPU de cada programa.
+    pub fn look(&mut self) -> bool {
+        self.seen = unsafe { fullscreen_window() };
+        self.seen.is_some()
+    }
+
+    /// Chamar cerca de uma vez por segundo, logo depois de `look`.
+    /// `gpu_by_pid` é o uso de GPU de cada programa.
     pub fn update(&mut self, gpu_by_pid: &HashMap<u32, f32>) -> Option<Game> {
         let now = Instant::now();
         let elapsed = (now - self.last_update).as_secs_f32().max(0.001);
         self.last_update = now;
 
-        let fullscreen = unsafe { fullscreen_window() };
+        let fullscreen = self.seen.take();
         self.manage_tracer(fullscreen.is_some(), now);
         let presents = self.tracer.as_ref().map(FpsTracer::take);
 

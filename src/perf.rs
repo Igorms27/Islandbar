@@ -14,6 +14,9 @@ const TICKS_PER_SECOND: f64 = 10_000_000.0;
 
 /// Tempo de CPU já gasto pela thread do backend. Ela mesma atualiza.
 static BACKEND_CPU: AtomicU64 = AtomicU64::new(0);
+/// Tempo que o backend passou trabalhando (acordado), nas mesmas unidades.
+/// Inclui a espera pelas respostas do Windows, que também é trabalho de alguém.
+static BACKEND_BUSY: AtomicU64 = AtomicU64::new(0);
 
 pub fn enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
@@ -27,16 +30,24 @@ pub fn record_backend_thread() {
     }
 }
 
+/// Chamada pela thread do backend ao fim de cada volta de trabalho.
+pub fn add_backend_busy(started: Instant) {
+    if enabled() {
+        BACKEND_BUSY.fetch_add((started.elapsed().as_nanos() / 100) as u64, Ordering::Relaxed);
+    }
+}
+
 pub struct Perf {
     since: Instant,
     frames: u32,
     process_cpu: u64,
     backend_cpu: u64,
+    backend_busy: u64,
 }
 
 impl Perf {
     pub fn new() -> Self {
-        Self { since: Instant::now(), frames: 0, process_cpu: sys::process_cpu(), backend_cpu: 0 }
+        Self { since: Instant::now(), frames: 0, process_cpu: sys::process_cpu(), backend_cpu: 0, backend_busy: 0 }
     }
 
     /// Chamada uma vez por quadro desenhado. `state` descreve o que a ilha
@@ -53,14 +64,16 @@ impl Perf {
         let seconds = elapsed.as_secs_f64();
         let process_cpu = sys::process_cpu();
         let backend_cpu = BACKEND_CPU.load(Ordering::Relaxed);
+        let backend_busy = BACKEND_BUSY.load(Ordering::Relaxed);
         let percent = |now: u64, before: u64| now.saturating_sub(before) as f64 / TICKS_PER_SECOND / seconds * 100.0;
         let (working_set, private) = sys::memory();
         let megabytes = |bytes: u64| bytes as f64 / (1024.0 * 1024.0);
         eprintln!(
-            "perf: fps={:.1} cpu={:.2}% backend={:.2}% ram={:.1}MB private={:.1}MB | {}",
+            "perf: fps={:.1} cpu={:.2}% backend={:.2}% backend_busy={:.3}% ram={:.1}MB private={:.1}MB | {}",
             self.frames as f64 / seconds,
             percent(process_cpu, self.process_cpu),
             percent(backend_cpu, self.backend_cpu),
+            percent(backend_busy, self.backend_busy),
             megabytes(working_set),
             megabytes(private),
             state()
@@ -69,6 +82,7 @@ impl Perf {
         self.frames = 0;
         self.process_cpu = process_cpu;
         self.backend_cpu = backend_cpu;
+        self.backend_busy = backend_busy;
     }
 }
 

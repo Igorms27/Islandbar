@@ -35,6 +35,12 @@ impl Spring {
         }
     }
 
+    /// Termina a animação agora, direto no destino.
+    pub fn finish(&mut self) {
+        self.value = self.target;
+        self.velocity = 0.0;
+    }
+
     pub fn settled(&self) -> bool {
         (self.target - self.value).abs() < 0.01 && self.velocity.abs() < 0.05
     }
