@@ -82,7 +82,6 @@ pub struct IslandApp {
 
     window_pos: Option<Pos2>,
     passthrough: Option<bool>,
-    clip: Option<[i32; 5]>,
     /// Segundos restantes do aviso "Atualizado" na pílula.
     notice_timer: f32,
     restarting: bool,
@@ -119,7 +118,6 @@ impl IslandApp {
             dragging: None,
             window_pos: None,
             passthrough: None,
-            clip: None,
             notice_timer: if updated { 6.0 } else { 0.0 },
             restarting: false,
         }
@@ -153,26 +151,13 @@ impl IslandApp {
     }
 
     /// Fora da ilha, os cliques atravessam a janela e vão para o app de baixo.
-    fn set_passthrough(&mut self, ctx: &egui::Context, enabled: bool) {
-        if cfg!(windows) && self.passthrough != Some(enabled) {
+    fn set_passthrough(&mut self, frame: &eframe::Frame, enabled: bool) {
+        if self.passthrough != Some(enabled) {
+            if self.passthrough.is_none() {
+                platform::prepare_window(frame);
+            }
             self.passthrough = Some(enabled);
-            ctx.send_viewport_cmd(egui::ViewportCommand::MousePassthrough(enabled));
-        }
-    }
-
-    /// Recorta a janela uma única vez, deixando de fora uma pequena margem.
-    ///
-    /// Uma janela recortada perde a borda, a sombra e a faixa clara no topo
-    /// que o Windows desenha. O recorte é fixo de propósito: mudá-lo durante
-    /// as animações fazia a ilha piscar.
-    fn clip_window(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
-        const INSET: f32 = 5.0;
-        let scale = ctx.pixels_per_point();
-        let px = |v: f32| (v * scale).round() as i32;
-        let clip = [px(INSET), px(INSET), px(WINDOW_SIZE[0] - INSET), px(WINDOW_SIZE[1] - INSET), 0];
-        if self.clip != Some(clip) {
-            self.clip = Some(clip);
-            platform::clip_window(frame, [clip[0], clip[1], clip[2], clip[3]], clip[4]);
+            platform::set_passthrough(frame, enabled);
         }
     }
 
@@ -265,12 +250,11 @@ impl eframe::App for IslandApp {
         let (w, h) = (self.width.value.max(8.0), self.height.value.max(8.0));
         let island = Rect::from_min_size(pos2(ui.max_rect().center().x - w / 2.0, TOP_MARGIN), vec2(w, h));
         let radius = (h / 2.0).min(26.0);
-        self.clip_window(&ctx, frame);
 
         // --- Mouse e troca de estados ---
         let pointer_down = ctx.input(|i| i.pointer.any_down());
         let hovered = self.cursor_inside(&ctx, island);
-        self.set_passthrough(&ctx, !hovered && !pointer_down);
+        self.set_passthrough(frame, !hovered && !pointer_down);
 
         match self.mode {
             Mode::Expanded => {

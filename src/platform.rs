@@ -14,46 +14,97 @@ pub fn cursor_pos() -> Option<(i32, i32)> {
     Some((point.x, point.y))
 }
 
-/// Recorta a janela para ela existir só no retângulo dado (em pixels,
-/// relativo à janela). Fora dele não há nada: nem imagem, nem borda.
 #[cfg(windows)]
-pub fn clip_window(frame: &eframe::Frame, rect: [i32; 4], corner_diameter: i32) {
+mod window {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use std::sync::atomic::{AtomicIsize, Ordering};
     use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Dwm::{
         DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
     };
-    use windows::Win32::Graphics::Gdi::{CreateRoundRectRgn, SetWindowRgn};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, GWL_STYLE, SWP_FRAMECHANGED,
+        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_CAPTION, WS_EX_LAYERED,
+        WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
+        WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+    };
 
-    let Ok(handle) = frame.window_handle() else { return };
-    let RawWindowHandle::Win32(handle) = handle.as_raw() else { return };
-    let hwnd = HWND(handle.hwnd.get() as *mut std::ffi::c_void);
-    let [left, top, right, bottom] = rect;
+    /// Estilo estendido da janela sem o "atravessar cliques".
+    static BASE_EX_STYLE: AtomicIsize = AtomicIsize::new(0);
 
-    unsafe {
-        // Sem a borda e os cantos que o Windows 11 desenha em volta das janelas.
-        let no_rounding = DWMWCP_DONOTROUND;
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_WINDOW_CORNER_PREFERENCE,
-            &no_rounding as *const _ as *const std::ffi::c_void,
-            std::mem::size_of_val(&no_rounding) as u32,
-        );
-        let no_border: u32 = 0xFFFF_FFFE; // DWMWA_COLOR_NONE
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_BORDER_COLOR,
-            &no_border as *const _ as *const std::ffi::c_void,
-            std::mem::size_of_val(&no_border) as u32,
-        );
-
-        // O +1 é porque a região não inclui a última linha/coluna.
-        let region = CreateRoundRectRgn(left, top, right + 1, bottom + 1, corner_diameter, corner_diameter);
-        // Depois desta chamada o Windows passa a ser o dono da região.
-        // `false`: não pede para o Windows repintar a área (isso causava
-        // piscadas); o próximo frame da ilha já cobre tudo.
-        SetWindowRgn(hwnd, Some(region), false);
+    fn hwnd(frame: &eframe::Frame) -> Option<HWND> {
+        let handle = frame.window_handle().ok()?;
+        let RawWindowHandle::Win32(handle) = handle.as_raw() else { return None };
+        Some(HWND(handle.hwnd.get() as *mut std::ffi::c_void))
     }
+
+    pub fn prepare(frame: &eframe::Frame) {
+        let Some(hwnd) = hwnd(frame) else { return };
+        unsafe {
+            // Remove da janela tudo que é de "janela normal": barra de título,
+            // botões de fechar/maximizar/minimizar e borda de redimensionar.
+            // Sem isso o Windows desenhava uma barra de título antiga quando
+            // a ilha perdia o foco.
+            let frame_bits = (WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX).0 as isize;
+            let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+            SetWindowLongPtrW(hwnd, GWL_STYLE, (style & !frame_bits) | WS_POPUP.0 as isize);
+
+            // TOOLWINDOW: não aparece no Alt+Tab. NOACTIVATE: clicar na ilha
+            // não tira o foco do programa que você está usando.
+            let passthrough_bits = (WS_EX_TRANSPARENT | WS_EX_LAYERED).0 as isize;
+            let ex_style = (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & !passthrough_bits)
+                | (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE).0 as isize;
+            BASE_EX_STYLE.store(ex_style, Ordering::Relaxed);
+            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex_style);
+
+            // Sem a borda e os cantos que o Windows 11 desenha em volta das janelas.
+            let no_rounding = DWMWCP_DONOTROUND;
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_WINDOW_CORNER_PREFERENCE,
+                &no_rounding as *const _ as *const std::ffi::c_void,
+                std::mem::size_of_val(&no_rounding) as u32,
+            );
+            let no_border: u32 = 0xFFFF_FFFE; // DWMWA_COLOR_NONE
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_BORDER_COLOR,
+                &no_border as *const _ as *const std::ffi::c_void,
+                std::mem::size_of_val(&no_border) as u32,
+            );
+
+            // Avisa o Windows que os estilos mudaram.
+            let flags = SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE;
+            let _ = SetWindowPos(hwnd, None, 0, 0, 0, 0, flags);
+        }
+    }
+
+    pub fn set_passthrough(frame: &eframe::Frame, enabled: bool) {
+        let Some(hwnd) = hwnd(frame) else { return };
+        let base = BASE_EX_STYLE.load(Ordering::Relaxed);
+        let passthrough_bits = (WS_EX_TRANSPARENT | WS_EX_LAYERED).0 as isize;
+        unsafe {
+            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, if enabled { base | passthrough_bits } else { base });
+        }
+    }
+}
+
+/// Ajusta a janela para ser só uma superfície transparente: sem barra de
+/// título, sem borda, fora do Alt+Tab. Chamar uma vez, com a janela já criada.
+pub fn prepare_window(frame: &eframe::Frame) {
+    #[cfg(windows)]
+    window::prepare(frame);
+    #[cfg(not(windows))]
+    let _ = frame;
+}
+
+/// Liga/desliga o "atravessar cliques": ligado, os cliques vão para o
+/// programa que está embaixo da janela.
+pub fn set_passthrough(frame: &eframe::Frame, enabled: bool) {
+    #[cfg(windows)]
+    window::set_passthrough(frame, enabled);
+    #[cfg(not(windows))]
+    let _ = (frame, enabled);
 }
 
 #[cfg(windows)]
@@ -110,9 +161,6 @@ pub fn set_autostart(enabled: bool) {
     #[cfg(not(windows))]
     let _ = enabled;
 }
-
-#[cfg(not(windows))]
-pub fn clip_window(_frame: &eframe::Frame, _rect: [i32; 4], _corner_diameter: i32) {}
 
 #[cfg(windows)]
 mod instance {
