@@ -2,7 +2,7 @@ name: Build Windows
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'ci/**']
   pull_request:
   workflow_dispatch:
 
@@ -26,7 +26,7 @@ jobs:
           path: target/release/islandbar.exe
       # Publica a versão: é daqui que as ilhas instaladas se atualizam.
       - name: Release
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -37,3 +37,32 @@ jobs:
             --title "Versão ${{ github.run_number }}" \
             --notes "Compilada automaticamente a partir de ${{ github.sha }}." \
             --latest
+      # Abre a ilha no Windows da máquina de build e guarda screenshots,
+      # para conferir a aparência real sem depender de um PC.
+      - name: Teste visual
+        continue-on-error: true
+        timeout-minutes: 8
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/smoke.ps1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke
+          path: smoke/
+          if-no-files-found: ignore
+      # Também guarda as imagens na branch "ci-results" (sempre sobrescrita).
+      - name: Publica screenshots
+        if: always()
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd smoke
+          git init -q -b ci-results
+          git add -A
+          git -c user.name="github-actions" -c user.email="github-actions@users.noreply.github.com" \
+            commit -qm "Teste visual de ${{ github.sha }}"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}" ci-results

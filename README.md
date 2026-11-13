@@ -48,6 +48,7 @@ Para fechar: abra a ilha e clique em **Sair** no canto inferior direito.
 | `src/backend/mock.rs` | Dados de mentira para testar a interface fora do Windows. |
 | `src/backend/sysmon.rs` | CPU, RAM e temperatura. |
 | `src/updater.rs` | Atualização automática. |
+| `scripts/smoke.ps1` | Teste visual: o GitHub abre a ilha num Windows real e guarda screenshots na branch `ci-results`. |
 | `src/platform.rs` | Mouse, recorte da janela e inicialização com o Windows. |
 
 Feito com [egui/eframe](https://github.com/emilk/egui) e o crate
