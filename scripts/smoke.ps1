@@ -11,7 +11,9 @@ Log (gh release download --repo pal1000/mesa-dist-win --pattern "mesa3d-*-releas
 Log ("mesa download: " + ((Get-ChildItem mesa -ErrorAction SilentlyContinue | ForEach-Object { "$($_.Name) ($($_.Length))" }) -join ", "))
 7z x (Get-ChildItem mesa\*.7z).FullName -omesa\x -y | Out-Null
 Log ("mesa folders: " + ((Get-ChildItem mesa\x -ErrorAction SilentlyContinue).Name -join ", "))
-Copy-Item mesa\x\x64\*.dll $exeDir
+$gl = Get-ChildItem mesa\x -Recurse -Filter opengl32.dll | Where-Object { $_.FullName -match 'x64' }
+Log ("opengl32.dll found at: " + (($gl.FullName | Resolve-Path -Relative) -join ", "))
+Copy-Item (Join-Path $gl[0].DirectoryName '*.dll') $exeDir
 Log ("dlls next to exe: " + ((Get-ChildItem $exeDir\*.dll).Name -join ", "))
 
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
