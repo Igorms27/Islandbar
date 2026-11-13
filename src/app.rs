@@ -81,7 +81,6 @@ pub struct IslandApp {
     dragging: Option<(String, f32)>,
 
     window_pos: Option<Pos2>,
-    passthrough: Option<bool>,
     /// Segundos restantes do aviso "Atualizado" na pílula.
     notice_timer: f32,
     restarting: bool,
@@ -117,7 +116,6 @@ impl IslandApp {
             gauges: [0.0; 3],
             dragging: None,
             window_pos: None,
-            passthrough: None,
             notice_timer: if updated { 6.0 } else { 0.0 },
             restarting: false,
         }
@@ -148,17 +146,6 @@ impl IslandApp {
         }
 
         ctx.pointer_latest_pos().is_some_and(|p| hit.contains(p))
-    }
-
-    /// Fora da ilha, os cliques atravessam a janela e vão para o app de baixo.
-    fn set_passthrough(&mut self, frame: &eframe::Frame, enabled: bool) {
-        if self.passthrough != Some(enabled) {
-            if self.passthrough.is_none() {
-                platform::prepare_window(frame);
-            }
-            self.passthrough = Some(enabled);
-            platform::set_passthrough(frame, enabled);
-        }
     }
 
     fn target_size(&self, snap: &Snapshot) -> Vec2 {
@@ -254,7 +241,8 @@ impl eframe::App for IslandApp {
         // --- Mouse e troca de estados ---
         let pointer_down = ctx.input(|i| i.pointer.any_down());
         let hovered = self.cursor_inside(&ctx, island);
-        self.set_passthrough(frame, !hovered && !pointer_down);
+        // Fora da ilha, os cliques atravessam a janela e vão para o app de baixo.
+        platform::sync_window(frame, !hovered && !pointer_down);
 
         match self.mode {
             Mode::Expanded => {

@@ -17,20 +17,16 @@ pub fn cursor_pos() -> Option<(i32, i32)> {
 #[cfg(windows)]
 mod window {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-    use std::sync::atomic::{AtomicIsize, Ordering};
     use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Dwm::{
         DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, GWL_STYLE, SWP_FRAMECHANGED,
-        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_CAPTION, WS_EX_LAYERED,
-        WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
-        WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_CAPTION, WS_EX_APPWINDOW,
+        WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE,
+        WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
     };
-
-    /// Estilo estendido da janela sem o "atravessar cliques".
-    static BASE_EX_STYLE: AtomicIsize = AtomicIsize::new(0);
 
     fn hwnd(frame: &eframe::Frame) -> Option<HWND> {
         let handle = frame.window_handle().ok()?;
@@ -38,73 +34,68 @@ mod window {
         Some(HWND(handle.hwnd.get() as *mut std::ffi::c_void))
     }
 
-    pub fn prepare(frame: &eframe::Frame) {
+    pub fn sync(frame: &eframe::Frame, passthrough: bool) {
         let Some(hwnd) = hwnd(frame) else { return };
         unsafe {
-            // Remove da janela tudo que é de "janela normal": barra de título,
-            // botões de fechar/maximizar/minimizar e borda de redimensionar.
-            // Sem isso o Windows desenhava uma barra de título antiga quando
-            // a ilha perdia o foco.
-            let frame_bits = (WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX).0 as isize;
-            let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
-            SetWindowLongPtrW(hwnd, GWL_STYLE, (style & !frame_bits) | WS_POPUP.0 as isize);
+            // Tudo que é de "janela normal": barra de título, botões de
+            // fechar/maximizar/minimizar e borda de redimensionar. A biblioteca
+            // de janelas (winit) mantém esses estilos escondidos em toda janela,
+            // e os recoloca em alguns momentos (ex.: ao mostrar a janela). Com
+            // fundo transparente, o Windows os desenhava por trás da ilha: daí
+            // o retângulo escuro, o "x" no canto e a barra de título antiga.
+            let frame_bits = (WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX).0;
+            let style = GetWindowLongPtrW(hwnd, GWL_STYLE) as u32;
+            let wanted = (style & !frame_bits) | WS_POPUP.0;
 
             // TOOLWINDOW: não aparece no Alt+Tab. NOACTIVATE: clicar na ilha
             // não tira o foco do programa que você está usando.
-            let passthrough_bits = (WS_EX_TRANSPARENT | WS_EX_LAYERED).0 as isize;
-            let ex_style = (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & !passthrough_bits)
-                | (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE).0 as isize;
-            BASE_EX_STYLE.store(ex_style, Ordering::Relaxed);
-            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex_style);
+            // TRANSPARENT + LAYERED: os cliques atravessam a janela.
+            let click_bits = (WS_EX_TRANSPARENT | WS_EX_LAYERED).0;
+            let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
+            let mut wanted_ex = (ex_style & !(click_bits | WS_EX_WINDOWEDGE.0 | WS_EX_APPWINDOW.0))
+                | (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE).0;
+            if passthrough {
+                wanted_ex |= click_bits;
+            }
 
-            // Sem a borda e os cantos que o Windows 11 desenha em volta das janelas.
-            let no_rounding = DWMWCP_DONOTROUND;
-            let _ = DwmSetWindowAttribute(
-                hwnd,
-                DWMWA_WINDOW_CORNER_PREFERENCE,
-                &no_rounding as *const _ as *const std::ffi::c_void,
-                std::mem::size_of_val(&no_rounding) as u32,
-            );
-            let no_border: u32 = 0xFFFF_FFFE; // DWMWA_COLOR_NONE
-            let _ = DwmSetWindowAttribute(
-                hwnd,
-                DWMWA_BORDER_COLOR,
-                &no_border as *const _ as *const std::ffi::c_void,
-                std::mem::size_of_val(&no_border) as u32,
-            );
+            if ex_style != wanted_ex {
+                SetWindowLongPtrW(hwnd, GWL_EXSTYLE, wanted_ex as i32 as isize);
+            }
+            if style != wanted {
+                SetWindowLongPtrW(hwnd, GWL_STYLE, wanted as i32 as isize);
 
-            // Avisa o Windows que os estilos mudaram.
-            let flags = SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE;
-            let _ = SetWindowPos(hwnd, None, 0, 0, 0, 0, flags);
-        }
-    }
+                // Sem a borda e os cantos que o Windows 11 desenha em volta das janelas.
+                let no_rounding = DWMWCP_DONOTROUND;
+                let _ = DwmSetWindowAttribute(
+                    hwnd,
+                    DWMWA_WINDOW_CORNER_PREFERENCE,
+                    &no_rounding as *const _ as *const std::ffi::c_void,
+                    std::mem::size_of_val(&no_rounding) as u32,
+                );
+                let no_border: u32 = 0xFFFF_FFFE; // DWMWA_COLOR_NONE
+                let _ = DwmSetWindowAttribute(
+                    hwnd,
+                    DWMWA_BORDER_COLOR,
+                    &no_border as *const _ as *const std::ffi::c_void,
+                    std::mem::size_of_val(&no_border) as u32,
+                );
 
-    pub fn set_passthrough(frame: &eframe::Frame, enabled: bool) {
-        let Some(hwnd) = hwnd(frame) else { return };
-        let base = BASE_EX_STYLE.load(Ordering::Relaxed);
-        let passthrough_bits = (WS_EX_TRANSPARENT | WS_EX_LAYERED).0 as isize;
-        unsafe {
-            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, if enabled { base | passthrough_bits } else { base });
+                // Avisa o Windows que a moldura mudou.
+                let flags = SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE;
+                let _ = SetWindowPos(hwnd, None, 0, 0, 0, 0, flags);
+            }
         }
     }
 }
 
-/// Ajusta a janela para ser só uma superfície transparente: sem barra de
-/// título, sem borda, fora do Alt+Tab. Chamar uma vez, com a janela já criada.
-pub fn prepare_window(frame: &eframe::Frame) {
+/// Mantém a janela como uma superfície transparente pura: sem barra de título,
+/// sem borda, fora do Alt+Tab. Com `passthrough`, os cliques vão para o
+/// programa que está embaixo. Chamada a cada frame; só mexe se algo mudou.
+pub fn sync_window(frame: &eframe::Frame, passthrough: bool) {
     #[cfg(windows)]
-    window::prepare(frame);
+    window::sync(frame, passthrough);
     #[cfg(not(windows))]
-    let _ = frame;
-}
-
-/// Liga/desliga o "atravessar cliques": ligado, os cliques vão para o
-/// programa que está embaixo da janela.
-pub fn set_passthrough(frame: &eframe::Frame, enabled: bool) {
-    #[cfg(windows)]
-    window::set_passthrough(frame, enabled);
-    #[cfg(not(windows))]
-    let _ = (frame, enabled);
+    let _ = (frame, passthrough);
 }
 
 #[cfg(windows)]
