@@ -103,6 +103,7 @@ pub struct IslandApp {
     nudge_step: i32,
     debug_ui: bool,
     debug_last: String,
+    perf: crate::perf::Perf,
 }
 
 impl IslandApp {
@@ -144,6 +145,7 @@ impl IslandApp {
             nudge_step: 1,
             debug_ui: std::env::var_os("ISLANDBAR_DEBUG_UI").is_some(),
             debug_last: String::new(),
+            perf: crate::perf::Perf::new(),
         }
     }
 
@@ -398,6 +400,10 @@ impl eframe::App for IslandApp {
         let animating = [&self.width, &self.height, &self.open, &self.hud, &self.hover, &self.welcome, &self.game, &self.game_width]
             .iter()
             .any(|s| !s.settled());
+        let mode = self.mode;
+        self.perf.frame(|| {
+            format!("mode={mode:?} hovered={hovered} game={} sound={}", snap.game.is_some(), snap.master_peak > 0.005)
+        });
         if animating || hovered || self.mode != Mode::Collapsed || self.master_peak > 0.005 || snap.game.is_some() {
             ctx.request_repaint();
         } else {

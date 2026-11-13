@@ -59,6 +59,9 @@ pub fn run(state: Shared, rx: Receiver<Command>) {
         }
 
         let t = start.elapsed().as_secs_f32();
+        if (t * 30.0) as u32 % 30 == 0 {
+            crate::perf::record_backend_thread();
+        }
         let playing = snap.media.as_ref().is_some_and(|m| m.playing);
         let mut master_peak = 0.0f32;
         for (i, s) in snap.sessions.iter_mut().enumerate() {

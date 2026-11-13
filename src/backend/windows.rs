@@ -76,6 +76,7 @@ pub fn run(state: Shared, rx: Receiver<Command>) {
             audio = unsafe { open_audio(&mut names) }.ok();
             system = monitor.read();
             game = games.update(&monitor.gpu_by_pid);
+            crate::perf::record_backend_thread();
             if debug_system {
                 eprintln!("{system:?} game={game:?} fps_access={:?}", games.access());
             }

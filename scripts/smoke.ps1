@@ -81,6 +81,7 @@ function StartIsland($tag) {
   $env:ISLANDBAR_DEBUG_SYSMON = "1"
   $env:ISLANDBAR_DEBUG_GAME = "1"
   $env:ISLANDBAR_DEBUG_UI = "1"
+  $env:ISLANDBAR_DEBUG_PERF = "1"
   $app = Start-Process "$exeDir\islandbar.exe" -PassThru -ArgumentList '--autostart' -RedirectStandardError "$out\$tag-stderr.txt"
   Start-Sleep 8
   Log ("$tag app running: " + (-not $app.HasExited) + $(if ($app.HasExited) { " (exit code 0x{0:X8})" -f $app.ExitCode }))
@@ -96,6 +97,9 @@ function StopIsland($tag, $app) {
 $app = StartIsland "island"
 $r = Styles "island start"
 Shot "island-1-collapsed"
+# Parada, sem ninguém mexer: é aqui que se mede o consumo em repouso.
+Start-Sleep 17
+Log ("perf idle:`n" + (Get-Content "$out\island-stderr.txt" | Select-String '^perf:' | Out-String))
 
 $cx = [int](($r.L + $r.R) / 2)
 $pillY = $r.T + 27
@@ -128,6 +132,10 @@ Click 512 500   # garante que o jogo está em primeiro plano
 Start-Sleep 7
 Log ("fake game running: " + (-not $game.HasExited))
 Shot "game-1-playing"
+# Jogo rodando, ilha quieta: consumo no modo jogo.
+$before = (Get-Content "$out\island-stderr.txt").Count
+Start-Sleep 16
+Log ("perf in game:`n" + (Get-Content "$out\island-stderr.txt" | Select-Object -Skip $before | Select-String '^perf:' | Out-String))
 # Clica na ilha várias vezes durante o jogo: o painel tem que abrir em todas.
 $opened = 0
 foreach ($try in 1..4) {
