@@ -127,12 +127,20 @@ Styles "island end" | Out-Null
 # DirectX; a ilha deve abrir a pílula do modo jogo com o FPS.
 Stop-Process -Id $bg.Id -ErrorAction SilentlyContinue
 Start-Sleep 1
-$game = Start-Process "$exeDir\examples\fake_game.exe" -PassThru -RedirectStandardError "$out\game-stderr.txt"
+# O jogo se marca como "sempre no topo", como muitos jogos em tela cheia: a
+# ilha tem que continuar aparecendo por cima dele.
+$game = Start-Process "$exeDir\examples\fake_game.exe" -PassThru -ArgumentList '--topmost' -RedirectStandardError "$out\game-stderr.txt"
 Start-Sleep 2
 Click 512 500   # garante que o jogo está em primeiro plano
 Start-Sleep 7
 Log ("fake game running: " + (-not $game.HasExited))
 Shot "game-1-playing"
+# Um ponto dentro da pílula, abaixo do texto: escuro = a ilha está na frente do
+# jogo; azul = o jogo cobriu a ilha.
+$bmp = New-Object Drawing.Bitmap "$out\game-1-playing.png"
+$p = $bmp.GetPixel($cx, $r.T + 40)
+$bmp.Dispose()
+Log ("island visible over topmost game: {0} (pixel {1},{2},{3})" -f ($p.B -lt 60), $p.R, $p.G, $p.B)
 # Jogo rodando, ilha quieta: consumo no modo jogo.
 $before = (Get-Content "$out\island-stderr.txt").Count
 Start-Sleep 16
