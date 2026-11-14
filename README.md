@@ -13,6 +13,10 @@ visível, e se expande com animações elásticas.
   A maioria dos programas segue na hora; alguns antigos só depois de reabertos.
 - **Mídia**: título/artista do que está tocando e botões anterior / play-pause / próxima
   (funciona com Spotify, navegadores e qualquer app que apareça no controle de mídia do Windows).
+- **Alarme**: arraste o painel para o lado (ou clique nas bolinhas do rodapé) para chegar à
+  página do alarme. Escolha em quantas horas/minutos ele toca (setinhas ou atalhos +5 min, +15 min…)
+  e clique em Iniciar. A pílula mostra um sininho com o tempo que falta; na hora, a ilha mostra
+  um aviso com bip de despertador, com os botões Soneca e Parar. (Fechar a ilha cancela o alarme.)
 - **Aviso de volume**: ao usar as teclas de volume do teclado, a ilha se estica e mostra o nível.
 - **Monitor do sistema**: CPU, GPU, RAM e temperatura no painel (e CPU/GPU/RAM na pílula quando não há música).
   O uso da GPU é o mesmo número do Gerenciador de Tarefas. A temperatura usa o melhor sensor que o PC
@@ -101,6 +105,7 @@ O executável final fica em `target\release\islandbar.exe`.
 | `src/backend/fps.rs` | Mede o FPS de outros programas. |
 | `examples/fake_game.rs` | "Jogo falso" usado pelo teste visual. |
 | `src/updater.rs` | Atualização automática. |
+| `src/alarm.rs` | Alarme: contagem e o bip de despertador. |
 | `src/perf.rs` | Medidor interno de quadros por segundo, CPU e memória (só para diagnóstico). |
 | `scripts/smoke.ps1` | Teste visual: o GitHub abre a ilha num Windows real e guarda screenshots na branch `ci-results`. |
 | `src/platform.rs` | Mouse, janela sem moldura, memória e inicialização com o Windows. |

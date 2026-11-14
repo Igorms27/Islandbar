@@ -49,6 +49,18 @@ function Styles($label) {
   Log ("{0}: hwnd={1} style=0x{2:X8} exstyle=0x{3:X8} rect={4},{5},{6},{7} client={8}x{9} foreground={10}" -f $label, $h, $style, $ex, $r.L, $r.T, $r.R, $r.B, $c.R, $c.B, [W]::GetForegroundWindow())
   $r
 }
+# Arrasta com o botão apertado, de ($x1, $y) até ($x2, $y).
+function Drag($x1, $y, $x2) {
+  [W]::SetCursorPos($x1, $y) | Out-Null
+  Start-Sleep -Milliseconds 500
+  [W]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
+  for ($i = 1; $i -le 12; $i++) {
+    [W]::SetCursorPos([int]($x1 + ($x2 - $x1) * $i / 12), $y) | Out-Null
+    Start-Sleep -Milliseconds 25
+  }
+  Start-Sleep -Milliseconds 60
+  [W]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+}
 function Click($x, $y) {
   [W]::SetCursorPos($x, $y) | Out-Null
   Start-Sleep -Milliseconds 500
@@ -189,5 +201,42 @@ Start-Sleep 5
 Shot "denied-2-requested"
 Log ("group after: " + ((Get-LocalGroupMember -SID 'S-1-5-32-559' -ErrorAction SilentlyContinue).Name -join ", "))
 StopIsland "denied" $app
+
+# ---- Rodada 4: alarme ------------------------------------------------------
+# Painel: arrasta para a página do alarme, cancela o alarme de teste, marca
+# outro pelo botão Iniciar. Depois uma ilha nova com um alarme de 3 s: o cartão
+# tem que aparecer tocando, e o botão Parar tem que fechá-lo.
+$env:ISLANDBAR_DEBUG_ALARM = "600"
+$app = StartIsland "alarm"
+Remove-Item Env:ISLANDBAR_DEBUG_ALARM
+$r = Styles "alarm start"
+$cx = [int](($r.L + $r.R) / 2)
+Shot "alarm-1-pill"
+Click $cx ($r.T + 27)
+Start-Sleep 2
+Drag ($cx + 120) ($r.T + 110) ($cx - 120)
+Start-Sleep 1
+Shot "alarm-2-page-counting"
+Click ($cx + 62) ($r.T + 232)   # Cancelar
+Start-Sleep 1
+Shot "alarm-3-page-choose"
+Click $cx ($r.T + 248)          # Iniciar (15 min)
+Start-Sleep 1
+Shot "alarm-4-page-started"
+Click 80 600                    # fecha o painel
+Start-Sleep 12
+Shot "alarm-5-pill-counting"
+Log ("perf with alarm counting:`n" + (Get-Content "$out\alarm-stderr.txt" | Select-String '^perf' | Select-Object -Last 2 | Out-String))
+StopIsland "alarm" $app
+
+$env:ISLANDBAR_DEBUG_ALARM = "3"
+$app = StartIsland "ring"
+Remove-Item Env:ISLANDBAR_DEBUG_ALARM
+Shot "alarm-6-ringing"
+Click ($cx + 126) ($r.T + 48)   # Parar
+Start-Sleep 2
+Shot "alarm-7-stopped"
+Log ("alarm lines: " + (Get-Content "$out\ring-stderr.txt" | Select-String '^alarm' | Out-String))
+StopIsland "ring" $app
 
 exit 0

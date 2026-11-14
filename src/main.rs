@@ -1,6 +1,7 @@
 // Sem janela de console preta ao abrir a versão final no Windows.
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod alarm;
 mod anim;
 mod app;
 mod backend;

@@ -8,6 +8,7 @@ use eframe::egui::{
     Sense, Shape, Stroke, StrokeKind, Ui, Vec2,
 };
 
+use crate::alarm::{self, Alarm};
 use crate::anim::{meter, smoothstep, Spring};
 use crate::backend::{Backend, Command, Device, FpsAccess, Game, Snapshot, System, TempSource};
 use crate::platform;
@@ -42,6 +43,10 @@ const DEVICES_PER_ROW: usize = 4;
 const MAX_DEVICES: usize = 2 * DEVICES_PER_ROW;
 /// Altura máxima do painel dentro da janela (sobra espaço para a sombra).
 const PANEL_MAX_HEIGHT: f32 = WINDOW_SIZE[1] - TOP_MARGIN - 16.0;
+/// Página do alarme no carrossel do painel.
+const ALARM_PAGE_HEIGHT: f32 = 178.0;
+/// Cartão que aparece quando o alarme toca.
+const RINGING_SIZE: Vec2 = vec2(360.0, 76.0);
 /// Depois de um clique num dispositivo, quanto tempo esperar o Windows confirmar.
 const DEVICE_PENDING: Duration = Duration::from_secs(2);
 const BARS: usize = 5;
@@ -84,6 +89,8 @@ enum Mode {
     Hud,
     /// Painel completo: mídia + mixer.
     Expanded,
+    /// O alarme está tocando.
+    Ringing,
 }
 
 pub struct IslandApp {
@@ -122,6 +129,15 @@ pub struct IslandApp {
 
     /// Enquanto arrasta um slider, mostramos o valor do mouse (sem atraso).
     dragging: Option<(String, f32)>,
+    alarm: Alarm,
+    /// Página do painel: 0 = Som, 1 = Alarme (valores no meio = deslizando).
+    page: Spring,
+    /// Arrastando as páginas: onde o arrasto começou.
+    page_drag: Option<f32>,
+    /// Rodinha horizontal acumulada (troca de página ao passar de um tanto).
+    wheel: f32,
+    /// 0..1, opacidade do cartão do alarme tocando.
+    ring: Spring,
     /// Dispositivo clicado que o Windows ainda não confirmou. O destaque já
     /// vai para ele, para o clique responder na hora.
     pending_device: Option<(String, Instant)>,
@@ -192,6 +208,11 @@ impl IslandApp {
             gauges: [0.0; 4],
             dragging: None,
             pending_device: None,
+            alarm: Alarm::from_env(),
+            page: Spring::smooth(0.0),
+            page_drag: None,
+            wheel: 0.0,
+            ring: Spring::smooth(0.0),
             window_pos: None,
             notice_timer: if updated { 6.0 } else { 0.0 },
             restarting: false,
@@ -247,16 +268,22 @@ impl IslandApp {
                 // Sem música a pílula mostra o uso do PC; com GPU precisa de mais espaço.
                 // (No modo jogo esses números vão para a pílula ao lado.)
                 let stats = snap.media.is_none() && snap.game.is_none() && snap.system.gpu.is_some();
-                let width = if stats { 300.0 } else { 250.0 };
+                let mut width = if stats { 300.0 } else { 250.0 };
+                if self.alarm.counting() {
+                    width += 56.0; // sininho + tempo restante
+                }
                 vec2(width, PILL_HEIGHT) + vec2(14.0, 4.0) * self.hover.target
             }
             Mode::Hud => HUD_SIZE,
-            Mode::Expanded => {
-                let rows = 1 + apps_shown(snap);
-                let height = panel_base_height(snap) + rows as f32 * ROW_HEIGHT;
-                vec2(EXPANDED_WIDTH, height)
-            }
+            Mode::Expanded => vec2(EXPANDED_WIDTH, panel_fixed_height(snap) + self.middle_height(snap)),
+            Mode::Ringing => RINGING_SIZE,
         }
+    }
+
+    /// Altura da parte do painel que desliza, conforme a página aparecendo.
+    fn middle_height(&self, snap: &Snapshot) -> f32 {
+        let t = self.page.value.clamp(0.0, 1.0);
+        sound_page_height(snap) * (1.0 - t) + ALARM_PAGE_HEIGHT * t
     }
 
     /// `level` é o som que a ilha deve acompanhar agora (0 = ficar quieta).
@@ -323,9 +350,20 @@ impl eframe::App for IslandApp {
         let snap = self.backend.snapshot();
         // Atualização baixada: reinicia quando a ilha não está em uso. Durante
         // um jogo espera ele fechar, para a troca não atrapalhar a partida.
-        if updater::ready() && self.mode == Mode::Collapsed && snap.game.is_none() && !self.restarting {
+        // (Com um alarme marcado, também espera: reiniciar o perderia.)
+        if updater::ready()
+            && self.mode == Mode::Collapsed
+            && snap.game.is_none()
+            && !self.alarm.busy()
+            && !self.restarting
+        {
             self.restarting = true;
             updater::restart();
+        }
+
+        // Deu a hora do alarme: a ilha vira o cartão do alarme (o som já começou).
+        if self.alarm.check(now) {
+            self.mode = Mode::Ringing;
         }
 
         self.place_window(&ctx);
@@ -405,7 +443,7 @@ impl eframe::App for IslandApp {
                     self.mode = Mode::Collapsed;
                 }
             }
-            Mode::Collapsed | Mode::Welcome => {}
+            Mode::Collapsed | Mode::Welcome | Mode::Ringing => {}
         }
 
         if matches!(self.mode, Mode::Collapsed | Mode::Hud) {
@@ -433,6 +471,9 @@ impl eframe::App for IslandApp {
         self.open.update(dt);
         self.welcome.target = if self.mode == Mode::Welcome { 1.0 } else { 0.0 };
         self.welcome.update(dt);
+        self.ring.target = if self.mode == Mode::Ringing { 1.0 } else { 0.0 };
+        self.ring.update(dt);
+        self.page.update(dt);
         self.hud.update(dt);
         self.hover.update(dt);
 
@@ -465,7 +506,11 @@ impl eframe::App for IslandApp {
         let hud = smoothstep(self.hud.value);
 
         let welcome = smoothstep(self.welcome.value);
-        let pill_alpha = (1.0 - open * 2.0).clamp(0.0, 1.0) * (1.0 - hud) * (1.0 - welcome * 2.0).max(0.0);
+        let ring = smoothstep(self.ring.value);
+        let pill_alpha = (1.0 - open * 2.0).clamp(0.0, 1.0)
+            * (1.0 - hud)
+            * (1.0 - welcome * 2.0).max(0.0)
+            * (1.0 - ring * 2.0).max(0.0);
         if pill_alpha > 0.01 {
             self.draw_pill(&content, island, &snap, accent, pill_alpha);
         }
@@ -478,12 +523,20 @@ impl eframe::App for IslandApp {
         if open > 0.01 {
             self.draw_panel(ui, &content, island, &snap, accent);
         }
+        if ring > 0.01 {
+            self.draw_ringing(ui, &content, island, accent, ring, time);
+        }
 
         // --- Quando redesenhar ---
-        let animating = [&self.width, &self.height, &self.open, &self.hud, &self.hover, &self.welcome, &self.game, &self.game_width]
-            .iter()
-            .any(|s| !s.settled());
-        let busy = animating || pointer_down || self.mode != Mode::Collapsed;
+        let springs = [
+            &self.width, &self.height, &self.open, &self.hud, &self.hover, &self.welcome, &self.game, &self.game_width,
+            &self.ring, &self.page,
+        ];
+        let animating = springs.iter().any(|s| !s.settled());
+        // O cartão do alarme tocando não precisa da taxa do monitor (veja abaixo).
+        let busy = animating || pointer_down || !matches!(self.mode, Mode::Collapsed | Mode::Ringing);
+        // Enquanto o som toca, o sininho balança.
+        let swinging = self.mode == Mode::Ringing && self.alarm.sounding();
         // As barrinhas ainda estão se mexendo (ou vão começar)?
         let dancing = level > SOUND || self.master_peak > SOUND || self.bars.iter().any(|bar| *bar > 0.01);
 
@@ -495,16 +548,20 @@ impl eframe::App for IslandApp {
         self.resting = false;
         if busy {
             ctx.request_repaint();
-        } else if hovered || dancing {
+        } else if hovered || dancing || swinging {
             ctx.request_repaint_after(AMBIENT_FRAME);
         } else {
             // Nada se mexendo: dorme até alguém avisar que algo mudou.
             self.resting = true;
-            let wait = if self.notice_timer > 0.0 {
-                REST_FRAME.min(Duration::from_secs_f32(self.notice_timer))
-            } else {
-                REST_FRAME
-            };
+            let mut wait = REST_FRAME;
+            if self.notice_timer > 0.0 {
+                wait = wait.min(Duration::from_secs_f32(self.notice_timer));
+            }
+            // Acorda quando o tempo restante na pílula muda e no segundo em
+            // que o alarme deve tocar.
+            if let Some(left) = self.alarm.remaining(now) {
+                wait = wait.min(alarm::next_change(left));
+            }
             ctx.request_repaint_after(wait);
         }
 
@@ -533,13 +590,26 @@ impl IslandApp {
         draw_bars(p, pos2(left, cy), &self.bars, 16.0, fade(accent, alpha));
 
         let clock = chrono::Local::now().format("%H:%M").to_string();
-        let clock_rect = p.text(
+        let mut clock_rect = p.text(
             pos2(right, cy),
             Align2::RIGHT_CENTER,
             clock,
             FontId::proportional(13.5),
             fade(TEXT, alpha),
         );
+        // Alarme marcado: sininho e quanto falta, antes do relógio. (O resto
+        // da pílula se ajeita no espaço que sobra à esquerda dele.)
+        if let Some(left_time) = self.alarm.remaining(Instant::now()) {
+            let text = p.text(
+                pos2(clock_rect.left() - 10.0, cy),
+                Align2::RIGHT_CENTER,
+                alarm::short(left_time),
+                FontId::proportional(12.5),
+                fade(accent, alpha),
+            );
+            draw_bell(p, pos2(text.left() - 10.0, cy), 6.5, 0.0, fade(accent, alpha));
+            clock_rect.min.x = text.left() - 18.0;
+        }
 
         if self.notice_timer > 0.0 {
             let x = left + 32.0;
@@ -663,129 +733,159 @@ impl IslandApp {
             Stroke::new(1.0, fade(Color32::WHITE, a * 0.08)),
         );
 
-        // ---- Saída de som e microfone ----
-        let mut y = line_y + 7.0;
-        if self.pending_device.as_ref().is_some_and(|(id, at)| {
-            at.elapsed() > DEVICE_PENDING || snap.outputs.iter().chain(&snap.inputs).any(|d| d.default && d.id == *id)
-        }) {
-            self.pending_device = None;
+        // ---- Meio do painel: páginas que deslizam (Som | Alarme) ----
+        let page_top = line_y + 7.0;
+        let middle_bottom = page_top + self.middle_height(snap);
+        let clip = Rect::from_min_max(pos2(island.left() + 1.0, line_y + 1.0), pos2(island.right() - 1.0, middle_bottom + 4.0))
+            .intersect(p.clip_rect());
+        if interactive {
+            self.swipe_pages(ui, clip, island.width());
         }
-        // As duas fileiras usam a mesma largura de botão, para ficarem alinhadas.
-        let columns = snap.outputs.len().max(snap.inputs.len()).clamp(1, DEVICES_PER_ROW);
-        for (devices, is_output) in [(&snap.outputs, true), (&snap.inputs, false)] {
-            let shown = &devices[..devices.len().min(MAX_DEVICES)];
-            if shown.is_empty() {
-                continue;
+        // Os botões só valem na página que está parada na tela.
+        let still = self.page_drag.is_none() && self.page.settled();
+        let shift = island.width();
+
+        // ---- Página Som ----
+        let sound_dx = -self.page.value * shift;
+        if self.page.value < 0.999 {
+            let mut y = page_top;
+            let p = &p.with_clip_rect(clip);
+            let (left, right) = (left + sound_dx, right + sound_dx);
+            let interactive = interactive && still && self.page.target == 0.0;
+
+            // ---- Saída de som e microfone ----
+            if self.pending_device.as_ref().is_some_and(|(id, at)| {
+                at.elapsed() > DEVICE_PENDING || snap.outputs.iter().chain(&snap.inputs).any(|d| d.default && d.id == *id)
+            }) {
+                self.pending_device = None;
             }
-            let names = short_names(shown);
-            // O destaque vai para o clicado assim que ele for clicado.
-            let pending = self.pending_device.as_ref().map(|(id, _)| id.clone()).filter(|id| shown.iter().any(|d| d.id == *id));
-            let gap = 6.0;
-            let chips_left = left + 38.0;
-            let chip_width = (right - chips_left - gap * (columns - 1) as f32) / columns as f32;
-            for (line, chunk) in shown.chunks(DEVICES_PER_ROW).enumerate() {
+            // As duas fileiras usam a mesma largura de botão, para ficarem alinhadas.
+            let columns = snap.outputs.len().max(snap.inputs.len()).clamp(1, DEVICES_PER_ROW);
+            for (devices, is_output) in [(&snap.outputs, true), (&snap.inputs, false)] {
+                let shown = &devices[..devices.len().min(MAX_DEVICES)];
+                if shown.is_empty() {
+                    continue;
+                }
+                let names = short_names(shown);
+                // O destaque vai para o clicado assim que ele for clicado.
+                let pending = self.pending_device.as_ref().map(|(id, _)| id.clone()).filter(|id| shown.iter().any(|d| d.id == *id));
+                let gap = 6.0;
+                let chips_left = left + 38.0;
+                let chip_width = (right - chips_left - gap * (columns - 1) as f32) / columns as f32;
+                for (line, chunk) in shown.chunks(DEVICES_PER_ROW).enumerate() {
+                    let a = next_alpha(open);
+                    let cy = y + DEVICE_ROW_HEIGHT / 2.0 + (1.0 - a) * 12.0;
+                    y += DEVICE_ROW_HEIGHT;
+                    if line == 0 {
+                        let icon = pos2(left + 14.0, cy);
+                        if is_output {
+                            draw_speaker(p, icon, 8.5, 0.66, false, fade(TEXT_DIM, a));
+                        } else {
+                            draw_mic(p, icon, 8.0, fade(TEXT_DIM, a));
+                        }
+                    }
+                    for (column, device) in chunk.iter().enumerate() {
+                        let index = line * DEVICES_PER_ROW + column;
+                        let x = chips_left + column as f32 * (chip_width + gap);
+                        let chip = Rect::from_min_size(pos2(x, cy - 12.0), vec2(chip_width, 24.0));
+                        let current = pending.as_ref().map_or(device.default, |id| *id == device.id);
+                        let clicked = self.draw_device_chip(ui, p, chip, device, &names[index], current, accent, a, interactive);
+                        if clicked && !current {
+                            self.backend.send(Command::SetDevice(device.id.clone()));
+                            self.pending_device = Some((device.id.clone(), Instant::now()));
+                        }
+                    }
+                }
+            }
+
+            // ---- Mixer ----
+            let mut rows: Vec<(String, String, f32, bool, f32)> = vec![(
+                MASTER_KEY.to_string(),
+                "Geral".to_string(),
+                snap.master,
+                snap.master_muted,
+                self.master_peak,
+            )];
+            for s in snap.sessions.iter().take(apps_shown(snap)) {
+                let peak = self.app_peaks.get(&s.name).copied().unwrap_or(0.0);
+                rows.push((s.name.clone(), s.name.clone(), s.volume, s.muted, peak));
+            }
+
+            let mut still_dragging = false;
+            for (key, label, volume, muted, peak) in rows {
                 let a = next_alpha(open);
-                let cy = y + DEVICE_ROW_HEIGHT / 2.0 + (1.0 - a) * 12.0;
-                y += DEVICE_ROW_HEIGHT;
-                if line == 0 {
-                    let icon = pos2(left + 14.0, cy);
-                    if is_output {
-                        draw_speaker(p, icon, 8.5, 0.66, false, fade(TEXT_DIM, a));
+                let is_master = key == MASTER_KEY;
+                let rect = Rect::from_min_max(pos2(left, y), pos2(right, y + ROW_HEIGHT)).translate(vec2(0.0, (1.0 - a) * 12.0));
+                y += ROW_HEIGHT;
+                let cy = rect.center().y;
+                let color = if is_master { accent } else { name_color(&label) };
+                let dim = if muted { 0.4 } else { 1.0 };
+
+                // Ícone (clique = mudo).
+                let icon_center = pos2(left + 14.0, cy);
+                let (clicked, scale) = icon_button(ui, p, ("mute", &key), icon_center, 15.0, interactive, a);
+                if is_master {
+                    draw_speaker(p, icon_center, 8.5 * scale, volume, muted, fade(TEXT, a * dim));
+                } else {
+                    p.circle_filled(icon_center, 11.0 * scale, fade(color, a * dim * 0.9));
+                    let initial = label.chars().next().unwrap_or('?').to_uppercase().to_string();
+                    p.text(icon_center, Align2::CENTER_CENTER, initial, FontId::proportional(12.0), fade(ISLAND, a));
+                    if muted {
+                        let d = vec2(9.0, 9.0) * scale;
+                        p.line_segment([icon_center - d, icon_center + d], Stroke::new(2.0, fade(TEXT, a)));
+                    }
+                }
+                if clicked {
+                    self.backend.send(if is_master {
+                        Command::ToggleMasterMute
                     } else {
-                        draw_mic(p, icon, 8.0, fade(TEXT_DIM, a));
-                    }
+                        Command::ToggleSessionMute(key.clone())
+                    });
                 }
-                for (column, device) in chunk.iter().enumerate() {
-                    let index = line * DEVICES_PER_ROW + column;
-                    let x = chips_left + column as f32 * (chip_width + gap);
-                    let chip = Rect::from_min_size(pos2(x, cy - 12.0), vec2(chip_width, 24.0));
-                    let current = pending.as_ref().map_or(device.default, |id| *id == device.id);
-                    let clicked = self.draw_device_chip(ui, p, chip, device, &names[index], current, accent, a, interactive);
-                    if clicked && !current {
-                        self.backend.send(Command::SetDevice(device.id.clone()));
-                        self.pending_device = Some((device.id.clone(), Instant::now()));
-                    }
+
+                text_fit(p, pos2(left + 38.0, cy), Align2::LEFT_CENTER, &label, 13.0, fade(TEXT, a * dim), 92.0);
+
+                // Slider.
+                let shown = match &self.dragging {
+                    Some((k, v)) if *k == key => *v,
+                    _ => volume,
+                };
+                let slider_rect = Rect::from_min_max(pos2(left + 138.0, rect.top()), pos2(right - 46.0, rect.bottom()));
+                let result = slider(ui, p, &key, slider_rect, shown, peak, color, a * dim, interactive);
+                if let Some(value) = result.changed {
+                    self.backend.send(if is_master {
+                        Command::SetMaster(value)
+                    } else {
+                        Command::SetSession(key.clone(), value)
+                    });
+                    self.dragging = Some((key.clone(), value));
                 }
-            }
-        }
-
-        // ---- Mixer ----
-        let mut rows: Vec<(String, String, f32, bool, f32)> = vec![(
-            MASTER_KEY.to_string(),
-            "Geral".to_string(),
-            snap.master,
-            snap.master_muted,
-            self.master_peak,
-        )];
-        for s in snap.sessions.iter().take(apps_shown(snap)) {
-            let peak = self.app_peaks.get(&s.name).copied().unwrap_or(0.0);
-            rows.push((s.name.clone(), s.name.clone(), s.volume, s.muted, peak));
-        }
-
-        let mut still_dragging = false;
-        for (key, label, volume, muted, peak) in rows {
-            let a = next_alpha(open);
-            let is_master = key == MASTER_KEY;
-            let rect = Rect::from_min_max(pos2(left, y), pos2(right, y + ROW_HEIGHT)).translate(vec2(0.0, (1.0 - a) * 12.0));
-            y += ROW_HEIGHT;
-            let cy = rect.center().y;
-            let color = if is_master { accent } else { name_color(&label) };
-            let dim = if muted { 0.4 } else { 1.0 };
-
-            // Ícone (clique = mudo).
-            let icon_center = pos2(left + 14.0, cy);
-            let (clicked, scale) = icon_button(ui, p, ("mute", &key), icon_center, 15.0, interactive, a);
-            if is_master {
-                draw_speaker(p, icon_center, 8.5 * scale, volume, muted, fade(TEXT, a * dim));
-            } else {
-                p.circle_filled(icon_center, 11.0 * scale, fade(color, a * dim * 0.9));
-                let initial = label.chars().next().unwrap_or('?').to_uppercase().to_string();
-                p.text(icon_center, Align2::CENTER_CENTER, initial, FontId::proportional(12.0), fade(ISLAND, a));
-                if muted {
-                    let d = vec2(9.0, 9.0) * scale;
-                    p.line_segment([icon_center - d, icon_center + d], Stroke::new(2.0, fade(TEXT, a)));
+                if result.active && self.dragging.as_ref().is_some_and(|(k, _)| *k == key) {
+                    still_dragging = true;
                 }
-            }
-            if clicked {
-                self.backend.send(if is_master {
-                    Command::ToggleMasterMute
-                } else {
-                    Command::ToggleSessionMute(key.clone())
-                });
-            }
 
-            text_fit(p, pos2(left + 38.0, cy), Align2::LEFT_CENTER, &label, 13.0, fade(TEXT, a * dim), 92.0);
-
-            // Slider.
-            let shown = match &self.dragging {
-                Some((k, v)) if *k == key => *v,
-                _ => volume,
-            };
-            let slider_rect = Rect::from_min_max(pos2(left + 138.0, rect.top()), pos2(right - 46.0, rect.bottom()));
-            let result = slider(ui, p, &key, slider_rect, shown, peak, color, a * dim, interactive);
-            if let Some(value) = result.changed {
-                self.backend.send(if is_master {
-                    Command::SetMaster(value)
-                } else {
-                    Command::SetSession(key.clone(), value)
-                });
-                self.dragging = Some((key.clone(), value));
+                p.text(
+                    pos2(right, cy),
+                    Align2::RIGHT_CENTER,
+                    format!("{:.0}%", shown * 100.0),
+                    FontId::proportional(12.5),
+                    fade(TEXT_DIM, a),
+                );
             }
-            if result.active && self.dragging.as_ref().is_some_and(|(k, _)| *k == key) {
-                still_dragging = true;
+            if !still_dragging {
+                self.dragging = None;
             }
-
-            p.text(
-                pos2(right, cy),
-                Align2::RIGHT_CENTER,
-                format!("{:.0}%", shown * 100.0),
-                FontId::proportional(12.5),
-                fade(TEXT_DIM, a),
-            );
         }
-        if !still_dragging {
-            self.dragging = None;
+
+        // ---- Página Alarme ----
+        if self.page.value > 0.001 {
+            let alarm_dx = (1.0 - self.page.value) * shift;
+            let p = &p.with_clip_rect(clip);
+            let a = smoothstep(open * 1.9 - 0.25 - 0.09);
+            let interactive = interactive && still && self.page.target == 1.0;
+            self.draw_alarm_page(ui, p, left + alarm_dx, right + alarm_dx, page_top, accent, a, interactive);
         }
+        let y = middle_bottom;
 
         // ---- Monitor do sistema ----
         let a = next_alpha(open);
@@ -807,6 +907,24 @@ impl IslandApp {
         }
         p.text(pos2(left, footer_y), Align2::LEFT_CENTER, clock, FontId::proportional(12.0), fade(TEXT_DIM, a));
 
+        // Bolinhas das páginas (clique leva direto à página).
+        for (index, page) in [0.0f32, 1.0].into_iter().enumerate() {
+            let center = pos2(island.center().x - 8.0 + index as f32 * 16.0, footer_y);
+            let closeness = 1.0 - (self.page.value - page).abs().min(1.0);
+            let color = fade(Color32::WHITE, 0.25).lerp_to_gamma(accent, closeness);
+            p.circle_filled(center, 3.0 + closeness, fade(color, a));
+            if interactive {
+                let target = Rect::from_center_size(center, vec2(16.0, 22.0));
+                let resp = ui.interact(target, ui.scope_id().with(("page", index)), Sense::click());
+                if resp.clicked() {
+                    self.page.target = page;
+                }
+                if resp.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                }
+            }
+        }
+
         let quit = Rect::from_min_max(pos2(right - 40.0, footer_y - 11.0), pos2(right, footer_y + 11.0));
         let quit_resp = if interactive {
             Some(ui.interact(quit, ui.scope_id().with("quit"), Sense::click()))
@@ -823,6 +941,141 @@ impl IslandApp {
 }
 
 impl IslandApp {
+    /// Arrastar (ou rodinha horizontal) troca a página do painel.
+    ///
+    /// Esta área é registrada antes dos botões e sliders da página, então eles
+    /// têm prioridade: arrastar um slider mexe no volume, não troca de página.
+    fn swipe_pages(&mut self, ui: &mut Ui, area: Rect, width: f32) {
+        let resp = ui.interact(area, ui.scope_id().with("pages"), Sense::drag());
+        if resp.drag_started() {
+            self.page_drag = Some(self.page.value);
+        }
+        if let Some(start) = self.page_drag {
+            if resp.dragged() {
+                // A página acompanha o mouse; além das pontas, resiste.
+                let mut value = self.page.value - resp.drag_delta().x / width;
+                if !(0.0..=1.0).contains(&value) {
+                    value = value.clamp(-0.12, 1.12);
+                }
+                self.page.value = value;
+                self.page.target = value;
+            }
+            if resp.drag_stopped() || !resp.dragged() {
+                self.page_drag = None;
+                let moved = self.page.value - start;
+                let speed = ui.ctx().input(|i| i.pointer.velocity().x);
+                let target = if moved > 0.25 || speed < -400.0 {
+                    1.0
+                } else if moved < -0.25 || speed > 400.0 {
+                    0.0
+                } else {
+                    start.round()
+                };
+                self.page.target = target.clamp(0.0, 1.0);
+            }
+        }
+
+        // Rodinha horizontal / dois dedos no touchpad.
+        if resp.hovered() || ui.rect_contains_pointer(area) {
+            let scroll = ui.ctx().input(|i| i.smooth_scroll_delta.x);
+            self.wheel = if scroll == 0.0 { self.wheel * 0.9 } else { self.wheel + scroll };
+            if self.wheel.abs() > 60.0 {
+                self.page.target = if self.wheel < 0.0 { 1.0 } else { 0.0 };
+                self.wheel = 0.0;
+            }
+        }
+    }
+
+    /// Página do alarme: escolher o tempo, ou ver quanto falta.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_alarm_page(&mut self, ui: &mut Ui, p: &Painter, left: f32, right: f32, top: f32, accent: Color32, a: f32, interactive: bool) {
+        let cx = (left + right) / 2.0;
+        let now = Instant::now();
+        if let Some(left_time) = self.alarm.remaining(now) {
+            // ---- Contando ----
+            p.text(pos2(cx, top + 52.0), Align2::CENTER_CENTER, alarm::countdown(left_time), FontId::proportional(38.0), fade(TEXT, a));
+            let at = self.alarm.due_clock().unwrap_or_default();
+            p.text(pos2(cx, top + 92.0), Align2::CENTER_CENTER, format!("Toca às {at}"), FontId::proportional(13.0), fade(TEXT_DIM, a));
+            let row = top + 138.0;
+            let more = Rect::from_center_size(pos2(cx - 62.0, row), vec2(112.0, 30.0));
+            let cancel = Rect::from_center_size(pos2(cx + 62.0, row), vec2(112.0, 30.0));
+            if text_button(ui, p, "alarm-more", more, "+5 min", false, accent, a, interactive) {
+                self.alarm.add(5);
+            }
+            if text_button(ui, p, "alarm-cancel", cancel, "Cancelar", false, accent, a, interactive) {
+                self.alarm.cancel();
+            }
+            return;
+        }
+
+        // ---- Escolhendo o tempo ----
+        let (hours, minutes) = (self.alarm.chosen / 60, self.alarm.chosen % 60);
+        let digits_y = top + 50.0;
+        for (column, (value, unit, step)) in [(hours, "h", 60), (minutes, "min", 5)].into_iter().enumerate() {
+            let x = cx + if column == 0 { -62.0 } else { 52.0 };
+            p.text(pos2(x, digits_y), Align2::CENTER_CENTER, format!("{value:02}"), FontId::proportional(36.0), fade(TEXT, a));
+            p.text(pos2(x + 26.0, digits_y + 6.0), Align2::LEFT_CENTER, unit, FontId::proportional(13.0), fade(TEXT_DIM, a));
+            for (row, direction) in [(-1.0f32, 1), (1.0, -1)] {
+                let center = pos2(x, digits_y + row * 34.0);
+                let (clicked, scale) = icon_button(ui, p, ("alarm-step", column, direction), center, 13.0, interactive, a);
+                draw_chevron(p, center, 5.5 * scale, row < 0.0, fade(TEXT_DIM, a));
+                if clicked {
+                    self.alarm.change(direction * step);
+                }
+            }
+        }
+        p.text(pos2(cx - 5.0, digits_y - 2.0), Align2::CENTER_CENTER, ":", FontId::proportional(30.0), fade(TEXT_DIM, a));
+
+        // Atalhos: somam ao tempo escolhido.
+        let presets = [("+5 min", 5), ("+15 min", 15), ("+30 min", 30), ("+1 h", 60)];
+        let gap = 6.0;
+        let width = (right - left - gap * 3.0) / 4.0;
+        for (i, (label, minutes)) in presets.into_iter().enumerate() {
+            let rect = Rect::from_min_size(pos2(left + i as f32 * (width + gap), top + 100.0), vec2(width, 26.0));
+            if text_button(ui, p, ("alarm-preset", i), rect, label, false, accent, a, interactive) {
+                self.alarm.change(minutes);
+            }
+        }
+
+        let ready = self.alarm.chosen > 0;
+        let start = Rect::from_center_size(pos2(cx, top + 154.0), vec2(150.0, 30.0));
+        let a_start = if ready { a } else { a * 0.4 };
+        if text_button(ui, p, "alarm-start", start, "Iniciar", true, accent, a_start, interactive && ready) {
+            self.alarm.start();
+        }
+    }
+
+    /// Cartão do alarme tocando: sininho | "Alarme" | Soneca, Parar.
+    fn draw_ringing(&mut self, ui: &mut Ui, p: &Painter, island: Rect, accent: Color32, alpha: f32, time: f32) {
+        let interactive = self.mode == Mode::Ringing;
+        let cy = island.center().y;
+        let left = island.left() + 18.0;
+        let right = island.right() - 16.0;
+
+        let swing = if self.alarm.sounding() { (time * 22.0).sin() * 0.32 } else { 0.0 };
+        draw_bell(p, pos2(left + 14.0, cy), 13.0, swing, fade(accent, alpha));
+
+        let text_x = left + 40.0;
+        p.text(pos2(text_x, cy - 9.0), Align2::LEFT_CENTER, "Alarme", FontId::proportional(15.0), fade(TEXT, alpha));
+        let subtitle = match self.alarm.rang_clock() {
+            Some(at) => format!("Marcado para {at}"),
+            None => "Deu a hora".to_string(),
+        };
+        p.text(pos2(text_x, cy + 10.0), Align2::LEFT_CENTER, subtitle, FontId::proportional(12.0), fade(TEXT_DIM, alpha));
+
+        let stop = Rect::from_min_max(pos2(right - 76.0, cy - 15.0), pos2(right, cy + 15.0));
+        let snooze = Rect::from_min_max(pos2(stop.left() - 8.0 - 92.0, cy - 15.0), pos2(stop.left() - 8.0, cy + 15.0));
+        let snooze_label = format!("Soneca {} min", alarm::SNOOZE_MINUTES);
+        if text_button(ui, p, "ring-snooze", snooze, &snooze_label, false, accent, alpha, interactive) {
+            self.alarm.snooze();
+            self.mode = Mode::Collapsed;
+        }
+        if text_button(ui, p, "ring-stop", stop, "Parar", true, accent, alpha, interactive) {
+            self.alarm.stop();
+            self.mode = Mode::Collapsed;
+        }
+    }
+
     /// Um botão de dispositivo (fone, TV, microfone...). Devolve se foi clicado.
     #[allow(clippy::too_many_arguments)]
     fn draw_device_chip(
@@ -1283,18 +1536,81 @@ fn text_fit(p: &Painter, pos: Pos2, anchor: Align2, text: &str, size: f32, color
     p.galley(rect.min, galley, color);
 }
 
-/// Altura do painel sem as linhas do mixer.
-fn panel_base_height(snap: &Snapshot) -> f32 {
+/// Altura das partes fixas do painel (música, números, rodapé).
+fn panel_fixed_height(snap: &Snapshot) -> f32 {
     let fps_row = if snap.fps_access == FpsAccess::Granted { 0.0 } else { FPS_ROW_HEIGHT };
+    PADDING + HEADER_HEIGHT + 14.0 + STATS_HEIGHT + fps_row + FOOTER_HEIGHT
+}
+
+/// Altura das fileiras de saída de som e microfone.
+fn devices_height(snap: &Snapshot) -> f32 {
     let device_rows = |list: &[Device]| list.len().min(MAX_DEVICES).div_ceil(DEVICES_PER_ROW);
-    let devices = (device_rows(&snap.outputs) + device_rows(&snap.inputs)) as f32 * DEVICE_ROW_HEIGHT;
-    PADDING + HEADER_HEIGHT + 14.0 + devices + STATS_HEIGHT + fps_row + FOOTER_HEIGHT
+    (device_rows(&snap.outputs) + device_rows(&snap.inputs)) as f32 * DEVICE_ROW_HEIGHT
+}
+
+/// Altura da página Som: dispositivos + "Geral" + apps.
+fn sound_page_height(snap: &Snapshot) -> f32 {
+    devices_height(snap) + (1 + apps_shown(snap)) as f32 * ROW_HEIGHT
 }
 
 /// Quantos apps cabem no mixer (além da linha "Geral").
 fn apps_shown(snap: &Snapshot) -> usize {
-    let room = (PANEL_MAX_HEIGHT - panel_base_height(snap)) / ROW_HEIGHT - 1.0;
+    let room = (PANEL_MAX_HEIGHT - panel_fixed_height(snap) - devices_height(snap)) / ROW_HEIGHT - 1.0;
     snap.sessions.len().min(MAX_APPS).min(room.max(0.0) as usize)
+}
+
+/// Botão com texto. `filled` = o botão principal (cheio, na cor de destaque).
+#[allow(clippy::too_many_arguments)]
+fn text_button(
+    ui: &mut Ui,
+    p: &Painter,
+    id_source: impl std::hash::Hash + std::fmt::Debug,
+    rect: Rect,
+    label: &str,
+    filled: bool,
+    accent: Color32,
+    a: f32,
+    interactive: bool,
+) -> bool {
+    let id = ui.scope_id().with(id_source);
+    let resp = interactive.then(|| ui.interact(rect, id, Sense::click()));
+    let hovered = resp.as_ref().is_some_and(|r| r.hovered());
+    let hover = ui.ctx().animate_bool_with_time(id, hovered, 0.12);
+    let radius = rect.height() / 2.0;
+    if filled {
+        p.rect_filled(rect.expand(hover * 1.5), radius, fade(accent, a * (0.85 + 0.15 * hover)));
+        p.text(rect.center(), Align2::CENTER_CENTER, label, FontId::proportional(13.5), fade(ISLAND, a));
+    } else {
+        p.rect_filled(rect, radius, fade(Color32::WHITE, a * (0.07 + 0.08 * hover)));
+        let color = if hover > 0.5 { TEXT } else { TEXT_DIM.lerp_to_gamma(TEXT, 0.4) };
+        p.text(rect.center(), Align2::CENTER_CENTER, label, FontId::proportional(12.5), fade(color, a));
+    }
+    if hovered {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    resp.is_some_and(|r| r.clicked())
+}
+
+/// Setinha para cima (`up`) ou para baixo.
+fn draw_chevron(p: &Painter, c: Pos2, r: f32, up: bool, color: Color32) {
+    let dy = if up { -r * 0.5 } else { r * 0.5 };
+    let points = vec![pos2(c.x - r, c.y - dy), pos2(c.x, c.y + dy), pos2(c.x + r, c.y - dy)];
+    p.add(Shape::line(points, Stroke::new(2.0, color)));
+}
+
+/// Sininho. `angle` (em radianos) o inclina, pendurado pelo topo.
+fn draw_bell(p: &Painter, c: Pos2, r: f32, angle: f32, color: Color32) {
+    let pivot = pos2(c.x, c.y - r);
+    let (sin, cos) = angle.sin_cos();
+    let at = |x: f32, y: f32| {
+        let (dx, dy) = (c.x + x * r - pivot.x, c.y + y * r - pivot.y);
+        pos2(pivot.x + dx * cos - dy * sin, pivot.y + dx * sin + dy * cos)
+    };
+    let body = vec![at(-0.25, -0.8), at(0.25, -0.8), at(0.6, -0.3), at(0.75, 0.5), at(-0.75, 0.5), at(-0.6, -0.3)];
+    p.add(Shape::convex_polygon(body, color, Stroke::NONE));
+    p.line_segment([at(-0.9, 0.55), at(0.9, 0.55)], Stroke::new((r * 0.2).max(1.5), color));
+    p.circle_filled(at(0.0, 0.82), r * 0.17, color);
+    p.circle_filled(at(0.0, -0.9), r * 0.12, color);
 }
 
 /// Nomes curtos para os botões: "Fones de ouvido (Realtek Audio)" vira
