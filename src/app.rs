@@ -945,8 +945,11 @@ impl IslandApp {
     ///
     /// Esta área é registrada antes dos botões e sliders da página, então eles
     /// têm prioridade: arrastar um slider mexe no volume, não troca de página.
+    /// Ela também "ouve" cliques: assim a biblioteca espera o mouse se mexer
+    /// antes de decidir que é um arrasto, e um clique parado vai para o botão
+    /// que está em cima (só arrasto faria qualquer apertar virar arrasto).
     fn swipe_pages(&mut self, ui: &mut Ui, area: Rect, width: f32) {
-        let resp = ui.interact(area, ui.scope_id().with("pages"), Sense::drag());
+        let resp = ui.interact(area, ui.scope_id().with("pages"), Sense::click_and_drag());
         if resp.drag_started() {
             self.page_drag = Some(self.page.value);
         }
