@@ -102,18 +102,22 @@ pub fn nudge_cursor(step: i32) {
 #[cfg(windows)]
 mod window {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::sync::Mutex;
+    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
     use windows::Win32::Graphics::Dwm::{
-        DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
+        DwmGetWindowAttribute, DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_CLOAKED,
+        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
     };
+    use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+    use windows::Win32::System::SystemInformation::GetTickCount64;
     use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, GWL_STYLE, HWND_TOPMOST,
-        SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_CAPTION,
-        WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
-        WS_EX_WINDOWEDGE, WM_NCCALCSIZE, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU,
-        WS_THICKFRAME,
+        GetWindow, GetWindowLongPtrW, GetWindowRect, IsWindow, IsWindowVisible, SetWindowLongPtrW, SetWindowPos,
+        GWL_EXSTYLE, GWL_STYLE, GW_HWNDPREV, HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
+        SWP_NOSIZE, SWP_NOZORDER, WS_CAPTION, WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+        WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE, WM_NCCALCSIZE, WS_MAXIMIZEBOX,
+        WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
     };
 
     fn hwnd(frame: &eframe::Frame) -> Option<HWND> {
@@ -142,6 +146,98 @@ mod window {
         DefSubclassProc(hwnd, message, wparam, lparam)
     }
 
+    /// Intervalo mínimo entre duas conferências da ordem das janelas, em milissegundos.
+    const Z_CHECK_EVERY: u64 = 400;
+    static LAST_Z_CHECK: AtomicU64 = AtomicU64::new(0);
+    /// Janelas grandes que continuam acima da ilha mesmo depois de ela subir.
+    /// São as do próprio Windows (ex.: a troca de janelas do Win+Tab), que
+    /// vivem numa camada que nenhum programa comum alcança. Não adianta
+    /// insistir com elas.
+    static UNBEATABLE: Mutex<Vec<isize>> = Mutex::new(Vec::new());
+
+    /// A primeira janela grande e visível, acima da ilha, que cobre o lugar
+    /// onde a ilha é desenhada.
+    ///
+    /// "Grande" = pelo menos metade da tela. Isso pega jogos em tela cheia
+    /// (mesmo os que ficam alguns pixels maiores ou menores que o monitor) e
+    /// deixa de fora menus, dicas e avisos, que são pequenos.
+    unsafe fn large_window_above(hwnd: HWND, ignore: &[isize]) -> Option<HWND> {
+        let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+        if !GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mut info).as_bool() {
+            return None;
+        }
+        let area = |rect: RECT| (rect.right - rect.left) as i64 * (rect.bottom - rect.top) as i64;
+        let half_screen = area(info.rcMonitor) / 2;
+
+        // Um ponto no meio da pílula: centro da janela, logo abaixo do topo.
+        let mut own = RECT::default();
+        GetWindowRect(hwnd, &mut own).ok()?;
+        let (x, y) = ((own.left + own.right) / 2, own.top + (own.bottom - own.top) / 24);
+
+        let mut current = hwnd;
+        // O limite é só uma garantia contra uma lista que não termina.
+        for _ in 0..256 {
+            // "Anterior" na ordem das janelas = a que está logo acima.
+            current = GetWindow(current, GW_HWNDPREV).ok().filter(|above| !above.is_invalid())?;
+            if ignore.contains(&(current.0 as isize)) || !IsWindowVisible(current).as_bool() {
+                continue;
+            }
+            let mut rect = RECT::default();
+            if GetWindowRect(current, &mut rect).is_err() {
+                continue;
+            }
+            let covers_island = rect.left <= x && x < rect.right && rect.top <= y && y < rect.bottom;
+            if !covers_island || area(rect) < half_screen {
+                continue;
+            }
+            // "Cloaked": janela que existe mas o Windows não está mostrando.
+            let mut cloaked = 0u32;
+            let _ = DwmGetWindowAttribute(current, DWMWA_CLOAKED, &mut cloaked as *mut u32 as *mut std::ffi::c_void, 4);
+            if cloaked == 0 {
+                return Some(current);
+            }
+        }
+        None
+    }
+
+    /// Mantém a ilha na frente de jogos em tela cheia.
+    ///
+    /// A ilha é uma janela "sempre no topo". Só que muitos jogos, ao entrar em
+    /// tela cheia, também se marcam assim, e entre duas janelas "sempre no
+    /// topo" fica na frente a que subiu por último: o jogo cobria a ilha.
+    /// Então, de tempos em tempos, a ilha confere se há uma janela grande
+    /// acima dela e, se houver, volta para a frente (sem tirar o foco do jogo).
+    ///
+    /// A ilha só sobe quando está de fato coberta. Subir a cada quadro, sem
+    /// olhar, também funcionaria para os jogos, mas colocaria a ilha na frente
+    /// de menus, dicas e avisos do Windows que hoje aparecem por cima dela.
+    unsafe fn stay_above_large_windows(hwnd: HWND) {
+        let now = GetTickCount64();
+        if now.wrapping_sub(LAST_Z_CHECK.load(Ordering::Relaxed)) < Z_CHECK_EVERY {
+            return;
+        }
+        LAST_Z_CHECK.store(now, Ordering::Relaxed);
+
+        let Ok(mut unbeatable) = UNBEATABLE.lock() else { return };
+        unbeatable.retain(|window| IsWindow(Some(HWND(*window as *mut std::ffi::c_void))).as_bool());
+        let Some(blocker) = large_window_above(hwnd, &unbeatable) else { return };
+
+        let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
+        let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), 0, 0, 0, 0, flags);
+        if DEBUG_Z.load(Ordering::Relaxed) {
+            crate::perf::line(format!("window: raised above large window {:?}", blocker.0));
+        }
+        if large_window_above(hwnd, &unbeatable) == Some(blocker) && unbeatable.len() < 64 {
+            unbeatable.push(blocker.0 as isize);
+            if DEBUG_Z.load(Ordering::Relaxed) {
+                crate::perf::line(format!("window: {:?} stays above; giving up on it", blocker.0));
+            }
+        }
+    }
+
+    /// ISLANDBAR_DEBUG_UI=1 também registra quando a ilha precisa voltar para a frente.
+    static DEBUG_Z: AtomicBool = AtomicBool::new(false);
+
     pub fn sync(frame: &eframe::Frame, passthrough: bool) {
         let Some(hwnd) = hwnd(frame) else { return };
         unsafe {
@@ -149,6 +245,7 @@ mod window {
             if !HOOKED.swap(true, Ordering::Relaxed) {
                 let _ = SetWindowSubclass(hwnd, Some(window_hook), 1, 0);
                 frame_changed = true;
+                DEBUG_Z.store(std::env::var_os("ISLANDBAR_DEBUG_UI").is_some(), Ordering::Relaxed);
             }
 
             // Tudo que é de "janela normal": barra de título, botões de
@@ -203,43 +300,21 @@ mod window {
                 let flags = SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE;
                 let _ = SetWindowPos(hwnd, None, 0, 0, 0, 0, flags);
             }
-        }
-    }
-    /// Força a janela de volta ao topo da pilha de z-order, sem roubar foco.
-    ///
-    /// Jogos em tela cheia sem borda podem criar sua janela com z-order acima
-    /// da ilha, mesmo com `always_on_top`. Chamar isso periodicamente garante
-    /// que a ilha continue visível.
-    pub fn ensure_topmost(frame: &eframe::Frame) {
-        let Some(hwnd) = hwnd(frame) else { return };
-        unsafe {
-            let _ = SetWindowPos(
-                hwnd,
-                Some(HWND_TOPMOST),
-                0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-            );
+
+            stay_above_large_windows(hwnd);
         }
     }
 }
 
 /// Mantém a janela como uma superfície transparente pura: sem barra de título,
-/// sem borda, fora do Alt+Tab. Com `passthrough`, os cliques vão para o
-/// programa que está embaixo. Chamada a cada frame; só mexe se algo mudou.
+/// sem borda, fora do Alt+Tab, e na frente de jogos em tela cheia. Com
+/// `passthrough`, os cliques vão para o programa que está embaixo. Chamada a
+/// cada frame; só mexe se algo mudou.
 pub fn sync_window(frame: &eframe::Frame, passthrough: bool) {
     #[cfg(windows)]
     window::sync(frame, passthrough);
     #[cfg(not(windows))]
     let _ = (frame, passthrough);
-}
-
-/// Força a janela de volta ao topo do z-order. Jogos em tela cheia sem borda
-/// podem roubar o topo; chamar isto periodicamente garante a visibilidade.
-pub fn ensure_topmost(frame: &eframe::Frame) {
-    #[cfg(windows)]
-    window::ensure_topmost(frame);
-    #[cfg(not(windows))]
-    let _ = frame;
 }
 
 #[cfg(windows)]

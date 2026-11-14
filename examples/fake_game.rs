@@ -4,6 +4,10 @@
 //! pelo DirectX 11, como um jogo em tela cheia faria. Serve para conferir no
 //! Windows do GitHub se a ilha entra no modo jogo e mede o FPS. Fecha sozinho
 //! depois de alguns segundos.
+//!
+//! Com `--topmost`, a janela se marca como "sempre no topo" toda vez que
+//! ganha o foco. Muitos jogos fazem isso em tela cheia (é o padrão da
+//! biblioteca SDL2, por exemplo), e é assim que acabam por cima da ilha.
 
 // Sem janela de console, como um jogo de verdade.
 #![cfg_attr(windows, windows_subsystem = "windows")]
@@ -13,6 +17,7 @@ fn main() {}
 
 #[cfg(windows)]
 fn main() -> windows::core::Result<()> {
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::{Duration, Instant};
     use windows::core::w;
     use windows::Win32::Foundation::{HMODULE, HWND, LPARAM, LRESULT, WPARAM};
@@ -27,14 +32,22 @@ fn main() -> windows::core::Result<()> {
     use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, DispatchMessageW, GetSystemMetrics, PeekMessageW, PostQuitMessage,
-        RegisterClassW, SetForegroundWindow, TranslateMessage, MSG, PM_REMOVE, SM_CXSCREEN, SM_CYSCREEN,
-        WINDOW_EX_STYLE, WM_DESTROY, WM_QUIT, WNDCLASSW, WS_POPUP, WS_VISIBLE,
+        RegisterClassW, SetForegroundWindow, SetWindowPos, TranslateMessage, HWND_TOPMOST, MSG, PM_REMOVE,
+        SM_CXSCREEN, SM_CYSCREEN, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WINDOW_EX_STYLE, WM_ACTIVATE,
+        WM_DESTROY, WM_QUIT, WNDCLASSW, WS_POPUP, WS_VISIBLE,
     };
+
+    static TOPMOST: AtomicBool = AtomicBool::new(false);
+    TOPMOST.store(std::env::args().any(|arg| arg == "--topmost"), Ordering::Relaxed);
 
     unsafe extern "system" fn window_proc(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         if message == WM_DESTROY {
             PostQuitMessage(0);
             return LRESULT(0);
+        }
+        // Ganhou o foco: sobe para a frente de todas as janelas "sempre no topo".
+        if message == WM_ACTIVATE && wparam.0 & 0xFFFF != 0 && TOPMOST.load(Ordering::Relaxed) {
+            let _ = SetWindowPos(window, Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         }
         DefWindowProcW(window, message, wparam, lparam)
     }

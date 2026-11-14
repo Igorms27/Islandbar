@@ -24,7 +24,8 @@ use windows::Win32::System::Threading::{
 };
 use windows::Win32::UI::Shell::{SHQueryUserNotificationState, QUNS_RUNNING_D3D_FULL_SCREEN};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetClassNameW, GetForegroundWindow, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId,
+    GetClassNameW, GetForegroundWindow, GetWindowLongPtrW, GetWindowRect, GetWindowTextW,
+    GetWindowThreadProcessId, IsZoomed, GWL_STYLE, WS_CAPTION,
 };
 
 /// Uso de GPU a partir do qual um programa em tela cheia conta como jogo.
@@ -237,6 +238,13 @@ unsafe fn fullscreen_window() -> Option<Fullscreen> {
         return None;
     }
     if !rects_match(rect, info.rcMonitor, TOLERANCE) {
+        return None;
+    }
+    // Com a barra de tarefas oculta, uma janela comum maximizada também ocupa
+    // o monitor inteiro. Ela continua tendo barra de título; um jogo em tela
+    // cheia, não.
+    let style = GetWindowLongPtrW(window, GWL_STYLE) as u32;
+    if IsZoomed(window).as_bool() && style & WS_CAPTION.0 == WS_CAPTION.0 {
         return None;
     }
 

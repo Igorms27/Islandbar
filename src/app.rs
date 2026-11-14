@@ -350,9 +350,6 @@ impl eframe::App for IslandApp {
         let hovered = self.cursor_inside(&ctx, island);
         // Fora da ilha, os cliques atravessam a janela e vão para o app de baixo.
         platform::sync_window(frame, !hovered && !pointer_down);
-        // Garante que a ilha permaneça no topo da pilha z-order (jogos em tela cheia sem borda
-        // podem roubar a sobreposição).
-        platform::ensure_topmost(frame);
 
         // Enquanto os cliques atravessam a janela, ela não recebe a posição do
         // mouse. Se o cursor já está sobre a ilha mas a interface ainda não
