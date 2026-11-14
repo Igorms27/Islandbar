@@ -67,6 +67,10 @@ pub struct SystemMonitor {
 
 impl SystemMonitor {
     pub fn new() -> Self {
+        if debug() {
+            // Diagnóstico: o disco responde já na abertura do programa?
+            unsafe { read_disk_temp() };
+        }
         Self {
             last_cpu: None,
             cpu: 0.0,
@@ -180,6 +184,9 @@ impl SystemMonitor {
 
         let adapters = self.gpu_adapters.get_or_insert_with(|| unsafe { gpu_adapters() });
         let gpu = hottest(adapters.iter().filter_map(|luid| unsafe { read_gpu_temp(*luid) }));
+        if debug() {
+            crate::perf::line(format!("temp sources: thermal zone={zone:?} gpu={gpu:?} ({} adapters)", adapters.len()));
+        }
         if let Some(celsius) = gpu {
             return Some(Temp { celsius, source: TempSource::Gpu });
         }
@@ -365,6 +372,20 @@ unsafe fn read_gpu_temp(luid: LUID) -> Option<f32> {
 
 /// Temperatura do disco principal, em °C.
 unsafe fn read_disk_temp() -> Option<f32> {
+    let result = query_disk_temp();
+    if debug() {
+        crate::perf::line(format!("disk temp: {result:?}"));
+    }
+    result.ok()
+}
+
+/// Com ISLANDBAR_DEBUG_SYSMON=1, explica no stderr de onde veio (ou por que
+/// não veio) cada leitura de temperatura.
+fn debug() -> bool {
+    std::env::var_os("ISLANDBAR_DEBUG_SYSMON").is_some()
+}
+
+unsafe fn query_disk_temp() -> Result<f32, String> {
     // Acesso "0": só consulta informações, não lê nem escreve no disco.
     let disk = CreateFileW(
         w!("\\\\.\\PhysicalDrive0"),
@@ -375,7 +396,7 @@ unsafe fn read_disk_temp() -> Option<f32> {
         FILE_FLAGS_AND_ATTRIBUTES(0),
         None,
     )
-    .ok()?;
+    .map_err(|error| format!("open failed: {error}"))?;
 
     let query = STORAGE_PROPERTY_QUERY {
         PropertyId: StorageDeviceTemperatureProperty,
@@ -395,14 +416,15 @@ unsafe fn read_disk_temp() -> Option<f32> {
         None,
     );
     let _ = CloseHandle(disk);
-    result.ok()?;
+    result.map_err(|error| format!("query failed: {error}"))?;
 
     if (returned as usize) < std::mem::size_of::<STORAGE_TEMPERATURE_DATA_DESCRIPTOR>() {
-        return None;
+        return Err(format!("short answer ({returned} bytes)"));
     }
     let descriptor = &*(buffer.as_ptr() as *const STORAGE_TEMPERATURE_DATA_DESCRIPTOR);
     if descriptor.InfoCount == 0 {
-        return None;
+        return Err("the disk reports no sensor".into());
     }
-    hottest(std::iter::once(descriptor.TemperatureInfo[0].Temperature as f32))
+    let celsius = descriptor.TemperatureInfo[0].Temperature as f32;
+    hottest(std::iter::once(celsius)).ok_or_else(|| format!("reading out of range ({celsius})"))
 }
