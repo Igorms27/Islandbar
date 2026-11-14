@@ -309,12 +309,13 @@ impl eframe::App for IslandApp {
             crate::backend::shutdown();
             std::process::exit(0);
         }
-        // Atualização baixada: reinicia quando a ilha não está em uso.
-        if updater::ready() && self.mode == Mode::Collapsed && !self.restarting {
+        let snap = self.backend.snapshot();
+        // Atualização baixada: reinicia quando a ilha não está em uso. Durante
+        // um jogo espera ele fechar, para a troca não atrapalhar a partida.
+        if updater::ready() && self.mode == Mode::Collapsed && snap.game.is_none() && !self.restarting {
             self.restarting = true;
             updater::restart();
         }
-        let snap = self.backend.snapshot();
 
         self.place_window(&ctx);
         // No modo jogo a ilha fica quieta: não dança com o som e só é

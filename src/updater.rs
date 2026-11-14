@@ -1,8 +1,12 @@
 //! Atualização automática.
 //!
-//! Cada versão publicada no GitHub tem um número (o "build"). De tempos em
-//! tempos a ilha pergunta qual é o mais novo; se for maior que o dela, baixa o
+//! Cada versão publicada no GitHub tem um número (o "build"). A cada poucos
+//! minutos a ilha pergunta qual é o mais novo; se for maior que o dela, baixa o
 //! novo executável, troca o arquivo e reinicia sozinha.
+//!
+//! A pergunta é baixar um arquivo de texto de poucos bytes (`version.txt`):
+//! custa uns milissegundos de CPU e quase nada de internet, então dá para
+//! fazer com frequência sem pesar no computador.
 
 use std::error::Error;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,8 +20,10 @@ pub const BUILD: Option<&str> = option_env!("ISLANDBAR_BUILD");
 pub const UPDATED_ARG: &str = "--updated";
 
 const DOWNLOADS: &str = "https://github.com/Igorms27/Islandbar/releases/latest/download";
-const CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
-const RETRY_AFTER: Duration = Duration::from_secs(10 * 60);
+/// De quanto em quanto tempo procura uma versão nova.
+const CHECK_EVERY: Duration = Duration::from_secs(2 * 60);
+/// Depois de uma falha (sem internet, por exemplo).
+const RETRY_AFTER: Duration = Duration::from_secs(5 * 60);
 
 static READY: AtomicBool = AtomicBool::new(false);
 
@@ -32,8 +38,13 @@ pub fn start() {
     let Some(current) = BUILD.and_then(|b| b.parse::<u64>().ok()) else { return };
     let _ = std::thread::Builder::new().name("islandbar-updater".into()).spawn(move || {
         std::thread::sleep(Duration::from_secs(15));
+        let agent = http();
         loop {
-            match install_if_newer(current) {
+            let result = install_if_newer(&agent, current);
+            // A conexão segura carrega bibliotecas do Windows na memória;
+            // devolve essa memória logo em vez de esperar a ilha ser usada.
+            crate::platform::trim_memory();
+            match result {
                 Ok(true) => {
                     READY.store(true, Ordering::Relaxed);
                     return;
@@ -76,17 +87,17 @@ fn http() -> ureq::Agent {
         .new_agent()
 }
 
-fn latest_build() -> Result<u64> {
-    let text = http().get(format!("{DOWNLOADS}/version.txt")).call()?.body_mut().read_to_string()?;
+fn latest_build(agent: &ureq::Agent) -> Result<u64> {
+    let text = agent.get(format!("{DOWNLOADS}/version.txt")).call()?.body_mut().read_to_string()?;
     Ok(text.trim().parse()?)
 }
 
-fn install_if_newer(current: u64) -> Result<bool> {
-    if latest_build()? <= current {
+fn install_if_newer(agent: &ureq::Agent, current: u64) -> Result<bool> {
+    if latest_build(agent)? <= current {
         return Ok(false);
     }
 
-    let bytes = http()
+    let bytes = agent
         .get(format!("{DOWNLOADS}/islandbar.exe"))
         .call()?
         .body_mut()

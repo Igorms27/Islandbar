@@ -30,8 +30,10 @@ visível, e se expande com animações elásticas.
   layered on DXGI Swapchain").
 - **Iniciar com o Windows**: ao abrir o executável, um cartão pergunta se a ilha deve abrir
   sozinha no login. Para mudar depois, é só abrir o executável de novo.
-- **Atualização automática**: a ilha confere se saiu versão nova no GitHub, baixa, troca o
-  executável e reinicia sozinha. O número da versão aparece no rodapé do painel.
+- **Atualização automática**: a cada 2 minutos a ilha confere se saiu versão nova no GitHub
+  (um arquivinho de texto, quase nada de internet); se saiu, baixa, troca o executável e
+  reinicia sozinha assim que estiver recolhida. Durante um jogo em tela cheia ela espera o jogo
+  fechar. O número da versão aparece no rodapé do painel.
 - A janela é transparente, sem borda nem sombra; só a ilha aparece.
 
 ## Consumo
