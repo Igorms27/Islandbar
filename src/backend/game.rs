@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 
 use windows::core::PWSTR;
 use windows::Win32::Foundation::{CloseHandle, HWND, RECT};
+use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
 use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::System::Threading::{
     GetCurrentProcessId, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
@@ -34,6 +35,10 @@ const GAME_FPS: f32 = 20.0;
 const CONFIRMATIONS: u32 = 2;
 /// Sem tela cheia por este tempo, a medição de FPS é desligada.
 const TRACER_IDLE: Duration = Duration::from_secs(10);
+/// Tolerância em pixels para considerar tela cheia: jogos em "borderless
+/// windowed" podem criar a janela ligeiramente maior que o monitor (moldura
+/// estendida do DWM) ou menor.
+const TOLERANCE: i32 = 10;
 
 /// Janelas do próprio Windows que ocupam a tela toda.
 const SHELL_CLASSES: [&str; 4] = ["Progman", "WorkerW", "Shell_TrayWnd", "Windows.UI.Core.CoreWindow"];
@@ -200,7 +205,7 @@ impl GameWatcher {
     }
 }
 
-/// A janela em primeiro plano, se ela cobre exatamente um monitor inteiro.
+/// A janela em primeiro plano, se ela cobre (quase) todo um monitor.
 unsafe fn fullscreen_window() -> Option<Fullscreen> {
     let window = GetForegroundWindow();
     if window.is_invalid() {
@@ -212,13 +217,26 @@ unsafe fn fullscreen_window() -> Option<Fullscreen> {
         return None;
     }
 
+    // DwmGetWindowAttribute com DWMWA_EXTENDED_FRAME_BOUNDS devolve o
+    // retângulo visível de verdade, sem a moldura-sombra que o DWM adiciona.
+    // Se falhar (o programa desativou o DWM, por exemplo), usa GetWindowRect.
     let mut rect = RECT::default();
-    GetWindowRect(window, &mut rect).ok()?;
+    let dwm_ok = DwmGetWindowAttribute(
+        window,
+        DWMWA_EXTENDED_FRAME_BOUNDS,
+        &mut rect as *mut RECT as *mut std::ffi::c_void,
+        std::mem::size_of::<RECT>() as u32,
+    )
+    .is_ok();
+    if !dwm_ok {
+        GetWindowRect(window, &mut rect).ok()?;
+    }
+
     let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
     if !GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &mut info).as_bool() {
         return None;
     }
-    if rect != info.rcMonitor {
+    if !rects_match(rect, info.rcMonitor, TOLERANCE) {
         return None;
     }
 
@@ -234,6 +252,14 @@ unsafe fn fullscreen_window() -> Option<Fullscreen> {
 
     let exclusive = SHQueryUserNotificationState() == Ok(QUNS_RUNNING_D3D_FULL_SCREEN);
     Some(Fullscreen { window: window.0 as isize, pid, exclusive })
+}
+
+/// Verifica se dois retângulos coincidem dentro de uma tolerância em pixels.
+fn rects_match(a: RECT, b: RECT, tolerance: i32) -> bool {
+    (a.left - b.left).abs() <= tolerance
+        && (a.top - b.top).abs() <= tolerance
+        && (a.right - b.right).abs() <= tolerance
+        && (a.bottom - b.bottom).abs() <= tolerance
 }
 
 unsafe fn window_title(window: isize) -> Option<String> {
