@@ -9,7 +9,7 @@ use eframe::egui::{
 };
 
 use crate::anim::{meter, smoothstep, Spring};
-use crate::backend::{Backend, Command, FpsAccess, Game, Snapshot, System, TempSource};
+use crate::backend::{Backend, Command, Device, FpsAccess, Game, Snapshot, System, TempSource};
 use crate::platform;
 use crate::updater;
 
@@ -35,6 +35,15 @@ const GAME_PILL_HEIGHT: f32 = 30.0;
 const GAME_PILL_GAP: f32 = 8.0;
 const WELCOME_SIZE: Vec2 = vec2(380.0, 166.0);
 const MAX_APPS: usize = 7;
+/// Fileira de botões para escolher a saída de som ou o microfone.
+const DEVICE_ROW_HEIGHT: f32 = 32.0;
+const DEVICES_PER_ROW: usize = 4;
+/// Mais que isso não cabe (2 fileiras de cada tipo).
+const MAX_DEVICES: usize = 2 * DEVICES_PER_ROW;
+/// Altura máxima do painel dentro da janela (sobra espaço para a sombra).
+const PANEL_MAX_HEIGHT: f32 = WINDOW_SIZE[1] - TOP_MARGIN - 16.0;
+/// Depois de um clique num dispositivo, quanto tempo esperar o Windows confirmar.
+const DEVICE_PENDING: Duration = Duration::from_secs(2);
 const BARS: usize = 5;
 
 const HUD_SECONDS: f32 = 1.6;
@@ -113,6 +122,9 @@ pub struct IslandApp {
 
     /// Enquanto arrasta um slider, mostramos o valor do mouse (sem atraso).
     dragging: Option<(String, f32)>,
+    /// Dispositivo clicado que o Windows ainda não confirmou. O destaque já
+    /// vai para ele, para o clique responder na hora.
+    pending_device: Option<(String, Instant)>,
 
     window_pos: Option<Pos2>,
     /// Segundos restantes do aviso "Atualizado" na pílula.
@@ -179,6 +191,7 @@ impl IslandApp {
             bars: [0.0; BARS],
             gauges: [0.0; 4],
             dragging: None,
+            pending_device: None,
             window_pos: None,
             notice_timer: if updated { 6.0 } else { 0.0 },
             restarting: false,
@@ -239,10 +252,8 @@ impl IslandApp {
             }
             Mode::Hud => HUD_SIZE,
             Mode::Expanded => {
-                let rows = 1 + snap.sessions.len().min(MAX_APPS);
-                let fps_row = if snap.fps_access == FpsAccess::Granted { 0.0 } else { FPS_ROW_HEIGHT };
-                let height =
-                    PADDING + HEADER_HEIGHT + 14.0 + rows as f32 * ROW_HEIGHT + STATS_HEIGHT + fps_row + FOOTER_HEIGHT;
+                let rows = 1 + apps_shown(snap);
+                let height = panel_base_height(snap) + rows as f32 * ROW_HEIGHT;
                 vec2(EXPANDED_WIDTH, height)
             }
         }
@@ -652,8 +663,52 @@ impl IslandApp {
             Stroke::new(1.0, fade(Color32::WHITE, a * 0.08)),
         );
 
-        // ---- Mixer ----
+        // ---- Saída de som e microfone ----
         let mut y = line_y + 7.0;
+        if self.pending_device.as_ref().is_some_and(|(id, at)| {
+            at.elapsed() > DEVICE_PENDING || snap.outputs.iter().chain(&snap.inputs).any(|d| d.default && d.id == *id)
+        }) {
+            self.pending_device = None;
+        }
+        for (devices, is_output) in [(&snap.outputs, true), (&snap.inputs, false)] {
+            let shown = &devices[..devices.len().min(MAX_DEVICES)];
+            if shown.is_empty() {
+                continue;
+            }
+            let names = short_names(shown);
+            // O destaque vai para o clicado assim que ele for clicado.
+            let pending = self.pending_device.as_ref().map(|(id, _)| id.clone()).filter(|id| shown.iter().any(|d| d.id == *id));
+            let columns = shown.len().min(DEVICES_PER_ROW);
+            let gap = 6.0;
+            let chips_left = left + 38.0;
+            let chip_width = (right - chips_left - gap * (columns - 1) as f32) / columns as f32;
+            for (line, chunk) in shown.chunks(DEVICES_PER_ROW).enumerate() {
+                let a = next_alpha(open);
+                let cy = y + DEVICE_ROW_HEIGHT / 2.0 + (1.0 - a) * 12.0;
+                y += DEVICE_ROW_HEIGHT;
+                if line == 0 {
+                    let icon = pos2(left + 14.0, cy);
+                    if is_output {
+                        draw_speaker(p, icon, 8.5, 0.66, false, fade(TEXT_DIM, a));
+                    } else {
+                        draw_mic(p, icon, 8.0, fade(TEXT_DIM, a));
+                    }
+                }
+                for (column, device) in chunk.iter().enumerate() {
+                    let index = line * DEVICES_PER_ROW + column;
+                    let x = chips_left + column as f32 * (chip_width + gap);
+                    let chip = Rect::from_min_size(pos2(x, cy - 12.0), vec2(chip_width, 24.0));
+                    let current = pending.as_ref().map_or(device.default, |id| *id == device.id);
+                    let clicked = self.draw_device_chip(ui, p, chip, device, &names[index], current, accent, a, interactive);
+                    if clicked && !current {
+                        self.backend.send(Command::SetDevice(device.id.clone()));
+                        self.pending_device = Some((device.id.clone(), Instant::now()));
+                    }
+                }
+            }
+        }
+
+        // ---- Mixer ----
         let mut rows: Vec<(String, String, f32, bool, f32)> = vec![(
             MASTER_KEY.to_string(),
             "Geral".to_string(),
@@ -661,7 +716,7 @@ impl IslandApp {
             snap.master_muted,
             self.master_peak,
         )];
-        for s in snap.sessions.iter().take(MAX_APPS) {
+        for s in snap.sessions.iter().take(apps_shown(snap)) {
             let peak = self.app_peaks.get(&s.name).copied().unwrap_or(0.0);
             rows.push((s.name.clone(), s.name.clone(), s.volume, s.muted, peak));
         }
@@ -767,6 +822,41 @@ impl IslandApp {
 }
 
 impl IslandApp {
+    /// Um botão de dispositivo (fone, TV, microfone...). Devolve se foi clicado.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_device_chip(
+        &self,
+        ui: &mut Ui,
+        p: &Painter,
+        chip: Rect,
+        device: &Device,
+        label: &str,
+        current: bool,
+        accent: Color32,
+        a: f32,
+        interactive: bool,
+    ) -> bool {
+        let id = ui.scope_id().with(("device", &device.id));
+        let resp = interactive.then(|| ui.interact(chip, id, Sense::click()).on_hover_text(&device.name));
+        let hover = ui.ctx().animate_bool_with_time(id, resp.as_ref().is_some_and(|r| r.hovered()), 0.12);
+        let radius = chip.height() / 2.0;
+        if current {
+            p.rect_filled(chip, radius, fade(accent, a * (0.26 + 0.08 * hover)));
+            p.rect_stroke(chip, radius, Stroke::new(1.0, fade(accent, a * 0.7)), StrokeKind::Inside);
+        } else {
+            p.rect_filled(chip, radius, fade(Color32::WHITE, a * (0.06 + 0.08 * hover)));
+        }
+        let mut text_x = chip.left() + 12.0;
+        if current {
+            p.circle_filled(pos2(chip.left() + 13.0, chip.center().y), 3.5, fade(brighten(accent), a));
+            text_x += 10.0;
+        }
+        let color = if current || hover > 0.5 { TEXT } else { TEXT_DIM };
+        let width = chip.right() - 10.0 - text_x;
+        text_fit(p, pos2(text_x, chip.center().y), Align2::LEFT_CENTER, label, 12.0, fade(color, a), width);
+        resp.is_some_and(|r| r.clicked())
+    }
+
     /// Modo jogo: uma pílula pequena que "brota" do lado direito da ilha com
     /// FPS, CPU, GPU e RAM.
     fn draw_game_pill(&mut self, painter: &Painter, island: Rect, snap: &Snapshot, accent: Color32, dt: f32) {
@@ -1190,6 +1280,58 @@ fn text_fit(p: &Painter, pos: Pos2, anchor: Align2, text: &str, size: f32, color
     }
     let rect = anchor.anchor_size(pos, galley.size());
     p.galley(rect.min, galley, color);
+}
+
+/// Altura do painel sem as linhas do mixer.
+fn panel_base_height(snap: &Snapshot) -> f32 {
+    let fps_row = if snap.fps_access == FpsAccess::Granted { 0.0 } else { FPS_ROW_HEIGHT };
+    let device_rows = |list: &[Device]| list.len().min(MAX_DEVICES).div_ceil(DEVICES_PER_ROW);
+    let devices = (device_rows(&snap.outputs) + device_rows(&snap.inputs)) as f32 * DEVICE_ROW_HEIGHT;
+    PADDING + HEADER_HEIGHT + 14.0 + devices + STATS_HEIGHT + fps_row + FOOTER_HEIGHT
+}
+
+/// Quantos apps cabem no mixer (além da linha "Geral").
+fn apps_shown(snap: &Snapshot) -> usize {
+    let room = (PANEL_MAX_HEIGHT - panel_base_height(snap)) / ROW_HEIGHT - 1.0;
+    snap.sessions.len().min(MAX_APPS).min(room.max(0.0) as usize)
+}
+
+/// Nomes curtos para os botões: "Fones de ouvido (Realtek Audio)" vira
+/// "Fones de ouvido". Quando dois ficariam iguais (ex.: "Microfone"), usa o que
+/// está entre parênteses, que é o que os diferencia.
+fn short_names(devices: &[Device]) -> Vec<String> {
+    let split = |name: &str| match name.split_once(" (") {
+        Some((head, rest)) => (head.trim().to_string(), Some(rest.trim_end_matches(')').trim().to_string())),
+        None => (name.trim().to_string(), None),
+    };
+    let parts: Vec<_> = devices.iter().map(|d| split(&d.name)).collect();
+    parts
+        .iter()
+        .map(|(head, inside)| {
+            let repeated = parts.iter().filter(|(other, _)| other == head).count() > 1;
+            match inside {
+                Some(inside) if repeated && !inside.is_empty() => inside.clone(),
+                _ if head.is_empty() => "Dispositivo".to_string(),
+                _ => head.clone(),
+            }
+        })
+        .collect()
+}
+
+/// Ícone de microfone: cápsula, suporte em "U" e haste.
+fn draw_mic(p: &Painter, c: Pos2, r: f32, color: Color32) {
+    let capsule = Rect::from_min_max(pos2(c.x - r * 0.38, c.y - r), pos2(c.x + r * 0.38, c.y + r * 0.2));
+    p.rect_filled(capsule, r * 0.38, color);
+    let stroke = Stroke::new(1.6, color);
+    let arc: Vec<Pos2> = (0..=10)
+        .map(|i| {
+            let t = std::f32::consts::PI * i as f32 / 10.0;
+            pos2(c.x + r * 0.65 * t.cos(), c.y - r * 0.15 + r * 0.6 * t.sin())
+        })
+        .collect();
+    p.add(Shape::line(arc, stroke));
+    p.line_segment([pos2(c.x, c.y + r * 0.45), pos2(c.x, c.y + r * 0.85)], stroke);
+    p.line_segment([pos2(c.x - r * 0.35, c.y + r * 0.85), pos2(c.x + r * 0.35, c.y + r * 0.85)], stroke);
 }
 
 // ---------------------------------------------------------------------------

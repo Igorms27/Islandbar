@@ -4,7 +4,7 @@
 //! números do sistema uma vez por segundo, e acorda a interface só quando
 //! algo que ela mostra mudou.
 
-use super::{Command, FpsAccess, Game, Media, Session, Shared, Snapshot, System, Temp, TempSource, Wake};
+use super::{Command, Device, FpsAccess, Game, Media, Session, Shared, Snapshot, System, Temp, TempSource, Wake};
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
@@ -26,6 +26,8 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
             artist: "Islandbar".into(),
             playing: true,
         }),
+        outputs: fake_devices(&["Fones de ouvido (Realtek(R) Audio)", "TV LG (NVIDIA High Definition Audio)", "Alto-falantes (Realtek(R) Audio)"]),
+        inputs: fake_devices(&["Microfone (Fone USB)", "Microfone (Webcam C920)"]),
         ..Default::default()
     };
 
@@ -68,6 +70,15 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
                     }
                 }
                 Command::Next | Command::Prev => {}
+                Command::SetDevice(id) => {
+                    for list in [&mut snap.outputs, &mut snap.inputs] {
+                        if list.iter().any(|d| d.id == id) {
+                            for d in list.iter_mut() {
+                                d.default = d.id == id;
+                            }
+                        }
+                    }
+                }
                 Command::EnableFps => snap.fps_access = FpsAccess::Requested,
                 Command::Panel(open) => panel = open,
             }
@@ -119,4 +130,13 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
         crate::perf::add_backend_busy(started);
         std::thread::sleep(Duration::from_millis(33));
     }
+}
+
+/// Dispositivos de mentira; o primeiro é o que está em uso.
+fn fake_devices(names: &[&str]) -> Vec<Device> {
+    names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| Device { id: format!("mock-{name}"), name: name.to_string(), default: i == 0 })
+        .collect()
 }

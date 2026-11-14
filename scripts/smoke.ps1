@@ -82,6 +82,8 @@ function StartIsland($tag) {
   $env:ISLANDBAR_DEBUG_GAME = "1"
   $env:ISLANDBAR_DEBUG_UI = "1"
   $env:ISLANDBAR_DEBUG_PERF = "1"
+  # Sem placa de som na máquina do GitHub: botões de saída/microfone de mentira.
+  $env:ISLANDBAR_DEBUG_DEVICES = "1"
   $app = Start-Process "$exeDir\islandbar.exe" -PassThru -ArgumentList '--autostart' -RedirectStandardError "$out\$tag-stderr.txt"
   Start-Sleep 8
   Log ("$tag app running: " + (-not $app.HasExited) + $(if ($app.HasExited) { " (exit code 0x{0:X8})" -f $app.ExitCode }))
@@ -113,6 +115,10 @@ Shot "island-3-opening"
 Start-Sleep -Milliseconds 1800
 Shot "island-4-expanded"
 Styles "island expanded" | Out-Null
+# Clica no segundo botão de saída de som: o destaque deve ir para ele na hora.
+Click ($cx + 19) ($r.T + 110)
+Start-Sleep -Milliseconds 300
+Shot "island-4b-device-clicked"
 
 # Clica fora (o fundo ganha o foco): era aqui que aparecia a barra de título.
 Click 80 600

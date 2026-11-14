@@ -40,6 +40,17 @@ pub struct Media {
     pub playing: bool,
 }
 
+/// Um dispositivo de som: uma saída (fone, TV, caixa) ou um microfone.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Device {
+    /// Identificador do Windows. É o que se manda em `Command::SetDevice`.
+    pub id: String,
+    /// Nome completo, como aparece nas configurações de som.
+    pub name: String,
+    /// É o que o Windows está usando agora?
+    pub default: bool,
+}
+
 /// De qual sensor veio a temperatura.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(not(windows), allow(dead_code))] // o backend de teste só usa `System`
@@ -108,6 +119,10 @@ pub struct Snapshot {
     pub master_peak: f32,
     pub sessions: Vec<Session>,
     pub media: Option<Media>,
+    /// Saídas de som. Só são lidas com o painel aberto.
+    pub outputs: Vec<Device>,
+    /// Microfones. Só são lidos com o painel aberto.
+    pub inputs: Vec<Device>,
 }
 
 #[derive(Clone, Debug)]
@@ -119,6 +134,8 @@ pub enum Command {
     PlayPause,
     Next,
     Prev,
+    /// Passa a usar este dispositivo (saída ou microfone, pelo `Device::id`).
+    SetDevice(String),
     /// Pede ao Windows a permissão para medir FPS.
     EnableFps,
     /// A interface avisa quando o painel abre ou fecha. Com ele fechado o

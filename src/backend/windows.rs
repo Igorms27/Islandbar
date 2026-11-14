@@ -3,28 +3,33 @@
 //! - Volume geral e por aplicativo: WASAPI (as mesmas APIs do Mixer de Volume).
 //! - "Tocando agora" e botões de mídia: Global System Media Transport Controls
 //!   (o mesmo sistema que o Windows usa no flyout de mídia).
+//! - Troca de saída de som e de microfone: a interface `IPolicyConfig`, a mesma
+//!   que as configurações de som do Windows usam.
 
 use super::game::GameWatcher;
 use super::sysmon::{SystemMonitor, Wanted};
-use super::{Command, Game, Media, Session, Shared, System, Wake};
+use super::{Command, Device, Game, Media, Session, Shared, System, Wake};
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
-use windows::core::{Interface, Result, PWSTR};
+use windows::core::{Interface, Result, GUID, PCWSTR, PWSTR};
 use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSession as MediaSession,
     GlobalSystemMediaTransportControlsSessionManager as MediaManager,
     GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus,
 };
+use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
 use windows::Win32::Foundation::CloseHandle;
 use windows::Win32::Media::Audio::Endpoints::{IAudioEndpointVolume, IAudioMeterInformation};
 use windows::Win32::Media::Audio::{
-    eMultimedia, eRender, AudioSessionStateExpired, IAudioSessionControl2, IAudioSessionManager2, IMMDevice,
-    IMMDeviceEnumerator, ISimpleAudioVolume, MMDeviceEnumerator,
+    eCapture, eCommunications, eConsole, eMultimedia, eRender, AudioSessionStateExpired, EDataFlow,
+    IAudioSessionControl2, IAudioSessionManager2, IMMDevice, IMMDeviceEnumerator, ISimpleAudioVolume,
+    MMDeviceEnumerator, DEVICE_STATE_ACTIVE,
 };
+use windows::Win32::System::Com::StructuredStorage::PropVariantToStringAlloc;
 use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_ALL, COINIT_MULTITHREADED,
+    CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_ALL, COINIT_MULTITHREADED, STGM_READ,
 };
 use windows::Win32::System::Threading::{
     OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
@@ -50,6 +55,9 @@ const MEDIA_EVERY: Duration = Duration::from_millis(1000);
 const MEDIA_EVERY_OPEN: Duration = Duration::from_millis(500);
 /// Depois de um play/pause, o Windows leva um instante para refletir a mudança.
 const MEDIA_AFTER_COMMAND: Duration = Duration::from_millis(150);
+/// Lista de saídas e microfones. Só é lida com o painel aberto; assim percebe
+/// um fone conectado ou desconectado sem gastar nada com o painel fechado.
+const DEVICES_EVERY: Duration = Duration::from_millis(2000);
 /// Pico de áudio a partir do qual consideramos que há som tocando.
 const SOUND: f32 = 0.005;
 /// Sem som por este tempo, o backend volta ao ritmo de repouso.
@@ -75,6 +83,44 @@ struct Audio {
     streams: Vec<Stream>,
 }
 
+// Fica num módulo à parte só para os nomes das funções seguirem os do Windows.
+mod policy {
+    #![allow(non_snake_case)]
+    use windows::core::{HRESULT, PCWSTR};
+    use windows::Win32::Media::Audio::ERole;
+    use windows_core::{IUnknown, IUnknown_Vtbl};
+
+    /// Interface do Windows que escolhe o dispositivo padrão. Não é documentada,
+    /// mas é a que as próprias configurações de som usam (e programas como
+    /// EarTrumpet e SoundSwitch), estável desde o Windows 7.
+    ///
+    /// Só `SetDefaultEndpoint` é usada; as outras estão aqui para que ela fique na
+    /// posição certa da tabela de funções.
+    #[windows_core::interface("f8679f50-850a-41cf-9c72-430f290290c8")]
+    pub unsafe trait IPolicyConfig: IUnknown {
+        fn GetMixFormat(&self, id: PCWSTR, format: *mut *mut std::ffi::c_void) -> HRESULT;
+        fn GetDeviceFormat(&self, id: PCWSTR, default: i32, format: *mut *mut std::ffi::c_void) -> HRESULT;
+        fn ResetDeviceFormat(&self, id: PCWSTR) -> HRESULT;
+        fn SetDeviceFormat(&self, id: PCWSTR, endpoint: *mut std::ffi::c_void, mix: *mut std::ffi::c_void) -> HRESULT;
+        fn GetProcessingPeriod(&self, id: PCWSTR, default: i32, period: *mut i64, minimum: *mut i64) -> HRESULT;
+        fn SetProcessingPeriod(&self, id: PCWSTR, period: *mut i64) -> HRESULT;
+        fn GetShareMode(&self, id: PCWSTR, mode: *mut std::ffi::c_void) -> HRESULT;
+        fn SetShareMode(&self, id: PCWSTR, mode: *mut std::ffi::c_void) -> HRESULT;
+        fn GetPropertyValue(&self, id: PCWSTR, key: *const std::ffi::c_void, value: *mut std::ffi::c_void) -> HRESULT;
+        fn SetPropertyValue(&self, id: PCWSTR, key: *const std::ffi::c_void, value: *mut std::ffi::c_void) -> HRESULT;
+        fn SetDefaultEndpoint(&self, id: PCWSTR, role: ERole) -> HRESULT;
+        fn SetEndpointVisibility(&self, id: PCWSTR, visible: i32) -> HRESULT;
+    }
+
+    /// (As funções geradas para a interface só são visíveis aqui dentro.)
+    pub unsafe fn set_default_endpoint(policy: &IPolicyConfig, id: PCWSTR, role: ERole) -> HRESULT {
+        policy.SetDefaultEndpoint(id, role)
+    }
+}
+use policy::IPolicyConfig;
+
+const POLICY_CONFIG_CLIENT: GUID = GUID::from_u128(0x870af99c_171d_4f9e_af0d_e63df40c2bc9);
+
 pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
@@ -91,12 +137,18 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
     let mut game: Option<Game> = None;
     // Para diagnóstico: escreve as leituras no stderr.
     let debug_system = std::env::var_os("ISLANDBAR_DEBUG_SYSMON").is_some();
+    // Para o teste visual (a máquina do GitHub não tem som): mostra
+    // dispositivos de mentira quando não há nenhum de verdade.
+    let fake_devices = std::env::var_os("ISLANDBAR_DEBUG_DEVICES").is_some();
+    let mut outputs: Vec<Device> = Vec::new();
+    let mut inputs: Vec<Device> = Vec::new();
 
     // O painel está aberto? (A interface avisa.)
     let mut panel = false;
     // Quando cada leitura periódica deve acontecer de novo.
     let start = Instant::now();
     let (mut audio_due, mut system_due, mut media_due, mut next_tick) = (start, start, start, start);
+    let mut devices_due = start;
     let mut last_sound: Option<Instant> = None;
     let mut had_sound = false;
     // Volume que a interface já viu (para acordá-la quando ele mudar).
@@ -114,10 +166,17 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
                     panel = open;
                     if open {
                         // Busca agora mesmo o que só o painel mostra.
-                        (audio_due, system_due, media_due, next_tick) = (now, now, now, now);
+                        (audio_due, system_due, media_due, devices_due, next_tick) = (now, now, now, now, now);
                     }
                 }
                 Ok(Command::EnableFps) => games.request_access(),
+                Ok(Command::SetDevice(id)) => {
+                    if let Err(err) = unsafe { set_default_device(&id) } {
+                        crate::perf::line(format!("islandbar: não deu para trocar o dispositivo: {err}"));
+                    }
+                    // Abre o dispositivo novo e relê a lista já na próxima volta.
+                    (audio_due, devices_due, next_tick) = (now, now, now);
+                }
                 Ok(cmd) => {
                     if matches!(cmd, Command::PlayPause | Command::Next | Command::Prev) {
                         media_due = now + MEDIA_AFTER_COMMAND;
@@ -142,6 +201,26 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
 
         // Algo que a interface mostra mudou nesta volta?
         let mut changed = false;
+
+        // Saídas e microfones (só aparecem no painel).
+        if panel && now >= devices_due {
+            devices_due = now + DEVICES_EVERY;
+            let started = Instant::now();
+            let read = |flow| match enumerator.as_ref() {
+                Some(enumerator) => unsafe { list_devices(enumerator, flow) }.unwrap_or_default(),
+                None => Vec::new(),
+            };
+            let (mut now_outputs, mut now_inputs) = (read(eRender), read(eCapture));
+            if fake_devices && now_outputs.is_empty() && now_inputs.is_empty() {
+                now_outputs = fake_list(&["Fones de ouvido (Teste)", "TV (HDMI)", "Alto-falantes (Teste)"]);
+                now_inputs = fake_list(&["Microfone (Teste)", "Webcam (Teste)"]);
+            }
+            if now_outputs != outputs || now_inputs != inputs {
+                (outputs, inputs) = (now_outputs, now_inputs);
+                changed = true;
+            }
+            crate::perf::add_section("audio", started);
+        }
 
         if now >= system_due {
             system_due = now + SYSTEM_EVERY;
@@ -229,6 +308,8 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
                 shared.sessions = sessions;
             }
             if changed {
+                shared.outputs.clone_from(&outputs);
+                shared.inputs.clone_from(&inputs);
                 shared.system = system;
                 shared.game.clone_from(&game);
                 shared.media.clone_from(&media);
@@ -379,9 +460,64 @@ unsafe fn apply(cmd: Command, audio: Option<&Audio>, media: Option<&MediaManager
             current_session(media)?.TrySkipPreviousAsync()?;
         }
         // Tratados no laço principal.
-        Command::EnableFps | Command::Panel(_) => {}
+        Command::EnableFps | Command::Panel(_) | Command::SetDevice(_) => {}
     }
     Ok(())
+}
+
+/// Saídas (`eRender`) ou microfones (`eCapture`) ligados agora, marcando o
+/// que o Windows está usando.
+unsafe fn list_devices(enumerator: &IMMDeviceEnumerator, flow: EDataFlow) -> Result<Vec<Device>> {
+    let default = enumerator.GetDefaultAudioEndpoint(flow, eConsole).and_then(|d| device_id(&d)).ok();
+    let collection = enumerator.EnumAudioEndpoints(flow, DEVICE_STATE_ACTIVE)?;
+    let mut devices = Vec::new();
+    for i in 0..collection.GetCount()? {
+        let Ok(device) = collection.Item(i) else { continue };
+        let Ok(id) = device_id(&device) else { continue };
+        let name = device_name(&device).unwrap_or_else(|_| "Dispositivo".to_string());
+        devices.push(Device { default: default.as_ref() == Some(&id), id, name });
+    }
+    Ok(devices)
+}
+
+unsafe fn device_id(device: &IMMDevice) -> Result<String> {
+    let id = device.GetId()?;
+    let text = id.to_string();
+    CoTaskMemFree(Some(id.0 as *const std::ffi::c_void));
+    Ok(text.unwrap_or_default())
+}
+
+/// Nome como aparece nas configurações de som, ex.: "Fones de ouvido (Realtek(R) Audio)".
+unsafe fn device_name(device: &IMMDevice) -> Result<String> {
+    let store = device.OpenPropertyStore(STGM_READ)?;
+    let value = store.GetValue(&PKEY_Device_FriendlyName)?;
+    let text = PropVariantToStringAlloc(&value)?;
+    let name = text.to_string().unwrap_or_default();
+    CoTaskMemFree(Some(text.0 as *const std::ffi::c_void));
+    Ok(name)
+}
+
+/// Faz o Windows usar este dispositivo para tudo: jogos e música (`eConsole`,
+/// `eMultimedia`) e chamadas (`eCommunications`).
+unsafe fn set_default_device(id: &str) -> Result<()> {
+    if id.starts_with("fake-") {
+        return Ok(());
+    }
+    let policy: IPolicyConfig = CoCreateInstance(&POLICY_CONFIG_CLIENT, None, CLSCTX_ALL)?;
+    let wide: Vec<u16> = id.encode_utf16().chain(Some(0)).collect();
+    for role in [eConsole, eMultimedia, eCommunications] {
+        policy::set_default_endpoint(&policy, PCWSTR(wide.as_ptr()), role).ok()?;
+    }
+    Ok(())
+}
+
+/// Dispositivos de mentira para o teste visual; o primeiro está em uso.
+fn fake_list(names: &[&str]) -> Vec<Device> {
+    names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| Device { id: format!("fake-{i}-{name}"), name: name.to_string(), default: i == 0 })
+        .collect()
 }
 
 fn current_session(manager: Option<&MediaManager>) -> Result<MediaSession> {

@@ -12,9 +12,12 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 [target.'cfg(windows)'.dependencies]
 base64 = "0.23"
 raw-window-handle = "0.6"
+# Para declarar a interface do Windows que troca o dispositivo de som (IPolicyConfig).
+windows-core = "0.62"
 windows = { version = "0.62", features = [
     "Foundation",
     "Media_Control",
+    "Win32_Devices_FunctionDiscovery",
     "Win32_Foundation",
     "Wdk_Graphics_Direct3D",
     "Win32_Graphics_Dwm",
@@ -38,6 +41,7 @@ windows = { version = "0.62", features = [
     "Win32_System_Threading",
     "Win32_System_Time",
     "Win32_UI_Shell",
+    "Win32_UI_Shell_PropertiesSystem",
     "Win32_UI_WindowsAndMessaging",
 ] }
 
