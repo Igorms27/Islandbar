@@ -20,6 +20,9 @@ visível, e se expande com animações elásticas.
   O FPS é medido como na Xbox Game Bar, sem mexer no jogo; o Windows exige uma permissão para isso,
   que a ilha oferece ativar no painel (pede confirmação de administrador uma vez e vale depois de
   sair e entrar na conta).
+  A ilha se mantém na frente do jogo mesmo quando ele se marca como "sempre no topo" (comum em tela
+  cheia). A exceção é a tela cheia *exclusiva*, em que o Windows não mostra nenhuma outra janela:
+  nesse caso, use o modo "janela sem bordas" nas opções do jogo.
 - **Iniciar com o Windows**: ao abrir o executável, um cartão pergunta se a ilha deve abrir
   sozinha no login. Para mudar depois, é só abrir o executável de novo.
 - **Atualização automática**: a ilha confere se saiu versão nova no GitHub, baixa, troca o
