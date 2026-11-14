@@ -109,10 +109,11 @@ mod window {
     };
     use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, GWL_STYLE, SWP_FRAMECHANGED,
-        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_CAPTION, WS_EX_APPWINDOW,
-        WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE,
-        WM_NCCALCSIZE, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, GWL_STYLE, HWND_TOPMOST,
+        SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_CAPTION,
+        WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+        WS_EX_WINDOWEDGE, WM_NCCALCSIZE, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU,
+        WS_THICKFRAME,
     };
 
     fn hwnd(frame: &eframe::Frame) -> Option<HWND> {
@@ -204,6 +205,22 @@ mod window {
             }
         }
     }
+    /// Força a janela de volta ao topo da pilha de z-order, sem roubar foco.
+    ///
+    /// Jogos em tela cheia sem borda podem criar sua janela com z-order acima
+    /// da ilha, mesmo com `always_on_top`. Chamar isso periodicamente garante
+    /// que a ilha continue visível.
+    pub fn ensure_topmost(frame: &eframe::Frame) {
+        let Some(hwnd) = hwnd(frame) else { return };
+        unsafe {
+            let _ = SetWindowPos(
+                hwnd,
+                Some(HWND_TOPMOST),
+                0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
+        }
+    }
 }
 
 /// Mantém a janela como uma superfície transparente pura: sem barra de título,
@@ -214,6 +231,15 @@ pub fn sync_window(frame: &eframe::Frame, passthrough: bool) {
     window::sync(frame, passthrough);
     #[cfg(not(windows))]
     let _ = (frame, passthrough);
+}
+
+/// Força a janela de volta ao topo do z-order. Jogos em tela cheia sem borda
+/// podem roubar o topo; chamar isto periodicamente garante a visibilidade.
+pub fn ensure_topmost(frame: &eframe::Frame) {
+    #[cfg(windows)]
+    window::ensure_topmost(frame);
+    #[cfg(not(windows))]
+    let _ = frame;
 }
 
 #[cfg(windows)]
