@@ -26,6 +26,24 @@ visível, e se expande com animações elásticas.
   executável e reinicia sozinha. O número da versão aparece no rodapé do painel.
 - A janela é transparente, sem borda nem sombra; só a ilha aparece.
 
+## Consumo
+
+A ilha foi feita para não pesar no PC nem roubar desempenho dos jogos:
+
+- **Parada, ela dorme.** Só é redesenhada quando algo na tela muda (um número, a música, o relógio):
+  cerca de 1 vez por segundo. O mouse é vigiado por uma thread minúscula, que acorda a ilha quando
+  ele chega perto.
+- **Com som tocando**, as barrinhas animam a 30 quadros por segundo. As animações de abrir e fechar
+  e o painel aberto usam a taxa do monitor, para ficarem lisas.
+- **No modo jogo ela fica quieta**: não dança com o som e só atualiza os números, 1 vez por segundo.
+- **Só lê o que está na tela**: o volume de cada app e a temperatura só são consultados com o painel
+  aberto; o uso da GPU, só quando ele aparece.
+- **Memória**: 30 segundos depois do último uso, a ilha devolve ao Windows a memória que ficou parada.
+
+Para medir no seu PC, abra a ilha pelo terminal com a variável `ISLANDBAR_DEBUG_PERF=1` e o stderr
+indo para um arquivo (`islandbar.exe 2> perf.txt`): a cada 5 segundos ela anota quadros por segundo,
+uso de CPU e memória.
+
 ## Como rodar
 
 1. Instale o Rust: <https://rustup.rs>
@@ -58,8 +76,9 @@ Para fechar: abra a ilha e clique em **Sair** no canto inferior direito.
 | `src/backend/fps.rs` | Mede o FPS de outros programas. |
 | `examples/fake_game.rs` | "Jogo falso" usado pelo teste visual. |
 | `src/updater.rs` | Atualização automática. |
+| `src/perf.rs` | Medidor interno de quadros por segundo, CPU e memória (só para diagnóstico). |
 | `scripts/smoke.ps1` | Teste visual: o GitHub abre a ilha num Windows real e guarda screenshots na branch `ci-results`. |
-| `src/platform.rs` | Mouse, recorte da janela e inicialização com o Windows. |
+| `src/platform.rs` | Mouse, janela sem moldura, memória e inicialização com o Windows. |
 
 Feito com [egui/eframe](https://github.com/emilk/egui) e o crate
 [windows](https://github.com/microsoft/windows-rs).

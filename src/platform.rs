@@ -29,15 +29,43 @@ pub fn set_hover_area(left: f32, top: f32, right: f32, bottom: f32) {
 
 /// O mouse está sobre a área publicada em `set_hover_area`?
 ///
-/// É uma consulta baratíssima, e pode ser feita de qualquer thread. Graças a
-/// ela a interface não precisa se redesenhar só para descobrir onde o mouse
-/// está: quem vigia é o backend, que acorda a interface na hora certa.
+/// É uma consulta baratíssima, e pode ser feita de qualquer thread.
 #[cfg(windows)]
 pub fn cursor_over_island() -> bool {
     use std::sync::atomic::Ordering::Relaxed;
     let Some((x, y)) = cursor_pos() else { return false };
     let [left, top, right, bottom] = [0, 1, 2, 3].map(|i| HOVER_AREA[i].load(Relaxed));
     left < right && left <= x && x <= right && top <= y && y <= bottom
+}
+
+/// Vigia o mouse e chama `wake` quando ele chega na ilha.
+///
+/// A janela não recebe o mouse enquanto os cliques a atravessam, então alguém
+/// precisa conferir a posição dele de tempos em tempos. Antes era a própria
+/// interface, redesenhando-se 20 vezes por segundo só para isso. Agora é uma
+/// thread minúscula que só compara dois números, e a interface dorme até ser
+/// chamada. Ela fica separada do backend de propósito: se uma consulta ao
+/// Windows demorar, a ilha continua respondendo ao mouse na hora.
+///
+/// De passagem, avisa também quando outra ilha pediu para esta fechar.
+pub fn watch_cursor(wake: impl Fn() + Send + 'static) {
+    #[cfg(windows)]
+    {
+        let watcher = std::thread::Builder::new().name("islandbar-mouse".into()).stack_size(64 * 1024);
+        let _ = watcher.spawn(move || {
+            let mut was_over = false;
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                let over = cursor_over_island();
+                if (over && !was_over) || quit_requested() {
+                    wake();
+                }
+                was_over = over;
+            }
+        });
+    }
+    #[cfg(not(windows))]
+    let _ = wake;
 }
 
 /// Devolve ao Windows a memória que o programa não está usando agora.

@@ -35,14 +35,17 @@ use windows::Win32::System::Threading::{
 
 /// Com som tocando ou o painel aberto: os medidores precisam de leituras frequentes.
 const FAST: Duration = Duration::from_millis(33);
-/// Em repouso: só vigia o mouse e o volume (para o aviso das teclas de volume).
-const SLOW: Duration = Duration::from_millis(50);
+/// Em repouso: só acompanha o volume (para o aviso das teclas de volume) e
+/// percebe quando um som começa.
+const SLOW: Duration = Duration::from_millis(100);
 /// CPU, RAM, GPU e detecção de jogo.
 const SYSTEM_EVERY: Duration = Duration::from_millis(1000);
 /// Lista de apps com som. Só é lida com o painel aberto.
 const SESSIONS_EVERY: Duration = Duration::from_millis(1000);
 /// Com o painel fechado basta notar a troca de fone/caixa de som.
 const DEVICE_EVERY: Duration = Duration::from_millis(2000);
+/// Depois de perder o dispositivo, espera um pouco antes de procurar outro.
+const DEVICE_RETRY: Duration = Duration::from_millis(250);
 const MEDIA_EVERY: Duration = Duration::from_millis(1000);
 const MEDIA_EVERY_OPEN: Duration = Duration::from_millis(500);
 /// Depois de um play/pause, o Windows leva um instante para refletir a mudança.
@@ -96,7 +99,6 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
     let (mut audio_due, mut system_due, mut media_due, mut next_tick) = (start, start, start, start);
     let mut last_sound: Option<Instant> = None;
     let mut had_sound = false;
-    let mut cursor_was_over = false;
     // Volume que a interface já viu (para acordá-la quando ele mudar).
     let mut seen_volume: Option<(f32, bool)> = None;
 
@@ -127,13 +129,6 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
             }
         }
         let now = Instant::now();
-
-        // Uma ilha mais nova abriu (ex.: depois de atualizar) e pediu para
-        // esta fechar. Quem encerra o programa é a interface; aqui só a
-        // acordamos, porque parada ela demoraria a perceber.
-        if crate::platform::quit_requested() {
-            wake();
-        }
 
         // Dispositivo de saída e, com o painel aberto, a lista de apps. Assim a
         // gente acompanha apps abrindo/fechando e troca de fone/caixa de som.
@@ -190,9 +185,9 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
         let master = match audio.as_ref().map(|a| unsafe { read_master(a) }) {
             Some(Ok(master)) => Some(master),
             Some(Err(_)) => {
-                // O dispositivo sumiu (fone desconectado...): procura outro já.
+                // O dispositivo sumiu (fone desconectado...): procura outro logo.
                 audio = None;
-                audio_due = now;
+                audio_due = now + DEVICE_RETRY;
                 None
             }
             None => None,
@@ -240,13 +235,6 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
             }
             shared.fps_access = games.access();
         }
-
-        // O mouse chegou na ilha: a interface precisa acordar para reagir.
-        let cursor_over = crate::platform::cursor_over_island();
-        if cursor_over && !cursor_was_over {
-            changed = true;
-        }
-        cursor_was_over = cursor_over;
 
         if changed {
             wake();

@@ -45,8 +45,8 @@ const LEAVE_SECONDS: f32 = 0.45;
 // novo para mostrar:
 //  - em uso (animação de abrir/fechar, painel aberto): na taxa do monitor;
 //  - só dançando com o som: 30 quadros por segundo;
-//  - parada: dorme. O backend a acorda quando um número muda, a música
-//    troca ou o mouse chega perto (veja `backend::Wake`).
+//  - parada: dorme, e é acordada quando um número muda, a música troca
+//    (veja `backend::Wake`) ou o mouse chega perto (`platform::watch_cursor`).
 
 /// Intervalo entre quadros enquanto a ilha só acompanha o som. Um pouco
 /// menos que 1/30 s, para não perder a vez em monitores de 60 Hz.
@@ -150,12 +150,14 @@ impl IslandApp {
             Ok("hud") => Mode::Hud,
             _ => Mode::Collapsed,
         };
-        // O backend acorda a interface quando há algo novo para desenhar.
+        // Parada, a interface dorme. Quem a acorda é o backend (algo novo para
+        // desenhar) ou o vigia do mouse (o cursor chegou na ilha).
         // (Com um atraso mínimo ela desenha um quadro só; um pedido "para
         // já" sempre rende dois.)
-        let ctx = cc.egui_ctx.clone();
+        let wake = |ctx: egui::Context| move || ctx.request_repaint_after(Duration::from_millis(1));
+        platform::watch_cursor(wake(cc.egui_ctx.clone()));
         Self {
-            backend: Backend::spawn(move || ctx.request_repaint_after(Duration::from_millis(1))),
+            backend: Backend::spawn(wake(cc.egui_ctx.clone())),
             mode,
             // Começa minúscula para "nascer" com um quique.
             width: Spring::bouncy(30.0),
@@ -213,8 +215,8 @@ impl IslandApp {
         {
             let inner = ctx.input(|i| i.viewport().inner_rect);
             if let Some(inner) = inner {
-                // Publica a área da ilha em pixels da tela. O backend vigia a
-                // mesma área para acordar a interface quando o mouse chegar.
+                // Publica a área da ilha em pixels da tela. O vigia do mouse
+                // confere a mesma área para acordar a interface na hora certa.
                 let scale = ctx.pixels_per_point();
                 let screen = hit.translate(inner.min.to_vec2()) * scale;
                 platform::set_hover_area(screen.left(), screen.top(), screen.right(), screen.bottom());
@@ -484,7 +486,7 @@ impl eframe::App for IslandApp {
         } else if hovered || dancing {
             ctx.request_repaint_after(AMBIENT_FRAME);
         } else {
-            // Nada se mexendo: dorme até o backend avisar que algo mudou.
+            // Nada se mexendo: dorme até alguém avisar que algo mudou.
             self.resting = true;
             let wait = if self.notice_timer > 0.0 {
                 REST_FRAME.min(Duration::from_secs_f32(self.notice_timer))

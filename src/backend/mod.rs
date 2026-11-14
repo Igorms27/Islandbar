@@ -132,7 +132,8 @@ pub type Shared = Arc<Mutex<Snapshot>>;
 /// Acorda a interface para ela se redesenhar.
 ///
 /// Parada, a interface dorme. É o backend que percebe quando algo que está na
-/// tela mudou (um número, a música, o mouse chegando na ilha) e a chama.
+/// tela mudou (um número, a música, o volume) e a chama. (O mouse chegando na
+/// ilha é vigiado à parte, em `platform::watch_cursor`.)
 pub type Wake = Box<dyn Fn() + Send>;
 
 pub struct Backend {
