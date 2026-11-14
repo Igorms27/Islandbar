@@ -44,7 +44,26 @@ Para medir no seu PC, abra a ilha pelo terminal com a variável `ISLANDBAR_DEBUG
 indo para um arquivo (`islandbar.exe 2> perf.txt`): a cada 5 segundos ela anota quadros por segundo,
 uso de CPU e memória.
 
-## Como rodar
+## Como usar
+
+### Opção 1: Baixar e rodar (Recomendado)
+
+Você **não precisa instalar o Rust** nem ferramentas de desenvolvimento para usar:
+
+1. Baixe o executável pronto mais recente:
+   👉 **[Download islandbar.exe](https://github.com/Igorms27/Islandbar/releases/latest/download/islandbar.exe)**
+2. Basta abrir o arquivo `islandbar.exe`.
+3. Na primeira inicialização, um cartão perguntará se deseja iniciar a ilha automaticamente com o Windows.
+
+> **Atualizações automáticas:** cada atualização publicada na branch `main` é baixada e aplicada automaticamente pela própria ilha, sem necessidade de reinstalar.
+
+Para fechar: abra a ilha com um clique e selecione **Sair** no canto inferior direito.
+
+---
+
+### Opção 2: Compilando do código-fonte (para desenvolvedores)
+
+Se você quiser modificar o código ou compilar por conta própria:
 
 1. Instale o Rust: <https://rustup.rs>
 2. No terminal, dentro da pasta do projeto:
@@ -54,13 +73,6 @@ cargo run --release
 ```
 
 O executável final fica em `target\release\islandbar.exe`.
-
-Sem instalar nada: baixe o executável mais recente em
-<https://github.com/Igorms27/Islandbar/releases/latest/download/islandbar.exe>.
-Cada push na branch `main` publica uma versão nova automaticamente, e as ilhas
-já instaladas se atualizam sozinhas.
-
-Para fechar: abra a ilha e clique em **Sair** no canto inferior direito.
 
 ## Estrutura do código
 
