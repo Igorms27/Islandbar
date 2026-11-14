@@ -38,6 +38,33 @@ pub fn cursor_over_island() -> bool {
     left < right && left <= x && x <= right && top <= y && y <= bottom
 }
 
+/// A tecla Ctrl está apertada agora? Funciona mesmo sem a ilha ter o foco.
+pub fn ctrl_held() -> bool {
+    #[cfg(windows)]
+    unsafe {
+        use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_CONTROL};
+        (GetAsyncKeyState(VK_CONTROL.0 as i32) as u16 & 0x8000) != 0
+    }
+    #[cfg(not(windows))]
+    false
+}
+
+/// A ilha está escondida (Ctrl): o vigia do mouse avisa quando ele sai de cima.
+static GHOST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_ghost(ghost: bool) {
+    GHOST.store(ghost, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// O vigia do mouse viu o Ctrl ser apertado com o mouse em cima da ilha.
+/// Fica anotado até a interface ler, para um toque rápido não se perder.
+static CTRL_TAPPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// O Ctrl foi apertado (ou está apertado) com o mouse em cima da ilha?
+pub fn ctrl_over_island() -> bool {
+    CTRL_TAPPED.swap(false, std::sync::atomic::Ordering::Relaxed) || ctrl_held()
+}
+
 /// Vigia o mouse e chama `wake` quando ele chega na ilha.
 ///
 /// A janela não recebe o mouse enquanto os cliques a atravessam, então alguém
@@ -47,20 +74,28 @@ pub fn cursor_over_island() -> bool {
 /// chamada. Ela fica separada do backend de propósito: se uma consulta ao
 /// Windows demorar, a ilha continua respondendo ao mouse na hora.
 ///
-/// De passagem, avisa também quando outra ilha pediu para esta fechar.
+/// De passagem, avisa também quando outra ilha pediu para esta fechar, quando
+/// o Ctrl é apertado com o mouse em cima (a ilha sai da frente) e, com ela
+/// escondida, quando o mouse sai de cima (ela volta).
 pub fn watch_cursor(wake: impl Fn() + Send + 'static) {
     #[cfg(windows)]
     {
         let watcher = std::thread::Builder::new().name("islandbar-mouse".into()).stack_size(64 * 1024);
         let _ = watcher.spawn(move || {
-            let mut was_over = false;
+            let (mut was_over, mut was_ctrl) = (false, false);
             loop {
                 std::thread::sleep(std::time::Duration::from_millis(50));
                 let over = cursor_over_island();
-                if (over && !was_over) || quit_requested() {
+                // Só olha o teclado com o mouse em cima: no resto do tempo nem pergunta.
+                let ctrl = over && ctrl_held();
+                let ghost = GHOST.load(std::sync::atomic::Ordering::Relaxed);
+                if ctrl && !was_ctrl {
+                    CTRL_TAPPED.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+                if (over && !was_over) || (ctrl && !was_ctrl) || (ghost && was_over && !over) || quit_requested() {
                     wake();
                 }
-                was_over = over;
+                (was_over, was_ctrl) = (over, ctrl);
             }
         });
     }
@@ -119,6 +154,10 @@ mod window {
         WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE, WM_NCCALCSIZE, WS_MAXIMIZEBOX,
         WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
     };
+
+    pub fn handle(frame: &eframe::Frame) -> Option<HWND> {
+        hwnd(frame)
+    }
 
     fn hwnd(frame: &eframe::Frame) -> Option<HWND> {
         let handle = frame.window_handle().ok()?;
@@ -315,6 +354,50 @@ pub fn sync_window(frame: &eframe::Frame, passthrough: bool) {
     window::sync(frame, passthrough);
     #[cfg(not(windows))]
     let _ = (frame, passthrough);
+}
+
+/// Traz a ilha para a frente para ela receber o que for digitado.
+///
+/// A ilha normalmente nunca pega o foco (clicar nela não tira o teclado de
+/// quem está usando, o que importa nos jogos). Só ao clicar num campo de
+/// digitar é que ela pega, e devolve depois com `give_back_keyboard`.
+/// Devolve a janela que estava com o teclado antes.
+pub fn take_keyboard(frame: &eframe::Frame) -> Option<isize> {
+    #[cfg(windows)]
+    unsafe {
+        use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, SetForegroundWindow};
+        let hwnd = window::handle(frame)?;
+        let previous = GetForegroundWindow();
+        if previous == hwnd {
+            return None;
+        }
+        let ok = SetForegroundWindow(hwnd).as_bool();
+        crate::perf::line(format!("keyboard: taken (ok={ok}) from {:?}", previous.0));
+        Some(previous.0 as isize)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = frame;
+        None
+    }
+}
+
+/// Devolve o teclado para a janela que o tinha antes de `take_keyboard`.
+pub fn give_back_keyboard(frame: &eframe::Frame, previous: isize) {
+    #[cfg(windows)]
+    unsafe {
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, IsWindow, SetForegroundWindow};
+        let Some(hwnd) = window::handle(frame) else { return };
+        let previous = HWND(previous as *mut std::ffi::c_void);
+        // Se você já clicou em outro programa, ele ficou com o teclado: nada a fazer.
+        if GetForegroundWindow() == hwnd && IsWindow(Some(previous)).as_bool() {
+            let ok = SetForegroundWindow(previous).as_bool();
+            crate::perf::line(format!("keyboard: given back (ok={ok}) to {:?}", previous.0));
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = (frame, previous);
 }
 
 #[cfg(windows)]

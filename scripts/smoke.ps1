@@ -23,6 +23,7 @@ public static class W {
   [DllImport("user32.dll")] public static extern IntPtr GetWindowLongPtrW(IntPtr h, int i);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, UIntPtr e);
+  [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint f, UIntPtr e);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
   [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out RECT r);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
@@ -140,6 +141,22 @@ Start-Sleep -Milliseconds 1800
 Shot "island-6-collapsed-again"
 Styles "island end" | Out-Null
 
+# Ctrl com o mouse em cima: a ilha sai da frente e o clique passa para trás.
+[W]::SetCursorPos($cx, $pillY) | Out-Null
+Start-Sleep -Milliseconds 700
+[W]::keybd_event(0x11, 0, 0, [UIntPtr]::Zero)      # Ctrl apertado
+Start-Sleep -Milliseconds 300
+[W]::keybd_event(0x11, 0, 2, [UIntPtr]::Zero)      # Ctrl solto
+Start-Sleep -Milliseconds 600
+Shot "ghost-1-hidden"
+Click $cx $pillY
+Start-Sleep -Milliseconds 900
+Shot "ghost-2-clicked"
+Log ("ghost: ui after click: " + ((Get-Content "$out\island-stderr.txt" | Select-String '^ui:' | Select-Object -Last 3) -join " | "))
+[W]::SetCursorPos($cx, 500) | Out-Null
+Start-Sleep -Milliseconds 1200
+Shot "ghost-3-back"
+
 # ---- Rodada 2: modo jogo ---------------------------------------------------
 # Um "jogo falso" em tela cheia (examples/fake_game.rs) entrega quadros pelo
 # DirectX; a ilha deve abrir a pílula do modo jogo com o FPS.
@@ -220,9 +237,17 @@ Shot "alarm-2-page-counting"
 Click ($cx + 62) ($r.T + 232)   # Cancelar
 Start-Sleep 1
 Shot "alarm-3-page-choose"
-Click $cx ($r.T + 248)          # Iniciar (15 min)
+# Clica no número dos minutos e digita 42, Enter: deve começar a contar 42:00.
+Click ($cx + 52) ($r.T + 144)
+Start-Sleep -Milliseconds 700
+[System.Windows.Forms.SendKeys]::SendWait("4")
+Start-Sleep -Milliseconds 400
+Shot "alarm-3b-typing"
+[System.Windows.Forms.SendKeys]::SendWait("2{ENTER}")
 Start-Sleep 1
 Shot "alarm-4-page-started"
+Styles "alarm after typing" | Out-Null
+Log ("keyboard lines: " + ((Get-Content "$out\alarm-stderr.txt" | Select-String '^keyboard') -join " | "))
 Click 80 600                    # fecha o painel
 Start-Sleep 12
 Shot "alarm-5-pill-counting"

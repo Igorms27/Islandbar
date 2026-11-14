@@ -44,6 +44,11 @@ impl Alarm {
         self.chosen = (self.chosen as i32 + minutes).clamp(0, MAX_MINUTES as i32) as u32;
     }
 
+    /// Define o tempo escolhido (o que foi digitado). Passou do limite, fica no máximo.
+    pub fn set_parts(&mut self, hours: u32, minutes: u32) {
+        self.chosen = (hours.min(23) * 60 + minutes.min(59)).min(MAX_MINUTES);
+    }
+
     /// Começa a contar o tempo escolhido.
     pub fn start(&mut self) {
         if self.chosen > 0 {

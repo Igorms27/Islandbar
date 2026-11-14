@@ -79,6 +79,13 @@ const TEXT: Color32 = Color32::from_rgb(245, 245, 247);
 const TEXT_DIM: Color32 = Color32::from_rgb(150, 150, 158);
 const MASTER_KEY: &str = "\0master";
 
+/// Número do alarme sendo digitado.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Field {
+    Hours,
+    Minutes,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Mode {
     /// Cartão inicial: pergunta se deve abrir junto com o Windows.
@@ -138,6 +145,21 @@ pub struct IslandApp {
     wheel: f32,
     /// 0..1, opacidade do cartão do alarme tocando.
     ring: Spring,
+    /// Número do alarme sendo digitado, e o que já foi digitado.
+    editing: Option<(Field, String)>,
+    /// Rodinha vertical acumulada sobre um número do alarme.
+    digit_wheel: f32,
+    /// Janela que tinha o teclado antes de a ilha pegá-lo para a digitação.
+    keyboard_from: Option<isize>,
+    /// A ilha já recebeu o foco desde que pegou o teclado.
+    had_focus: bool,
+    /// Pedidos para pegar / devolver o teclado (atendidos em `ui`, que tem o `frame`).
+    want_keyboard: bool,
+    release_keyboard: bool,
+    /// Ctrl com o mouse em cima: a ilha saiu da frente até o mouse sair.
+    ghost: bool,
+    /// 0..1, quanto a ilha já sumiu.
+    ghost_fade: Spring,
     /// Dispositivo clicado que o Windows ainda não confirmou. O destaque já
     /// vai para ele, para o clique responder na hora.
     pending_device: Option<(String, Instant)>,
@@ -213,6 +235,14 @@ impl IslandApp {
             page_drag: None,
             wheel: 0.0,
             ring: Spring::smooth(0.0),
+            editing: None,
+            digit_wheel: 0.0,
+            keyboard_from: None,
+            had_focus: false,
+            want_keyboard: false,
+            release_keyboard: false,
+            ghost: false,
+            ghost_fade: Spring::smooth(0.0),
             window_pos: None,
             notice_timer: if updated { 6.0 } else { 0.0 },
             restarting: false,
@@ -398,8 +428,20 @@ impl eframe::App for IslandApp {
         // --- Mouse e troca de estados ---
         let pointer_down = ctx.input(|i| i.pointer.any_down());
         let hovered = self.cursor_inside(&ctx, island);
+        // Ctrl com o mouse em cima: a ilha sai da frente (some e deixa os
+        // cliques passarem) até o mouse sair de cima. Dá para soltar o Ctrl e
+        // clicar normalmente no que estava atrás.
+        let can_ghost = matches!(self.mode, Mode::Collapsed | Mode::Hud | Mode::Expanded) && self.editing.is_none();
+        if hovered && can_ghost && !self.ghost && platform::ctrl_over_island() {
+            self.ghost = true;
+            platform::set_ghost(true);
+        } else if self.ghost && !hovered {
+            self.ghost = false;
+            platform::set_ghost(false);
+        }
+        let hovered = hovered && !self.ghost;
         // Fora da ilha, os cliques atravessam a janela e vão para o app de baixo.
-        platform::sync_window(frame, !hovered && !pointer_down);
+        platform::sync_window(frame, (!hovered && !pointer_down) || self.ghost);
 
         // Enquanto os cliques atravessam a janela, ela não recebe a posição do
         // mouse. Se o cursor já está sobre a ilha mas a interface ainda não
@@ -428,7 +470,8 @@ impl eframe::App for IslandApp {
 
         match self.mode {
             Mode::Expanded => {
-                if hovered || pointer_down {
+                // Digitando o alarme, o painel não fecha se o mouse sair.
+                if hovered || pointer_down || self.editing.is_some() {
                     self.leave_timer = 0.0;
                 } else {
                     self.leave_timer += dt;
@@ -474,12 +517,35 @@ impl eframe::App for IslandApp {
         self.ring.target = if self.mode == Mode::Ringing { 1.0 } else { 0.0 };
         self.ring.update(dt);
         self.page.update(dt);
+        self.ghost_fade.target = if self.ghost { 1.0 } else { 0.0 };
+        self.ghost_fade.update(dt);
+
+        // Digitação do alarme: termina se o painel fechou, saiu da página, ou
+        // se você clicou em outro programa (ele ficou com o teclado).
+        if self.keyboard_from.is_some() {
+            let focused = ctx.input(|i| i.viewport().focused).unwrap_or(false);
+            if focused {
+                self.had_focus = true;
+            } else if self.had_focus {
+                self.keyboard_from = None;
+                self.end_editing(true);
+            }
+        }
+        if self.editing.is_some() {
+            if self.mode != Mode::Expanded || self.page.target != 1.0 || self.alarm.counting() {
+                self.end_editing(true);
+            } else {
+                self.handle_typing(&ctx);
+            }
+        }
         self.hud.update(dt);
         self.hover.update(dt);
 
         // --- Desenho ---
         let accent = accent_color(time);
-        let painter = ui.painter().clone();
+        let mut painter = ui.painter().clone();
+        // Saindo da frente (Ctrl): tudo vai sumindo junto.
+        painter.set_opacity(1.0 - smoothstep(self.ghost_fade.value));
 
         // Brilho colorido que pulsa com o som.
         let glow = (0.10 + self.master_peak * 0.9 + self.hover.value * 0.15).min(1.0);
@@ -530,7 +596,7 @@ impl eframe::App for IslandApp {
         // --- Quando redesenhar ---
         let springs = [
             &self.width, &self.height, &self.open, &self.hud, &self.hover, &self.welcome, &self.game, &self.game_width,
-            &self.ring, &self.page,
+            &self.ring, &self.page, &self.ghost_fade,
         ];
         let animating = springs.iter().any(|s| !s.settled());
         // O cartão do alarme tocando não precisa da taxa do monitor (veja abaixo).
@@ -563,6 +629,17 @@ impl eframe::App for IslandApp {
                 wait = wait.min(alarm::next_change(left));
             }
             ctx.request_repaint_after(wait);
+        }
+
+        // Pegar/devolver o teclado para a digitação do alarme.
+        if std::mem::take(&mut self.want_keyboard) && self.keyboard_from.is_none() {
+            self.had_focus = false;
+            self.keyboard_from = platform::take_keyboard(frame);
+        }
+        if std::mem::take(&mut self.release_keyboard) {
+            if let Some(previous) = self.keyboard_from.take() {
+                platform::give_back_keyboard(frame, previous);
+            }
         }
 
         // Um tempo depois do último uso, devolve ao Windows a memória parada.
@@ -1014,15 +1091,69 @@ impl IslandApp {
         // ---- Escolhendo o tempo ----
         let (hours, minutes) = (self.alarm.chosen / 60, self.alarm.chosen % 60);
         let digits_y = top + 50.0;
-        for (column, (value, unit, step)) in [(hours, "h", 60), (minutes, "min", 5)].into_iter().enumerate() {
+        let digit_rect = |column: usize| {
             let x = cx + if column == 0 { -62.0 } else { 52.0 };
-            p.text(pos2(x, digits_y), Align2::CENTER_CENTER, format!("{value:02}"), FontId::proportional(36.0), fade(TEXT, a));
+            Rect::from_center_size(pos2(x, digits_y), vec2(62.0, 46.0))
+        };
+        // Apertou o mouse fora dos números: o que foi digitado vale.
+        let pressed_outside = ui.input(|i| {
+            i.pointer.any_pressed()
+                && i.pointer.interact_pos().is_none_or(|pos| !digit_rect(0).contains(pos) && !digit_rect(1).contains(pos))
+        });
+        if self.editing.is_some() && pressed_outside {
+            self.end_editing(true);
+        }
+        let time = ui.input(|i| i.time);
+        let fields = [(Field::Hours, hours, "h", 60), (Field::Minutes, minutes, "min", 5)];
+        for (column, (field, value, unit, step)) in fields.into_iter().enumerate() {
+            let x = cx + if column == 0 { -62.0 } else { 52.0 };
+            let rect = digit_rect(column);
+
+            // Clicar no número começa a digitar (a ilha pega o teclado).
+            if interactive {
+                let resp = ui.interact(rect, ui.scope_id().with(("alarm-digits", column)), Sense::click());
+                if resp.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+                    // Rodinha em cima do número: soma ou tira 1.
+                    let scroll = ui.input(|i| i.smooth_scroll_delta.y);
+                    self.digit_wheel += scroll;
+                    while self.digit_wheel.abs() >= 40.0 {
+                        let up = self.digit_wheel > 0.0;
+                        self.digit_wheel -= 40.0f32.copysign(self.digit_wheel);
+                        self.end_editing(true);
+                        self.alarm.change(if up { 1 } else { -1 } * if field == Field::Hours { 60 } else { 1 });
+                    }
+                }
+                if resp.clicked() && self.editing.as_ref().is_none_or(|(f, _)| *f != field) {
+                    self.end_editing(true);
+                    self.editing = Some((field, String::new()));
+                    self.want_keyboard = true;
+                }
+            }
+
+            let typing = self.editing.as_ref().filter(|(f, _)| *f == field).map(|(_, typed)| typed.clone());
+            let (text, color) = match &typing {
+                Some(typed) if !typed.is_empty() => (typed.clone(), TEXT),
+                Some(_) => (format!("{value:02}"), TEXT_DIM),
+                None => (format!("{value:02}"), TEXT),
+            };
+            if typing.is_some() {
+                p.rect_filled(rect, 12.0, fade(accent, a * 0.12));
+                p.rect_stroke(rect, 12.0, Stroke::new(1.5, fade(accent, a * 0.8)), StrokeKind::Inside);
+            }
+            let shown = p.text(pos2(x, digits_y), Align2::CENTER_CENTER, text, FontId::proportional(36.0), fade(color, a));
+            // Cursor piscando enquanto digita.
+            if typing.is_some() && (time * 2.0) as i64 % 2 == 0 {
+                let caret_x = shown.right() + 2.0;
+                p.line_segment([pos2(caret_x, digits_y - 14.0), pos2(caret_x, digits_y + 14.0)], Stroke::new(2.0, fade(accent, a)));
+            }
             p.text(pos2(x + 26.0, digits_y + 6.0), Align2::LEFT_CENTER, unit, FontId::proportional(13.0), fade(TEXT_DIM, a));
             for (row, direction) in [(-1.0f32, 1), (1.0, -1)] {
                 let center = pos2(x, digits_y + row * 34.0);
                 let (clicked, scale) = icon_button(ui, p, ("alarm-step", column, direction), center, 13.0, interactive, a);
                 draw_chevron(p, center, 5.5 * scale, row < 0.0, fade(TEXT_DIM, a));
                 if clicked {
+                    self.end_editing(true);
                     self.alarm.change(direction * step);
                 }
             }
@@ -1046,6 +1177,76 @@ impl IslandApp {
         if text_button(ui, p, "alarm-start", start, "Iniciar", true, accent, a_start, interactive && ready) {
             self.alarm.start();
         }
+    }
+
+    /// Teclas enquanto um número do alarme está sendo digitado.
+    fn handle_typing(&mut self, ctx: &egui::Context) {
+        let events = ctx.input(|i| i.events.clone());
+        for event in events {
+            let Some((field, typed)) = self.editing.as_mut() else { return };
+            match event {
+                egui::Event::Text(text) => {
+                    for digit in text.chars().filter(|c| c.is_ascii_digit()) {
+                        // Dois dígitos já digitados: o próximo começa de novo.
+                        if typed.len() >= 2 {
+                            typed.clear();
+                        }
+                        typed.push(digit);
+                    }
+                }
+                egui::Event::Key { key, pressed: true, .. } => match key {
+                    egui::Key::Backspace => {
+                        typed.pop();
+                    }
+                    egui::Key::Tab | egui::Key::ArrowRight if *field == Field::Hours => {
+                        self.commit_typed();
+                        self.editing = Some((Field::Minutes, String::new()));
+                    }
+                    egui::Key::ArrowLeft if *field == Field::Minutes => {
+                        self.commit_typed();
+                        self.editing = Some((Field::Hours, String::new()));
+                    }
+                    egui::Key::ArrowUp | egui::Key::ArrowDown => {
+                        let step = if *field == Field::Hours { 60 } else { 1 };
+                        let step = if key == egui::Key::ArrowUp { step } else { -step };
+                        self.commit_typed();
+                        self.alarm.change(step);
+                    }
+                    egui::Key::Enter => {
+                        self.end_editing(true);
+                        self.alarm.start();
+                    }
+                    egui::Key::Escape => self.end_editing(false),
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+    }
+
+    /// Passa o que foi digitado para o alarme (e limpa, para seguir digitando).
+    fn commit_typed(&mut self) {
+        let Some((field, typed)) = self.editing.as_mut() else { return };
+        if let Ok(value) = typed.parse::<u32>() {
+            let (hours, minutes) = (self.alarm.chosen / 60, self.alarm.chosen % 60);
+            match field {
+                Field::Hours => self.alarm.set_parts(value, minutes),
+                Field::Minutes => self.alarm.set_parts(hours, value),
+            }
+        }
+        typed.clear();
+    }
+
+    /// Termina a digitação (`commit` = vale o que foi digitado) e devolve o teclado.
+    fn end_editing(&mut self, commit: bool) {
+        if self.editing.is_none() {
+            return;
+        }
+        if commit {
+            self.commit_typed();
+        }
+        self.editing = None;
+        self.release_keyboard = true;
     }
 
     /// Cartão do alarme tocando: sininho | "Alarme" | Soneca, Parar.

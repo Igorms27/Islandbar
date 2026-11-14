@@ -15,8 +15,11 @@ visível, e se expande com animações elásticas.
   (funciona com Spotify, navegadores e qualquer app que apareça no controle de mídia do Windows).
 - **Alarme**: arraste o painel para o lado (ou clique nas bolinhas do rodapé) para chegar à
   página do alarme. Escolha em quantas horas/minutos ele toca (setinhas ou atalhos +5 min, +15 min…)
-  e clique em Iniciar. A pílula mostra um sininho com o tempo que falta; na hora, a ilha mostra
+  e clique em Iniciar. Também dá para clicar no número e digitar (Enter já inicia). A pílula mostra um sininho com o tempo que falta; na hora, a ilha mostra
   um aviso com bip de despertador, com os botões Soneca e Parar. (Fechar a ilha cancela o alarme.)
+- **Ilha na frente de algo** (ex.: uma aba do navegador)? Com o mouse em cima dela, aperte **Ctrl**:
+  ela some e os cliques passam para o que está atrás (pode soltar o Ctrl e clicar normalmente).
+  Ela volta quando o mouse sai de cima.
 - **Aviso de volume**: ao usar as teclas de volume do teclado, a ilha se estica e mostra o nível.
 - **Monitor do sistema**: CPU, GPU, RAM e temperatura no painel (e CPU/GPU/RAM na pílula quando não há música).
   O uso da GPU é o mesmo número do Gerenciador de Tarefas. A temperatura usa o melhor sensor que o PC
