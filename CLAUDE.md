@@ -67,3 +67,10 @@ O ambiente do Claude é Linux; a ilha é para Windows.
   apresentação Vulkan/OpenGL" → "Preferir em camadas na cadeia de troca DXGI"
   para o jogo (está no README).
 - Na máquina do GitHub a temperatura aparece "n/d" (limitação dela, não bug).
+- Barra de título antiga: aparece quando a ilha ganha/perde o foco (ex.: ao
+  digitar no alarme). O `window_hook` em `src/platform.rs` repassa
+  `WM_NCACTIVATE` com `lParam = -1` e tira os bits de moldura em
+  `WM_STYLECHANGING` (só `GWL_STYLE`). Não bloquear `WM_NCPAINT` nem mexer no
+  estilo estendido ali: forçar o `GWL_EXSTYLE` congelou a imagem da ilha (ela não
+  voltava depois do Ctrl). A máquina do GitHub não mostra essa barra; o teste
+  visual confere, mas a confirmação é no PC do dono.

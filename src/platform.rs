@@ -151,8 +151,8 @@ mod window {
         GetWindow, GetWindowLongPtrW, GetWindowRect, IsWindow, IsWindowVisible, SetWindowLongPtrW, SetWindowPos,
         GWL_EXSTYLE, GWL_STYLE, GW_HWNDPREV, HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
         SWP_NOSIZE, SWP_NOZORDER, WS_CAPTION, WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-        WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE, WM_NCCALCSIZE, WS_MAXIMIZEBOX,
-        WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+        WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE, WM_NCACTIVATE, WM_NCCALCSIZE,
+        WM_STYLECHANGING, STYLESTRUCT, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
     };
 
     pub fn handle(frame: &eframe::Frame) -> Option<HWND> {
@@ -167,10 +167,21 @@ mod window {
 
     static HOOKED: AtomicBool = AtomicBool::new(false);
 
-    /// Intercepta uma única mensagem da janela: a que pergunta "quanto da
-    /// janela é moldura?". A biblioteca de janelas responde reservando 1 pixel
-    /// no topo (para uma sombra que não usamos), e esse pixel aparecia como uma
-    /// linha branca. Aqui respondemos: nada é moldura, a janela inteira é nossa.
+    /// Estilos de "janela normal" (barra de título, botões, borda).
+    const FRAME_BITS: u32 =
+        WS_CAPTION.0 | WS_THICKFRAME.0 | WS_SYSMENU.0 | WS_MINIMIZEBOX.0 | WS_MAXIMIZEBOX.0;
+
+    /// Intercepta as mensagens com que o Windows desenharia uma moldura de
+    /// janela em volta da ilha (a "barra de título de Windows antigo"):
+    ///
+    /// - "Quanto da janela é moldura?" (`WM_NCCALCSIZE`): nada. A biblioteca de
+    ///   janelas reservava 1 pixel no topo, que aparecia como uma linha branca.
+    /// - "A janela ganhou/perdeu o foco" (`WM_NCACTIVATE`): o Windows repinta a
+    ///   barra de título nessa hora. Com `lParam = -1` ele processa a troca de
+    ///   foco mas não repinta nada. (A ilha passou a ganhar o foco ao digitar
+    ///   no alarme, e a perdê-lo de novo; era aí que a barra voltava.)
+    /// - "Os estilos vão mudar" (`WM_STYLECHANGING`): os de janela normal são
+    ///   tirados antes de valerem, então nunca voltam, nem por um instante.
     unsafe extern "system" fn window_hook(
         hwnd: HWND,
         message: u32,
@@ -179,8 +190,14 @@ mod window {
         _id: usize,
         _data: usize,
     ) -> LRESULT {
-        if message == WM_NCCALCSIZE && wparam.0 != 0 {
-            return LRESULT(0);
+        match message {
+            WM_NCCALCSIZE if wparam.0 != 0 => return LRESULT(0),
+            WM_NCACTIVATE => return DefSubclassProc(hwnd, message, wparam, LPARAM(-1)),
+            WM_STYLECHANGING if lparam.0 != 0 && wparam.0 as i32 == GWL_STYLE.0 => {
+                let change = &mut *(lparam.0 as *mut STYLESTRUCT);
+                change.styleNew = (change.styleNew & !FRAME_BITS) | WS_POPUP.0;
+            }
+            _ => {}
         }
         DefSubclassProc(hwnd, message, wparam, lparam)
     }
@@ -293,9 +310,8 @@ mod window {
             // e os recoloca em alguns momentos (ex.: ao mostrar a janela). Com
             // fundo transparente, o Windows os desenhava por trás da ilha: daí
             // o retângulo escuro, o "x" no canto e a barra de título antiga.
-            let frame_bits = (WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX).0;
             let style = GetWindowLongPtrW(hwnd, GWL_STYLE) as u32;
-            let wanted = (style & !frame_bits) | WS_POPUP.0;
+            let wanted = (style & !FRAME_BITS) | WS_POPUP.0;
 
             // TOOLWINDOW: não aparece no Alt+Tab. NOACTIVATE: clicar na ilha
             // não tira o foco do programa que você está usando.

@@ -62,6 +62,29 @@ function Drag($x1, $y, $x2) {
   Start-Sleep -Milliseconds 60
   [W]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
 }
+# Cor de um ponto da tela.
+function Pixel($x, $y) {
+  $bmp = New-Object Drawing.Bitmap 1, 1
+  $g = [Drawing.Graphics]::FromImage($bmp)
+  $g.CopyFromScreen($x, $y, 0, 0, $bmp.Size)
+  $c = $bmp.GetPixel(0, 0)
+  $g.Dispose(); $bmp.Dispose()
+  $c
+}
+# Pontos da janela da ilha onde a barra de título antiga apareceria (o topo
+# da janela, fora da ilha). Fora da ilha a janela é transparente: o ponto tem
+# que ter a mesma cor de quando a ilha acabou de abrir.
+function TitlePoints($r) { @(@(($r.L + 30), ($r.T + 10)), @(($r.L + 160), ($r.T + 20)), @(($r.R - 30), ($r.T + 10))) }
+function TitleBase($r) { TitlePoints $r | ForEach-Object { Pixel $_[0] $_[1] } }
+function TitleCheck($label, $r, $base) {
+  $now = TitlePoints $r | ForEach-Object { Pixel $_[0] $_[1] }
+  $bar = $false
+  for ($i = 0; $i -lt $now.Count; $i++) {
+    $d = [math]::Abs($now[$i].R - $base[$i].R) + [math]::Abs($now[$i].G - $base[$i].G) + [math]::Abs($now[$i].B - $base[$i].B)
+    if ($d -gt 40) { $bar = $true }
+  }
+  Log ("{0}: barra de titulo: {1} (agora {2}; antes {3})" -f $label, $(if ($bar) { "SIM" } else { "nao" }), (($now | ForEach-Object { "{0},{1},{2}" -f $_.R, $_.G, $_.B }) -join " "), (($base | ForEach-Object { "{0},{1},{2}" -f $_.R, $_.G, $_.B }) -join " "))
+}
 function Click($x, $y) {
   [W]::SetCursorPos($x, $y) | Out-Null
   Start-Sleep -Milliseconds 500
@@ -111,6 +134,7 @@ function StopIsland($tag, $app) {
 # ---- Rodada 1: pílula, painel, clicar fora --------------------------------
 $app = StartIsland "island"
 $r = Styles "island start"
+$base = TitleBase $r
 Shot "island-1-collapsed"
 # Parada, sem ninguém mexer: é aqui que se mede o consumo em repouso.
 # (Mais de 30 s, para pegar também a devolução da memória parada.)
@@ -140,6 +164,7 @@ Shot "island-5-clicked-away"
 Start-Sleep -Milliseconds 1800
 Shot "island-6-collapsed-again"
 Styles "island end" | Out-Null
+TitleCheck "depois de clicar fora" $r $base
 
 # Ctrl com o mouse em cima: a ilha sai da frente e o clique passa para trás.
 [W]::SetCursorPos($cx, $pillY) | Out-Null
@@ -156,6 +181,9 @@ Log ("ghost: ui after click: " + ((Get-Content "$out\island-stderr.txt" | Select
 [W]::SetCursorPos($cx, 500) | Out-Null
 Start-Sleep -Milliseconds 1200
 Shot "ghost-3-back"
+TitleCheck "depois do Ctrl" $r $base
+Start-Sleep 3
+TitleCheck "depois do Ctrl (3 s)" $r $base
 
 # ---- Rodada 2: modo jogo ---------------------------------------------------
 # Um "jogo falso" em tela cheia (examples/fake_game.rs) entrega quadros pelo
@@ -227,6 +255,7 @@ $env:ISLANDBAR_DEBUG_ALARM = "600"
 $app = StartIsland "alarm"
 Remove-Item Env:ISLANDBAR_DEBUG_ALARM
 $r = Styles "alarm start"
+$base = TitleBase $r
 $cx = [int](($r.L + $r.R) / 2)
 Shot "alarm-1-pill"
 Click $cx ($r.T + 27)
@@ -247,10 +276,15 @@ Shot "alarm-3b-typing"
 Start-Sleep 1
 Shot "alarm-4-page-started"
 Styles "alarm after typing" | Out-Null
+TitleCheck "depois de digitar" $r $base
 Log ("keyboard lines: " + ((Get-Content "$out\alarm-stderr.txt" | Select-String '^keyboard') -join " | "))
 Click 80 600                    # fecha o painel
-Start-Sleep 12
+Start-Sleep -Milliseconds 800
+Shot "alarm-4b-clicked-away"
+TitleCheck "depois de digitar e clicar fora" $r $base
+Start-Sleep 11
 Shot "alarm-5-pill-counting"
+TitleCheck "depois de digitar e clicar fora (12 s)" $r $base
 Log ("perf with alarm counting:`n" + (Get-Content "$out\alarm-stderr.txt" | Select-String '^perf' | Select-Object -Last 2 | Out-String))
 StopIsland "alarm" $app
 
