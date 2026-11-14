@@ -163,12 +163,11 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
             changed = true;
             crate::perf::record_backend_thread();
             if debug_system {
-                eprintln!(
-                    "{system:?} game={game:?} fps_access={:?} audio={} {wanted:?} kmt={:?}",
+                crate::perf::line(format!(
+                    "{system:?} game={game:?} fps_access={:?} audio={} {wanted:?}",
                     games.access(),
-                    audio.is_some(),
-                    monitor.gpu_kmt
-                );
+                    audio.is_some()
+                ));
             }
         }
 
@@ -222,6 +221,7 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
             }
         }
 
+        let started = Instant::now();
         if let Ok(mut shared) = state.lock() {
             if let Some((volume, muted, peak)) = master {
                 shared.master = volume;
@@ -251,6 +251,7 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
         if changed {
             wake();
         }
+        crate::perf::add_section("other", started);
 
         crate::perf::add_backend_busy(now);
         let lively = panel || (!quiet && last_sound.is_some_and(|at| now - at < SOUND_LINGER));

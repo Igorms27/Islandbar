@@ -14,9 +14,8 @@ use std::time::{Duration, Instant};
 
 use windows::core::{w, PCWSTR};
 use windows::Wdk::Graphics::Direct3D::{
-    D3DKMTCloseAdapter, D3DKMTOpenAdapterFromLuid, D3DKMTQueryAdapterInfo, D3DKMTQueryStatistics,
-    D3DKMT_ADAPTER_PERFDATA, D3DKMT_CLOSEADAPTER, D3DKMT_OPENADAPTERFROMLUID, D3DKMT_QUERYADAPTERINFO,
-    D3DKMT_QUERYSTATISTICS, D3DKMT_QUERYSTATISTICS_ADAPTER, D3DKMT_QUERYSTATISTICS_NODE,
+    D3DKMTCloseAdapter, D3DKMTOpenAdapterFromLuid, D3DKMTQueryAdapterInfo, D3DKMT_ADAPTER_PERFDATA,
+    D3DKMT_CLOSEADAPTER, D3DKMT_OPENADAPTERFROMLUID, D3DKMT_QUERYADAPTERINFO,
     KMTQAITYPE_ADAPTERPERFDATA,
 };
 use windows::Win32::Foundation::{CloseHandle, FILETIME, LUID};
@@ -62,9 +61,6 @@ pub struct SystemMonitor {
     /// Soma do uso de cada "motor" da placa: (identificador, porcentagem).
     engines: Vec<(u64, f64)>,
     gpu_adapters: Option<Vec<LUID>>,
-    /// Experimento: uso da GPU lido direto do núcleo gráfico (veja `GpuNodes`).
-    nodes: GpuNodes,
-    pub gpu_kmt: Option<f32>,
     disk_temp: Option<f32>,
     disk_read_at: Option<Instant>,
 }
@@ -81,8 +77,6 @@ impl SystemMonitor {
             gpu_by_pid: HashMap::new(),
             engines: Vec::new(),
             gpu_adapters: None,
-            nodes: GpuNodes::default(),
-            gpu_kmt: None,
             disk_temp: None,
             disk_read_at: None,
         }
@@ -92,10 +86,7 @@ impl SystemMonitor {
         if wanted.gpu {
             let started = Instant::now();
             self.gpu = self.read_gpu();
-            crate::perf::add_section("gpu_pdh", started);
-            let started = Instant::now();
-            self.gpu_kmt = unsafe { self.nodes.read() };
-            crate::perf::add_section("gpu_kmt", started);
+            crate::perf::add_section("gpu", started);
         } else {
             self.gpu_by_pid.clear();
         }
@@ -187,7 +178,7 @@ impl SystemMonitor {
             return Some(Temp { celsius, source: TempSource::System });
         }
 
-        let adapters = self.gpu_adapters.get_or_insert_with(|| unsafe { gpu_adapters(false) });
+        let adapters = self.gpu_adapters.get_or_insert_with(|| unsafe { gpu_adapters() });
         let gpu = hottest(adapters.iter().filter_map(|luid| unsafe { read_gpu_temp(*luid) }));
         if let Some(celsius) = gpu {
             return Some(Temp { celsius, source: TempSource::Gpu });
@@ -334,79 +325,15 @@ impl Lazy {
     }
 }
 
-/// Uso da GPU lido direto do núcleo gráfico do Windows.
-///
-/// Cada placa tem "motores" (3D, vídeo, cópia...). O Windows guarda quanto
-/// tempo cada motor passou trabalhando; a diferença entre duas leituras,
-/// dividida pelo tempo que passou, é o uso. São poucas consultas diretas, em
-/// vez de uma lista com centenas de linhas (uma por programa e por motor).
-#[derive(Default)]
-struct GpuNodes {
-    /// (placa, número de motores).
-    adapters: Vec<(LUID, u32)>,
-    /// Tempo trabalhado de cada motor na leitura anterior, e quando ela foi feita.
-    last: Vec<i64>,
-    last_at: Option<Instant>,
-}
-
-impl GpuNodes {
-    unsafe fn read(&mut self) -> Option<f32> {
-        if self.adapters.is_empty() {
-            self.adapters = gpu_adapters(true).into_iter().filter_map(|luid| Some((luid, node_count(luid)?))).collect();
-            self.last_at = None;
-        }
-        let mut times = Vec::with_capacity(self.last.len());
-        for (luid, nodes) in &self.adapters {
-            for node in 0..*nodes {
-                match node_running_time(*luid, node) {
-                    Some(time) => times.push(time),
-                    None => {
-                        // A lista de placas mudou (driver atualizado, por exemplo).
-                        self.adapters.clear();
-                        return None;
-                    }
-                }
-            }
-        }
-        if times.is_empty() {
-            return None;
-        }
-        let now = Instant::now();
-        let before = self.last_at.replace(now);
-        let last = std::mem::replace(&mut self.last, times);
-        // Os tempos vêm em unidades de 100 nanossegundos.
-        let elapsed = (now - before?).as_nanos() as f64 / 100.0;
-        if last.len() != self.last.len() || elapsed <= 0.0 {
-            return None;
-        }
-        let busiest = self.last.iter().zip(&last).map(|(now, before)| (now - before) as f64 / elapsed).fold(0.0, f64::max);
-        Some(busiest.clamp(0.0, 1.0) as f32)
-    }
-}
-
-unsafe fn node_count(luid: LUID) -> Option<u32> {
-    let mut query = D3DKMT_QUERYSTATISTICS { Type: D3DKMT_QUERYSTATISTICS_ADAPTER, AdapterLuid: luid, ..Default::default() };
-    D3DKMTQueryStatistics(std::ptr::addr_of_mut!(query)).is_ok().then(|| query.QueryResult.AdapterInformation.NodeCount)
-}
-
-unsafe fn node_running_time(luid: LUID, node: u32) -> Option<i64> {
-    let mut query = D3DKMT_QUERYSTATISTICS { Type: D3DKMT_QUERYSTATISTICS_NODE, AdapterLuid: luid, ..Default::default() };
-    query.Anonymous.QueryNode.NodeId = node;
-    D3DKMTQueryStatistics(std::ptr::addr_of_mut!(query))
-        .is_ok()
-        .then(|| query.QueryResult.NodeInformation.GlobalInformation.RunningTime)
-}
-
-/// Identificadores das placas de vídeo. Sem `software`, só as de verdade
-/// (fica de fora a "virtual" que o Windows usa quando não há placa).
-unsafe fn gpu_adapters(software: bool) -> Vec<LUID> {
+/// Identificadores das placas de vídeo de verdade (sem as "virtuais" do Windows).
+unsafe fn gpu_adapters() -> Vec<LUID> {
     let Ok(factory) = CreateDXGIFactory1::<IDXGIFactory1>() else { return Vec::new() };
     let mut adapters = Vec::new();
     let mut index = 0;
     while let Ok(adapter) = factory.EnumAdapters1(index) {
         index += 1;
         if let Ok(desc) = adapter.GetDesc1() {
-            if software || desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 == 0 {
+            if desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 == 0 {
                 adapters.push(desc.AdapterLuid);
             }
         }

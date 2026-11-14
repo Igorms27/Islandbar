@@ -369,7 +369,7 @@ impl eframe::App for IslandApp {
                 self.mode
             );
             if state != self.debug_last {
-                eprintln!("ui: {state}");
+                crate::perf::line(format!("ui: {state}"));
                 self.debug_last = state;
             }
         }

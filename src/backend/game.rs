@@ -140,13 +140,13 @@ impl GameWatcher {
             let mut busiest: Vec<_> = presents.iter().flatten().map(|(pid, p)| (p.frames(), exe_stem(*pid))).collect();
             busiest.sort_unstable_by(|a, b| b.cmp(a));
             busiest.truncate(4);
-            eprintln!(
+            crate::perf::line(format!(
                 "game: fullscreen pid={} ({}) exclusive={} gpu={gpu:.2} fps={fps:?} -> {looks_like_game} | tracer={} events={seen} frames={busiest:?}",
                 fullscreen.pid,
                 exe_stem(fullscreen.pid),
                 fullscreen.exclusive,
                 self.tracer.is_some()
-            );
+            ));
         }
         if !looks_like_game {
             self.candidate = None;

@@ -19,7 +19,7 @@ static BACKEND_CPU: AtomicU64 = AtomicU64::new(0);
 static BACKEND_BUSY: AtomicU64 = AtomicU64::new(0);
 
 /// Partes do trabalho do backend, medidas uma a uma.
-pub const SECTIONS: [&str; 6] = ["audio", "gpu_pdh", "gpu_kmt", "game", "media", "volume"];
+const SECTIONS: [&str; 6] = ["audio", "gpu", "game", "media", "volume", "other"];
 static SECTION_TIME: [AtomicU64; 6] = [const { AtomicU64::new(0) }; 6];
 
 /// Soma à parte `name` o tempo passado desde `started`.
@@ -30,6 +30,15 @@ pub fn add_section(name: &str, started: Instant) {
             SECTION_TIME[index].fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed);
         }
     }
+}
+
+/// Escreve uma linha de diagnóstico no stderr de uma vez só.
+///
+/// `eprintln!` com vários campos faz uma escrita por pedacinho; quando o
+/// stderr vai para um arquivo, isso custa mais que o trabalho sendo medido.
+pub fn line(text: String) {
+    use std::io::Write;
+    let _ = std::io::stderr().write_all((text + "\n").as_bytes());
 }
 
 pub fn enabled() -> bool {
@@ -82,23 +91,23 @@ impl Perf {
         let percent = |now: u64, before: u64| now.saturating_sub(before) as f64 / TICKS_PER_SECOND / seconds * 100.0;
         let (working_set, private) = sys::memory();
         let megabytes = |bytes: u64| bytes as f64 / (1024.0 * 1024.0);
-        eprintln!(
-            "perf: fps={:.1} cpu={:.2}% backend={:.2}% backend_busy={:.3}% ram={:.1}MB private={:.1}MB | {}",
-            self.frames as f64 / seconds,
-            percent(process_cpu, self.process_cpu),
-            percent(backend_cpu, self.backend_cpu),
-            percent(backend_busy, self.backend_busy),
-            megabytes(working_set),
-            megabytes(private),
-            state()
-        );
         // Milissegundos de trabalho por segundo em cada parte do backend.
         let sections: Vec<String> = SECTIONS
             .iter()
             .zip(&SECTION_TIME)
             .map(|(name, time)| format!("{name}={:.2}", time.swap(0, Ordering::Relaxed) as f64 / 1e6 / seconds))
             .collect();
-        eprintln!("perf backend ms/s: {}", sections.join(" "));
+        line(format!(
+            "perf: fps={:.1} cpu={:.2}% backend={:.2}% backend_busy={:.3}% ram={:.1}MB private={:.1}MB | {} | backend ms/s: {}",
+            self.frames as f64 / seconds,
+            percent(process_cpu, self.process_cpu),
+            percent(backend_cpu, self.backend_cpu),
+            percent(backend_busy, self.backend_busy),
+            megabytes(working_set),
+            megabytes(private),
+            state(),
+            sections.join(" ")
+        ));
         self.since = Instant::now();
         self.frames = 0;
         self.process_cpu = process_cpu;
