@@ -67,10 +67,6 @@ pub struct SystemMonitor {
 
 impl SystemMonitor {
     pub fn new() -> Self {
-        if debug() {
-            // Diagnóstico: o disco responde já na abertura do programa?
-            unsafe { read_disk_temp() };
-        }
         Self {
             last_cpu: None,
             cpu: 0.0,
