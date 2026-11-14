@@ -854,7 +854,7 @@ impl IslandApp {
         }
         let color = if current || hover > 0.5 { TEXT } else { TEXT_DIM };
         let width = chip.right() - 8.0 - text_x;
-        text_fit(p, pos2(text_x, chip.center().y), Align2::LEFT_CENTER, label, 12.0, fade(color, a), width);
+        text_fit(p, pos2(text_x, chip.center().y), Align2::LEFT_CENTER, label, 11.5, fade(color, a), width);
         resp.is_some_and(|r| r.clicked())
     }
 
