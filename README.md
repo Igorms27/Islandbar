@@ -23,6 +23,11 @@ visível, e se expande com animações elásticas.
   A ilha se mantém na frente do jogo mesmo quando ele se marca como "sempre no topo" (comum em tela
   cheia). A exceção é a tela cheia *exclusiva*, em que o Windows não mostra nenhuma outra janela:
   nesse caso, use o modo "janela sem bordas" nas opções do jogo.
+  **Jogos Vulkan/OpenGL em placa NVIDIA** (ex.: Savage Wind Recomp): mesmo sem bordas, o driver pode
+  mandar a imagem direto para o monitor e esconder a ilha. Resolve assim: Painel de Controle NVIDIA →
+  Gerenciar as configurações 3D → Configurações de programa → adicione o `.exe` do jogo → "Método de
+  apresentação Vulkan/OpenGL" → "Preferir em camadas na cadeia de troca DXGI" (em inglês, "Prefer
+  layered on DXGI Swapchain").
 - **Iniciar com o Windows**: ao abrir o executável, um cartão pergunta se a ilha deve abrir
   sozinha no login. Para mudar depois, é só abrir o executável de novo.
 - **Atualização automática**: a ilha confere se saiu versão nova no GitHub, baixa, troca o
