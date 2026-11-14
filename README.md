@@ -8,6 +8,9 @@ visível, e se expande com animações elásticas.
 - **Pílula** no topo com relógio, música atual e barrinhas que dançam com o som.
 - **Mixer**: clique na ilha para abrir. Volume geral + volume de cada aplicativo,
   com medidor de áudio ao vivo dentro de cada slider. Clique no ícone para mutar.
+- **Saída de som e microfone**: no painel, um botão para cada saída (fone, TV, caixa de som) e
+  outro para cada microfone. Um clique troca o que o Windows usa (para música, jogos e chamadas).
+  A maioria dos programas segue na hora; alguns antigos só depois de reabertos.
 - **Mídia**: título/artista do que está tocando e botões anterior / play-pause / próxima
   (funciona com Spotify, navegadores e qualquer app que apareça no controle de mídia do Windows).
 - **Aviso de volume**: ao usar as teclas de volume do teclado, a ilha se estica e mostra o nível.

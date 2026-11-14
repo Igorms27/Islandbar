@@ -670,6 +670,8 @@ impl IslandApp {
         }) {
             self.pending_device = None;
         }
+        // As duas fileiras usam a mesma largura de botão, para ficarem alinhadas.
+        let columns = snap.outputs.len().max(snap.inputs.len()).clamp(1, DEVICES_PER_ROW);
         for (devices, is_output) in [(&snap.outputs, true), (&snap.inputs, false)] {
             let shown = &devices[..devices.len().min(MAX_DEVICES)];
             if shown.is_empty() {
@@ -678,7 +680,6 @@ impl IslandApp {
             let names = short_names(shown);
             // O destaque vai para o clicado assim que ele for clicado.
             let pending = self.pending_device.as_ref().map(|(id, _)| id.clone()).filter(|id| shown.iter().any(|d| d.id == *id));
-            let columns = shown.len().min(DEVICES_PER_ROW);
             let gap = 6.0;
             let chips_left = left + 38.0;
             let chip_width = (right - chips_left - gap * (columns - 1) as f32) / columns as f32;
@@ -846,13 +847,13 @@ impl IslandApp {
         } else {
             p.rect_filled(chip, radius, fade(Color32::WHITE, a * (0.06 + 0.08 * hover)));
         }
-        let mut text_x = chip.left() + 12.0;
+        let mut text_x = chip.left() + 11.0;
         if current {
-            p.circle_filled(pos2(chip.left() + 13.0, chip.center().y), 3.5, fade(brighten(accent), a));
-            text_x += 10.0;
+            p.circle_filled(pos2(chip.left() + 11.0, chip.center().y), 3.0, fade(brighten(accent), a));
+            text_x += 8.0;
         }
         let color = if current || hover > 0.5 { TEXT } else { TEXT_DIM };
-        let width = chip.right() - 10.0 - text_x;
+        let width = chip.right() - 8.0 - text_x;
         text_fit(p, pos2(text_x, chip.center().y), Align2::LEFT_CENTER, label, 12.0, fade(color, a), width);
         resp.is_some_and(|r| r.clicked())
     }
