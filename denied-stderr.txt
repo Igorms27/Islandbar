@@ -1,0 +1,37 @@
+MESA: error: ZINK: vkCreateInstance failed (VK_ERROR_INCOMPATIBLE_DRIVER)
+ui: mode=Collapsed hovered=false down=false pointer_known=false
+System { cpu: 0.0, ram_used_gb: 2.8757858, ram_total_gb: 15.994869, gpu: Some(0.0), temp: None } game=None fps_access=Denied audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.056122422, ram_used_gb: 2.8808975, ram_total_gb: 15.994869, gpu: Some(0.5518942), temp: None } game=None fps_access=Denied audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.066176474, ram_used_gb: 2.8774452, ram_total_gb: 15.994869, gpu: Some(0.16080952), temp: None } game=None fps_access=Denied audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.0075757504, ram_used_gb: 2.8722153, ram_total_gb: 15.994869, gpu: Some(0.029875023), temp: None } game=None fps_access=Denied audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.007352948, ram_used_gb: 2.8690796, ram_total_gb: 15.994869, gpu: Some(0.014589826), temp: None } game=None fps_access=Denied audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.007352948, ram_used_gb: 2.8689728, ram_total_gb: 15.994869, gpu: Some(0.014488804), temp: None } game=None fps_access=Denied audio=false Wanted { gpu: true, temp: false }
+perf: fps=14.9 cpu=13.56% backend=5.60% backend_busy=6.206% ram=97.6MB private=68.2MB | mode=Collapsed hovered=false game=false sound=false | backend ms/s: audio=0.66 gpu=57.92 game=0.02 media=1.32 volume=0.00 other=0.03
+System { cpu: 0.0037313104, ram_used_gb: 2.868164, ram_total_gb: 15.994869, gpu: Some(0.018661527), temp: None } game=None fps_access=Denied audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.0, ram_used_gb: 2.867424, ram_total_gb: 15.994869, gpu: Some(0.014922741), temp: None } game=None fps_access=Denied audio=false Wanted { gpu: true, temp: false }
+ui: mode=Collapsed hovered=true down=false pointer_known=false
+ui: mode=Collapsed hovered=true down=false pointer_known=true
+ui: mode=Collapsed hovered=true down=true pointer_known=true
+ui: mode=Collapsed hovered=true down=false pointer_known=true
+temp sources: thermal zone=None gpu=None (1 adapters)
+disk temp: Err("query failed: Incorrect function. (0x80070001)")
+System { cpu: 0.09230769, ram_used_gb: 2.8672295, ram_total_gb: 15.994869, gpu: Some(0.3718594), temp: None } game=None fps_access=Denied audio=false Wanted { gpu: true, temp: true }
+ui: mode=Expanded hovered=true down=false pointer_known=true
+temp sources: thermal zone=None gpu=None (1 adapters)
+System { cpu: 0.19230771, ram_used_gb: 2.8672333, ram_total_gb: 15.994869, gpu: Some(0.7799923), temp: None } game=None fps_access=Denied audio=false Wanted { gpu: true, temp: true }
+perf: fps=32.2 cpu=29.99% backend=0.00% backend_busy=0.123% ram=97.7MB private=68.2MB | mode=Expanded hovered=true game=false sound=false | backend ms/s: audio=0.28 gpu=0.11 game=0.01 media=0.00 volume=0.00 other=0.02
+temp sources: thermal zone=None gpu=None (1 adapters)
+System { cpu: 0.21153843, ram_used_gb: 2.8726768, ram_total_gb: 15.994869, gpu: Some(0.7434053), temp: None } game=None fps_access=Denied audio=false Wanted { gpu: true, temp: true }
+ui: mode=Expanded hovered=true down=true pointer_known=true
+ui: mode=Expanded hovered=true down=false pointer_known=true
+temp sources: thermal zone=None gpu=None (1 adapters)
+System { cpu: 0.32954544, ram_used_gb: 2.9138374, ram_total_gb: 15.994869, gpu: Some(0.66751516), temp: None } game=None fps_access=Requested audio=false Wanted { gpu: true, temp: true }
+temp sources: thermal zone=None gpu=None (1 adapters)
+System { cpu: 0.1875, ram_used_gb: 2.8726273, ram_total_gb: 15.994869, gpu: Some(0.7269545), temp: None } game=None fps_access=Requested audio=false Wanted { gpu: true, temp: true }
+temp sources: thermal zone=None gpu=None (1 adapters)
+System { cpu: 0.23461539, ram_used_gb: 2.872097, ram_total_gb: 15.994869, gpu: Some(0.65779155), temp: None } game=None fps_access=Requested audio=false Wanted { gpu: true, temp: true }
+temp sources: thermal zone=None gpu=None (1 adapters)
+System { cpu: 0.23076922, ram_used_gb: 2.8687897, ram_total_gb: 15.994869, gpu: Some(0.75888276), temp: None } game=None fps_access=Requested audio=false Wanted { gpu: true, temp: true }
+perf: fps=63.0 cpu=77.52% backend=0.93% backend_busy=0.167% ram=108.2MB private=69.1MB | mode=Expanded hovered=true game=false sound=false | backend ms/s: audio=0.39 gpu=0.29 game=0.03 media=0.00 volume=0.08 other=0.01
+temp sources: thermal zone=None gpu=None (1 adapters)
+System { cpu: 0.27272725, ram_used_gb: 2.8687286, ram_total_gb: 15.994869, gpu: Some(0.6800494), temp: None } game=None fps_access=Requested audio=false Wanted { gpu: true, temp: true }

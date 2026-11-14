@@ -1,0 +1,217 @@
+MESA: error: ZINK: vkCreateInstance failed (VK_ERROR_INCOMPATIBLE_DRIVER)
+ui: mode=Collapsed hovered=false down=false pointer_known=false
+System { cpu: 0.0, ram_used_gb: 3.2946968, ram_total_gb: 15.994869, gpu: Some(0.0), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.21276593, ram_used_gb: 3.2792053, ram_total_gb: 15.994869, gpu: Some(0.5931119), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.22101444, ram_used_gb: 3.2843704, ram_total_gb: 15.994869, gpu: Some(0.3611558), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.20220596, ram_used_gb: 3.276352, ram_total_gb: 15.994869, gpu: Some(0.042678136), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+fps: enable CA11C036-0102-4A2D-A6AD-F03CFED5D3C9 with filter -> 0
+fps: enable 783ACA0A-790E-4D7F-8451-AA850511C6B9 with filter -> 0
+fps: enable 802EC45A-1E99-4B83-9920-87C98277BA9D with filter -> 0
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=0 frames=[]
+System { cpu: 0.14130437, ram_used_gb: 3.252388, ram_total_gb: 15.994869, gpu: Some(0.06940954), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+fps: open trace -> 0x101
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=0 frames=[]
+System { cpu: 0.036231875, ram_used_gb: 3.2523155, ram_total_gb: 15.994869, gpu: Some(0.050824896), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+perf: fps=19.1 cpu=13.32% backend=6.37% backend_busy=13.051% ram=100.6MB private=69.6MB | mode=Collapsed hovered=false game=false sound=false | backend ms/s: audio=0.56 gpu=62.45 game=9.34 media=57.52 volume=0.02 other=0.03
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=5 frames=[(3, "dwm")]
+System { cpu: 0.0037878156, ram_used_gb: 3.2364388, ram_total_gb: 15.994869, gpu: Some(0.015287743), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.108208895, ram_used_gb: 3.223034, ram_total_gb: 15.994869, gpu: Some(0.01566213), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.022388041, ram_used_gb: 3.2070847, ram_total_gb: 15.994869, gpu: Some(0.014741513), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.015151501, ram_used_gb: 3.185093, ram_total_gb: 15.994869, gpu: Some(0.029551396), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.022388041, ram_used_gb: 3.1852264, ram_total_gb: 15.994869, gpu: Some(0.014491382), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+perf: fps=1.0 cpu=0.00% backend=0.00% backend_busy=0.159% ram=100.6MB private=69.6MB | mode=Collapsed hovered=false game=false sound=false | backend ms/s: audio=0.18 gpu=0.12 game=0.91 media=0.00 volume=0.00 other=0.03
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.007352948, ram_used_gb: 3.172947, ram_total_gb: 15.994869, gpu: Some(0.014628809), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.0, ram_used_gb: 3.1604614, ram_total_gb: 15.994869, gpu: Some(0.014793481), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.014925361, ram_used_gb: 3.1469116, ram_total_gb: 15.994869, gpu: Some(0.01474203), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.01449275, ram_used_gb: 3.1464233, ram_total_gb: 15.994869, gpu: Some(0.014456671), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.011363685, ram_used_gb: 2.98983, ram_total_gb: 15.994869, gpu: Some(0.01488208), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+perf: fps=0.9 cpu=0.30% backend=0.00% backend_busy=0.148% ram=104.3MB private=70.0MB | mode=Collapsed hovered=false game=false sound=false | backend ms/s: audio=0.12 gpu=0.11 game=0.92 media=0.00 volume=0.00 other=0.03
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.04104483, ram_used_gb: 2.989338, ram_total_gb: 15.994869, gpu: Some(0.01471894), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.011538506, ram_used_gb: 2.9893417, ram_total_gb: 15.994869, gpu: Some(0.030378403), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.011363685, ram_used_gb: 2.9881897, ram_total_gb: 15.994869, gpu: Some(0.01523613), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=1 frames=[(1, "explorer")]
+System { cpu: 0.0075757504, ram_used_gb: 2.988655, ram_total_gb: 15.994869, gpu: Some(0.015020033), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=4 frames=[(2, "dwm")]
+System { cpu: 0.0037878156, ram_used_gb: 2.987854, ram_total_gb: 15.994869, gpu: Some(0.024190975), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+perf: fps=1.0 cpu=1.52% backend=0.00% backend_busy=0.149% ram=104.3MB private=70.0MB | mode=Collapsed hovered=false game=false sound=false | backend ms/s: audio=0.17 gpu=0.12 game=0.86 media=0.00 volume=0.00 other=0.03
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.0037878156, ram_used_gb: 2.9871407, ram_total_gb: 15.994869, gpu: Some(0.015258746), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.0, ram_used_gb: 2.9856262, ram_total_gb: 15.994869, gpu: Some(0.01481095), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.007692337, ram_used_gb: 2.9867172, ram_total_gb: 15.994869, gpu: Some(0.015133216), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.015151501, ram_used_gb: 2.986084, ram_total_gb: 15.994869, gpu: Some(0.0150468005), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.0, ram_used_gb: 2.984352, ram_total_gb: 15.994869, gpu: Some(0.014669376), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+perf: fps=1.0 cpu=0.30% backend=0.00% backend_busy=0.207% ram=104.3MB private=70.0MB | mode=Collapsed hovered=false game=false sound=false | backend ms/s: audio=0.12 gpu=0.12 game=1.48 media=0.00 volume=0.00 other=0.03
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.0, ram_used_gb: 2.983097, ram_total_gb: 15.994869, gpu: Some(0.014717524), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.0, ram_used_gb: 2.9826622, ram_total_gb: 15.994869, gpu: Some(0.015119032), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.0, ram_used_gb: 2.982071, ram_total_gb: 15.994869, gpu: Some(0.015199689), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.011363685, ram_used_gb: 2.9812508, ram_total_gb: 15.994869, gpu: Some(0.014961004), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.0037878156, ram_used_gb: 2.9804878, ram_total_gb: 15.994869, gpu: Some(0.020330938), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+perf: fps=1.0 cpu=0.30% backend=0.00% backend_busy=0.149% ram=104.2MB private=69.9MB | mode=Collapsed hovered=false game=false sound=false | backend ms/s: audio=0.20 gpu=0.12 game=0.84 media=0.00 volume=0.00 other=0.03
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.003846109, ram_used_gb: 2.979641, ram_total_gb: 15.994869, gpu: Some(0.015028546), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.014925361, ram_used_gb: 2.9447403, ram_total_gb: 15.994869, gpu: Some(0.028705368), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.0037313104, ram_used_gb: 2.9454079, ram_total_gb: 15.994869, gpu: Some(0.014752119), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.0037313104, ram_used_gb: 2.944683, ram_total_gb: 15.994869, gpu: Some(0.014844376), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.0, ram_used_gb: 2.9443245, ram_total_gb: 15.994869, gpu: Some(0.015232659), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+perf: fps=1.0 cpu=0.30% backend=0.00% backend_busy=0.147% ram=14.0MB private=69.9MB | mode=Collapsed hovered=false game=false sound=false | backend ms/s: audio=0.12 gpu=0.15 game=0.87 media=0.00 volume=0.00 other=0.03
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.011363685, ram_used_gb: 2.9436226, ram_total_gb: 15.994869, gpu: Some(0.015063957), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.030303001, ram_used_gb: 2.9324188, ram_total_gb: 15.994869, gpu: Some(0.01508059), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.0, ram_used_gb: 2.9331207, ram_total_gb: 15.994869, gpu: Some(0.026156206), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.01119405, ram_used_gb: 2.929367, ram_total_gb: 15.994869, gpu: Some(0.014797221), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+ui: mode=Collapsed hovered=true down=false pointer_known=false
+ui: mode=Collapsed hovered=true down=false pointer_known=true
+perf: fps=7.0 cpu=5.59% backend=0.31% backend_busy=0.131% ram=14.3MB private=69.9MB | mode=Collapsed hovered=true game=false sound=false | backend ms/s: audio=0.19 gpu=0.09 game=0.70 media=0.00 volume=0.00 other=0.03
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=2 frames=[(1, "dwm")]
+System { cpu: 0.18014699, ram_used_gb: 2.9301682, ram_total_gb: 15.994869, gpu: Some(0.3670321), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+ui: mode=Collapsed hovered=true down=true pointer_known=true
+ui: mode=Collapsed hovered=true down=false pointer_known=true
+temp sources: thermal zone=None gpu=None (1 adapters)
+disk temp: Err("query failed: Incorrect function. (0x80070001)")
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=38 frames=[(19, "dwm")]
+System { cpu: 0.097561, ram_used_gb: 2.9299583, ram_total_gb: 15.994869, gpu: Some(0.5628649), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: true }
+ui: mode=Expanded hovered=true down=false pointer_known=true
+temp sources: thermal zone=None gpu=None (1 adapters)
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=72 frames=[(36, "dwm")]
+System { cpu: 0.18283576, ram_used_gb: 2.9297905, ram_total_gb: 15.994869, gpu: Some(0.6644382), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: true }
+temp sources: thermal zone=None gpu=None (1 adapters)
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=86 frames=[(43, "dwm")]
+System { cpu: 0.19921875, ram_used_gb: 2.933155, ram_total_gb: 15.994869, gpu: Some(0.6903317), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: true }
+ui: mode=Expanded hovered=false down=false pointer_known=true
+ui: mode=Expanded hovered=false down=false pointer_known=false
+ui: mode=Collapsed hovered=false down=false pointer_known=false
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=94 frames=[(47, "dwm")]
+System { cpu: 0.18181825, ram_used_gb: 2.9252129, ram_total_gb: 15.994869, gpu: Some(0.652507), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=74 frames=[(37, "dwm")]
+System { cpu: 0.07169807, ram_used_gb: 2.9284782, ram_total_gb: 15.994869, gpu: Some(0.34358934), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.084558845, ram_used_gb: 2.8619385, ram_total_gb: 15.994869, gpu: Some(0.07455338), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+perf: fps=44.8 cpu=34.34% backend=0.26% backend_busy=0.265% ram=19.3MB private=69.9MB | mode=Collapsed hovered=false game=false sound=false | backend ms/s: audio=0.33 gpu=0.15 game=0.98 media=0.00 volume=0.00 other=0.02
+game: fullscreen pid=1164 (fake_game) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=15 frames=[(4, "dwm"), (1, "explorer")]
+System { cpu: 0.08712125, ram_used_gb: 2.8703423, ram_total_gb: 15.994869, gpu: Some(0.31807792), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+window: raised above large window 0x40158
+game: fullscreen pid=1164 (fake_game) exclusive=false gpu=0.01 fps=Some(37.393875) -> true | tracer=true events=167 frames=[(41, "dwm"), (39, "fake_game"), (4, "explorer"), (2, "WindowsTerminal")]
+System { cpu: 0.0, ram_used_gb: 2.8675156, ram_total_gb: 15.994869, gpu: Some(0.9706708), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+game: fullscreen pid=1164 (fake_game) exclusive=false gpu=0.01 fps=Some(48.65994) -> true | tracer=true events=202 frames=[(51, "fake_game"), (50, "dwm")]
+System { cpu: 0.13805968, ram_used_gb: 2.870449, ram_total_gb: 15.994869, gpu: Some(0.9064424), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(48.65994) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.03676468, ram_used_gb: 2.8674278, ram_total_gb: 15.994869, gpu: Some(0.9506998), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(51.887486) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.0075757504, ram_used_gb: 2.8695793, ram_total_gb: 15.994869, gpu: Some(0.9601752), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(47.207916) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+perf: fps=13.0 cpu=2.09% backend=0.00% backend_busy=0.129% ram=19.4MB private=69.9MB | mode=Collapsed hovered=false game=true sound=false | backend ms/s: audio=0.10 gpu=0.13 game=0.63 media=0.00 volume=0.00 other=0.03
+System { cpu: 0.104477584, ram_used_gb: 2.866314, ram_total_gb: 15.994869, gpu: Some(0.87117493), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(42.37189) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.018939316, ram_used_gb: 2.8675613, ram_total_gb: 15.994869, gpu: Some(0.9495072), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(59.84931) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.01838231, ram_used_gb: 2.8676262, ram_total_gb: 15.994869, gpu: Some(0.9630946), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(37.726303) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.018656671, ram_used_gb: 2.8670158, ram_total_gb: 15.994869, gpu: Some(0.97635776), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(59.188126) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.04710138, ram_used_gb: 2.8632088, ram_total_gb: 15.994869, gpu: Some(0.9609861), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(45.435738) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+perf: fps=1.0 cpu=0.30% backend=0.00% backend_busy=0.146% ram=19.5MB private=69.9MB | mode=Collapsed hovered=false game=true sound=false | backend ms/s: audio=0.20 gpu=0.17 game=0.43 media=0.00 volume=0.00 other=0.11
+System { cpu: 0.0075757504, ram_used_gb: 2.8654137, ram_total_gb: 15.994869, gpu: Some(0.9400683), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(54.538383) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.01119405, ram_used_gb: 2.865574, ram_total_gb: 15.994869, gpu: Some(0.9763799), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(45.82185) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.06159413, ram_used_gb: 2.8656082, ram_total_gb: 15.994869, gpu: Some(0.9647834), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(49.20634) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.018656671, ram_used_gb: 2.8647346, ram_total_gb: 15.994869, gpu: Some(0.9632964), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(55.203053) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.003846109, ram_used_gb: 2.8641624, ram_total_gb: 15.994869, gpu: Some(0.95710284), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(47.83798) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+perf: fps=1.0 cpu=0.00% backend=0.00% backend_busy=0.140% ram=19.6MB private=69.8MB | mode=Collapsed hovered=false game=true sound=false | backend ms/s: audio=0.16 gpu=0.14 game=0.43 media=0.00 volume=0.00 other=0.03
+System { cpu: 0.0075757504, ram_used_gb: 2.863781, ram_total_gb: 15.994869, gpu: Some(0.95919627), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(45.139942) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.10984844, ram_used_gb: 2.863552, ram_total_gb: 15.994869, gpu: Some(0.9329683), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(55.051876) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.03676468, ram_used_gb: 2.8633766, ram_total_gb: 15.994869, gpu: Some(0.9380823), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(96.80398) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.01119405, ram_used_gb: 2.8630676, ram_total_gb: 15.994869, gpu: Some(0.957575), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(49.950203) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.026515186, ram_used_gb: 2.8581848, ram_total_gb: 15.994869, gpu: Some(0.9553917), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(49.057526) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+perf: fps=1.0 cpu=0.00% backend=0.00% backend_busy=0.137% ram=19.7MB private=69.8MB | mode=Collapsed hovered=false game=true sound=false | backend ms/s: audio=0.23 gpu=0.14 game=0.46 media=0.00 volume=0.00 other=0.03
+System { cpu: 0.10507244, ram_used_gb: 2.8580246, ram_total_gb: 15.994869, gpu: Some(0.93224764), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(47.731724) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.08955222, ram_used_gb: 2.8578987, ram_total_gb: 15.994869, gpu: Some(0.8924394), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(35.169117) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.0037878156, ram_used_gb: 2.8573723, ram_total_gb: 15.994869, gpu: Some(0.96200144), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(64.6032) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.06716418, ram_used_gb: 2.857212, ram_total_gb: 15.994869, gpu: Some(0.9303929), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(44.17602) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.003623128, ram_used_gb: 2.8570824, ram_total_gb: 15.994869, gpu: Some(0.9584563), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(53.401695) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+perf: fps=0.9 cpu=0.59% backend=0.30% backend_busy=0.149% ram=19.7MB private=69.8MB | mode=Collapsed hovered=false game=true sound=false | backend ms/s: audio=0.18 gpu=0.17 game=0.43 media=0.00 volume=0.00 other=0.10
+System { cpu: 0.049242377, ram_used_gb: 2.8567924, ram_total_gb: 15.994869, gpu: Some(0.9678839), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(57.275166) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+ui: mode=Collapsed hovered=true down=false pointer_known=false
+ui: mode=Collapsed hovered=true down=false pointer_known=true
+System { cpu: 0.14925373, ram_used_gb: 2.856884, ram_total_gb: 15.994869, gpu: Some(0.91205746), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(51.736275) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+ui: mode=Collapsed hovered=true down=true pointer_known=true
+ui: mode=Collapsed hovered=true down=false pointer_known=true
+temp sources: thermal zone=None gpu=None (1 adapters)
+disk temp: Err("query failed: Incorrect function. (0x80070001)")
+System { cpu: 0.0, ram_used_gb: 2.856884, ram_total_gb: 15.994869, gpu: Some(0.8220136), temp: None } game=Some(Game { name: "Jogo Falso", fps: None }) fps_access=Granted audio=false Wanted { gpu: true, temp: true }
+ui: mode=Expanded hovered=true down=false pointer_known=true
+temp sources: thermal zone=None gpu=None (1 adapters)
+System { cpu: 0.090909064, ram_used_gb: 2.8566742, ram_total_gb: 15.994869, gpu: Some(0.97743565), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(51.080376) }) fps_access=Granted audio=false Wanted { gpu: true, temp: true }
+ui: mode=Expanded hovered=false down=false pointer_known=true
+ui: mode=Expanded hovered=false down=false pointer_known=false
+ui: mode=Collapsed hovered=false down=false pointer_known=false
+System { cpu: 0.43461537, ram_used_gb: 2.853775, ram_total_gb: 15.994869, gpu: Some(0.9348901), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(43.389645) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+perf: fps=44.4 cpu=49.03% backend=0.00% backend_busy=0.171% ram=19.9MB private=69.8MB | mode=Collapsed hovered=false game=true sound=false | backend ms/s: audio=0.27 gpu=0.24 game=0.41 media=0.00 volume=0.00 other=0.02
+ui: mode=Collapsed hovered=true down=false pointer_known=false
+System { cpu: 0.20220596, ram_used_gb: 2.8557396, ram_total_gb: 15.994869, gpu: Some(0.9434558), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(56.74648) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+ui: mode=Collapsed hovered=true down=false pointer_known=true
+ui: mode=Collapsed hovered=true down=true pointer_known=true
+ui: mode=Collapsed hovered=true down=false pointer_known=true
+temp sources: thermal zone=None gpu=None (1 adapters)
+System { cpu: 0.1081081, ram_used_gb: 2.8566093, ram_total_gb: 15.994869, gpu: Some(0.98370206), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(75.106674) }) fps_access=Granted audio=false Wanted { gpu: true, temp: true }
+ui: mode=Expanded hovered=true down=false pointer_known=true
+temp sources: thermal zone=None gpu=None (1 adapters)
+System { cpu: 0.41923076, ram_used_gb: 2.8563423, ram_total_gb: 15.994869, gpu: Some(0.96528006), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(44.30329) }) fps_access=Granted audio=false Wanted { gpu: true, temp: true }
+ui: mode=Expanded hovered=false down=false pointer_known=true
+ui: mode=Expanded hovered=false down=false pointer_known=false
+ui: mode=Collapsed hovered=false down=false pointer_known=false
+System { cpu: 0.33088237, ram_used_gb: 2.8534393, ram_total_gb: 15.994869, gpu: Some(0.92508197), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(52.762806) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+ui: mode=Collapsed hovered=true down=false pointer_known=false
+ui: mode=Collapsed hovered=true down=false pointer_known=true
+System { cpu: 0.025735319, ram_used_gb: 2.8563576, ram_total_gb: 15.994869, gpu: Some(0.9608268), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(55.3416) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+ui: mode=Collapsed hovered=true down=true pointer_known=true
+ui: mode=Collapsed hovered=true down=false pointer_known=true
+temp sources: thermal zone=None gpu=None (1 adapters)
+System { cpu: 0.060344815, ram_used_gb: 2.8561058, ram_total_gb: 15.994869, gpu: Some(0.96476084), temp: None } game=Some(Game { name: "Jogo Falso", fps: None }) fps_access=Granted audio=false Wanted { gpu: true, temp: true }
+ui: mode=Expanded hovered=true down=false pointer_known=true
+perf: fps=63.3 cpu=79.30% backend=0.00% backend_busy=0.165% ram=20.1MB private=69.8MB | mode=Expanded hovered=true game=true sound=false | backend ms/s: audio=0.26 gpu=0.15 game=0.40 media=0.00 volume=0.01 other=0.02
+temp sources: thermal zone=None gpu=None (1 adapters)
+System { cpu: 0.380597, ram_used_gb: 2.8561287, ram_total_gb: 15.994869, gpu: Some(0.92819214), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(53.02931) }) fps_access=Granted audio=false Wanted { gpu: true, temp: true }
+ui: mode=Expanded hovered=false down=false pointer_known=true
+ui: mode=Expanded hovered=false down=false pointer_known=false
+ui: mode=Collapsed hovered=false down=false pointer_known=false
+System { cpu: 0.05384618, ram_used_gb: 2.8558578, ram_total_gb: 15.994869, gpu: Some(0.95091486), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(51.62398) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+ui: mode=Collapsed hovered=true down=false pointer_known=false
+ui: mode=Collapsed hovered=true down=false pointer_known=true
+System { cpu: 0.02611947, ram_used_gb: 2.8560066, ram_total_gb: 15.994869, gpu: Some(0.9581643), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(42.32991) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+ui: mode=Collapsed hovered=true down=true pointer_known=true
+ui: mode=Collapsed hovered=true down=false pointer_known=true
+temp sources: thermal zone=None gpu=None (1 adapters)
+System { cpu: 0.0078125, ram_used_gb: 2.8558464, ram_total_gb: 15.994869, gpu: Some(0.9701313), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(110.067055) }) fps_access=Granted audio=false Wanted { gpu: true, temp: true }
+ui: mode=Expanded hovered=true down=false pointer_known=true
+temp sources: thermal zone=None gpu=None (1 adapters)
+System { cpu: 0.31538463, ram_used_gb: 2.8548584, ram_total_gb: 15.994869, gpu: Some(0.9703796), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(46.04379) }) fps_access=Granted audio=false Wanted { gpu: true, temp: true }
+ui: mode=Expanded hovered=false down=false pointer_known=true
+ui: mode=Expanded hovered=false down=false pointer_known=false
+ui: mode=Collapsed hovered=false down=false pointer_known=false
+perf: fps=62.9 cpu=61.00% backend=0.00% backend_busy=0.158% ram=20.2MB private=69.8MB | mode=Collapsed hovered=false game=true sound=false | backend ms/s: audio=0.32 gpu=0.13 game=0.37 media=0.00 volume=0.01 other=0.01
+System { cpu: 0.36397058, ram_used_gb: 2.8548126, ram_total_gb: 15.994869, gpu: Some(0.83493686), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(42.70226) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.018656671, ram_used_gb: 2.8548965, ram_total_gb: 15.994869, gpu: Some(0.94912577), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(52.284786) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.06909096, ram_used_gb: 2.8462448, ram_total_gb: 15.994869, gpu: Some(0.40502265), temp: None } game=Some(Game { name: "Jogo Falso", fps: None }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.04832709, ram_used_gb: 2.8500137, ram_total_gb: 15.994869, gpu: Some(0.56686676), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.040441215, ram_used_gb: 2.8526306, ram_total_gb: 15.994869, gpu: Some(0.5565022), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.0075757504, ram_used_gb: 2.846943, ram_total_gb: 15.994869, gpu: Some(0.01512051), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+perf: fps=35.6 cpu=5.27% backend=0.29% backend_busy=0.119% ram=20.6MB private=69.8MB | mode=Collapsed hovered=false game=false sound=false | backend ms/s: audio=0.21 gpu=0.16 game=0.22 media=0.00 volume=0.00 other=0.04

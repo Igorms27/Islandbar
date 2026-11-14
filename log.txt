@@ -1,0 +1,62 @@
+mesa: mesa3d-26.2.6-release-mingw.7z
+dlls next to exe: clon12compiler.dll, d3d10warp.dll, dxil.dll, libdlclose-skip.dll, libEGL.dll, libgallium_wgl.dll, libGLESv1_CM.dll, libGLESv2.dll, libspirv_to_dxil.dll, libVkLayer_MESA_anti_lag.dll, libVkLayer_MESA_overlay.dll, libVkLayer_MESA_vram_report_limit.dll, openclon12.dll, opengl32.dll, va_win32.dll, va.dll, vaon12_drv_video.dll, vulkan_dzn.dll, vulkan_lvp.dll
+screen: {X=0,Y=0,Width=1024,Height=768}
+island app running: True
+island start: hwnd=131424 style=0x96000000 exstyle=0x080800B8 rect=42,0,982,640 client=940x640 foreground=262262
+perf idle:
+
+perf: fps=19.1 cpu=13.32% backend=6.37% backend_busy=13.051% ram=100.6MB private=69.6MB | mode=Collapsed hovered=false game=false sound=false | backend ms/s: audio=0.56 gpu=62.45 game=9.34 media=57.52 volume=0.02 other=0.03
+perf: fps=1.0 cpu=0.00% backend=0.00% backend_busy=0.159% ram=100.6MB private=69.6MB | mode=Collapsed hovered=false game=false sound=false | backend ms/s: audio=0.18 gpu=0.12 game=0.91 media=0.00 volume=0.00 other=0.03
+perf: fps=0.9 cpu=0.30% backend=0.00% backend_busy=0.148% ram=104.3MB private=70.0MB | mode=Collapsed hovered=false game=false sound=false | backend ms/s: audio=0.12 gpu=0.11 game=0.92 media=0.00 volume=0.00 other=0.03
+perf: fps=1.0 cpu=1.52% backend=0.00% backend_busy=0.149% ram=104.3MB private=70.0MB | mode=Collapsed hovered=false game=false sound=false | backend ms/s: audio=0.17 gpu=0.12 game=0.86 media=0.00 volume=0.00 other=0.03
+perf: fps=1.0 cpu=0.30% backend=0.00% backend_busy=0.207% ram=104.3MB private=70.0MB | mode=Collapsed hovered=false game=false sound=false | backend ms/s: audio=0.12 gpu=0.12 game=1.48 media=0.00 volume=0.00 other=0.03
+perf: fps=1.0 cpu=0.30% backend=0.00% backend_busy=0.149% ram=104.2MB private=69.9MB | mode=Collapsed hovered=false game=false sound=false | backend ms/s: audio=0.20 gpu=0.12 game=0.84 media=0.00 volume=0.00 other=0.03
+perf: fps=1.0 cpu=0.30% backend=0.00% backend_busy=0.147% ram=14.0MB private=69.9MB | mode=Collapsed hovered=false game=false sound=false | backend ms/s: audio=0.12 gpu=0.15 game=0.87 media=0.00 volume=0.00 other=0.03
+
+
+island expanded: hwnd=131424 style=0x96000000 exstyle=0x08080098 rect=42,0,982,640 client=940x640 foreground=262262
+island end: hwnd=131424 style=0x96000000 exstyle=0x080800B8 rect=42,0,982,640 client=940x640 foreground=262262
+fake game running: True
+island visible over topmost game: True (pixel 9,9,11)
+perf in game:
+
+perf: fps=1.0 cpu=0.30% backend=0.00% backend_busy=0.146% ram=19.5MB private=69.9MB | mode=Collapsed hovered=false game=true sound=false | backend ms/s: audio=0.20 gpu=0.17 game=0.43 media=0.00 volume=0.00 other=0.11
+perf: fps=1.0 cpu=0.00% backend=0.00% backend_busy=0.140% ram=19.6MB private=69.8MB | mode=Collapsed hovered=false game=true sound=false | backend ms/s: audio=0.16 gpu=0.14 game=0.43 media=0.00 volume=0.00 other=0.03
+perf: fps=1.0 cpu=0.00% backend=0.00% backend_busy=0.137% ram=19.7MB private=69.8MB | mode=Collapsed hovered=false game=true sound=false | backend ms/s: audio=0.23 gpu=0.14 game=0.46 media=0.00 volume=0.00 other=0.03
+perf: fps=0.9 cpu=0.59% backend=0.30% backend_busy=0.149% ram=19.7MB private=69.8MB | mode=Collapsed hovered=false game=true sound=false | backend ms/s: audio=0.18 gpu=0.17 game=0.43 media=0.00 volume=0.00 other=0.10
+
+
+clicks during game that opened the panel: 4 of 4
+game detection: 
+game: fullscreen pid=1276 (powershell) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=74 frames=[(37, "dwm")]
+game: fullscreen pid=1164 (fake_game) exclusive=false gpu=0.00 fps=None -> false | tracer=true events=15 frames=[(4, "dwm"), (1, "explorer")]
+game: fullscreen pid=1164 (fake_game) exclusive=false gpu=0.01 fps=Some(37.393875) -> true | tracer=true events=167 frames=[(41, "dwm"), (39, "fake_game"), (4, "explorer"), (2, "WindowsTerminal")]
+game: fullscreen pid=1164 (fake_game) exclusive=false gpu=0.01 fps=Some(48.65994) -> true | tracer=true events=202 frames=[(51, "fake_game"), (50, "dwm")]
+
+
+island last readings: 
+System { cpu: 0.0078125, ram_used_gb: 2.8558464, ram_total_gb: 15.994869, gpu: Some(0.9701313), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(110.067055) }) fps_access=Granted audio=false Wanted { gpu: true, temp: true }
+System { cpu: 0.31538463, ram_used_gb: 2.8548584, ram_total_gb: 15.994869, gpu: Some(0.9703796), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(46.04379) }) fps_access=Granted audio=false Wanted { gpu: true, temp: true }
+System { cpu: 0.36397058, ram_used_gb: 2.8548126, ram_total_gb: 15.994869, gpu: Some(0.83493686), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(42.70226) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.018656671, ram_used_gb: 2.8548965, ram_total_gb: 15.994869, gpu: Some(0.94912577), temp: None } game=Some(Game { name: "Jogo Falso", fps: Some(52.284786) }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.06909096, ram_used_gb: 2.8462448, ram_total_gb: 15.994869, gpu: Some(0.40502265), temp: None } game=Some(Game { name: "Jogo Falso", fps: None }) fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.04832709, ram_used_gb: 2.8500137, ram_total_gb: 15.994869, gpu: Some(0.56686676), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.040441215, ram_used_gb: 2.8526306, ram_total_gb: 15.994869, gpu: Some(0.5565022), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+System { cpu: 0.0075757504, ram_used_gb: 2.846943, ram_total_gb: 15.994869, gpu: Some(0.01512051), temp: None } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: false }
+
+
+fake game stderr: 
+group before: 
+denied app running: True
+group after: runnervmm7ud1\runneradmin
+denied last readings: 
+System { cpu: 0.09230769, ram_used_gb: 2.8672295, ram_total_gb: 15.994869, gpu: Some(0.3718594), temp: None } game=None fps_access=Denied audio=false Wanted { gpu: true, temp: true }
+System { cpu: 0.19230771, ram_used_gb: 2.8672333, ram_total_gb: 15.994869, gpu: Some(0.7799923), temp: None } game=None fps_access=Denied audio=false Wanted { gpu: true, temp: true }
+System { cpu: 0.21153843, ram_used_gb: 2.8726768, ram_total_gb: 15.994869, gpu: Some(0.7434053), temp: None } game=None fps_access=Denied audio=false Wanted { gpu: true, temp: true }
+System { cpu: 0.32954544, ram_used_gb: 2.9138374, ram_total_gb: 15.994869, gpu: Some(0.66751516), temp: None } game=None fps_access=Requested audio=false Wanted { gpu: true, temp: true }
+System { cpu: 0.1875, ram_used_gb: 2.8726273, ram_total_gb: 15.994869, gpu: Some(0.7269545), temp: None } game=None fps_access=Requested audio=false Wanted { gpu: true, temp: true }
+System { cpu: 0.23461539, ram_used_gb: 2.872097, ram_total_gb: 15.994869, gpu: Some(0.65779155), temp: None } game=None fps_access=Requested audio=false Wanted { gpu: true, temp: true }
+System { cpu: 0.23076922, ram_used_gb: 2.8687897, ram_total_gb: 15.994869, gpu: Some(0.75888276), temp: None } game=None fps_access=Requested audio=false Wanted { gpu: true, temp: true }
+System { cpu: 0.27272725, ram_used_gb: 2.8687286, ram_total_gb: 15.994869, gpu: Some(0.6800494), temp: None } game=None fps_access=Requested audio=false Wanted { gpu: true, temp: true }
+
+
