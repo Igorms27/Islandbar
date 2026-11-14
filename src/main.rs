@@ -4,6 +4,7 @@
 mod anim;
 mod app;
 mod backend;
+mod perf;
 mod platform;
 mod updater;
 

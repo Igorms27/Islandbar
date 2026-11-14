@@ -103,7 +103,7 @@ fn main() -> windows::core::Result<()> {
 
         let start = Instant::now();
         let mut message = MSG::default();
-        'frames: while start.elapsed() < Duration::from_secs(30) {
+        'frames: while start.elapsed() < Duration::from_secs(60) {
             while PeekMessageW(&mut message, None, 0, 0, PM_REMOVE).as_bool() {
                 if message.message == WM_QUIT {
                     break 'frames;

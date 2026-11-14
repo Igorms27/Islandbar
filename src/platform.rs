@@ -14,6 +14,74 @@ pub fn cursor_pos() -> Option<(i32, i32)> {
     Some((point.x, point.y))
 }
 
+/// Área da ilha na tela (esquerda, topo, direita, base), em pixels físicos.
+/// A interface publica a cada quadro; quem confere o mouse só lê.
+#[cfg(windows)]
+static HOVER_AREA: [std::sync::atomic::AtomicI32; 4] = [const { std::sync::atomic::AtomicI32::new(0) }; 4];
+
+#[cfg(windows)]
+pub fn set_hover_area(left: f32, top: f32, right: f32, bottom: f32) {
+    use std::sync::atomic::Ordering::Relaxed;
+    for (slot, value) in HOVER_AREA.iter().zip([left.floor(), top.floor(), right.ceil(), bottom.ceil()]) {
+        slot.store(value as i32, Relaxed);
+    }
+}
+
+/// O mouse está sobre a área publicada em `set_hover_area`?
+///
+/// É uma consulta baratíssima, e pode ser feita de qualquer thread.
+#[cfg(windows)]
+pub fn cursor_over_island() -> bool {
+    use std::sync::atomic::Ordering::Relaxed;
+    let Some((x, y)) = cursor_pos() else { return false };
+    let [left, top, right, bottom] = [0, 1, 2, 3].map(|i| HOVER_AREA[i].load(Relaxed));
+    left < right && left <= x && x <= right && top <= y && y <= bottom
+}
+
+/// Vigia o mouse e chama `wake` quando ele chega na ilha.
+///
+/// A janela não recebe o mouse enquanto os cliques a atravessam, então alguém
+/// precisa conferir a posição dele de tempos em tempos. Antes era a própria
+/// interface, redesenhando-se 20 vezes por segundo só para isso. Agora é uma
+/// thread minúscula que só compara dois números, e a interface dorme até ser
+/// chamada. Ela fica separada do backend de propósito: se uma consulta ao
+/// Windows demorar, a ilha continua respondendo ao mouse na hora.
+///
+/// De passagem, avisa também quando outra ilha pediu para esta fechar.
+pub fn watch_cursor(wake: impl Fn() + Send + 'static) {
+    #[cfg(windows)]
+    {
+        let watcher = std::thread::Builder::new().name("islandbar-mouse".into()).stack_size(64 * 1024);
+        let _ = watcher.spawn(move || {
+            let mut was_over = false;
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                let over = cursor_over_island();
+                if (over && !was_over) || quit_requested() {
+                    wake();
+                }
+                was_over = over;
+            }
+        });
+    }
+    #[cfg(not(windows))]
+    let _ = wake;
+}
+
+/// Devolve ao Windows a memória que o programa não está usando agora.
+///
+/// Abrir o programa e abrir o painel usam memória que depois fica parada
+/// (código de inicialização, a checagem de atualização, etc.). Isto avisa o
+/// Windows que ele pode reaproveitar essas páginas; o que voltar a ser usado
+/// é trazido de volta sozinho.
+pub fn trim_memory() {
+    #[cfg(windows)]
+    unsafe {
+        use windows::Win32::System::Threading::{GetCurrentProcess, SetProcessWorkingSetSize};
+        let _ = SetProcessWorkingSetSize(GetCurrentProcess(), usize::MAX, usize::MAX);
+    }
+}
+
 /// Desloca o cursor `step` pixels na horizontal.
 ///
 /// Serve para o Windows reenviar a posição do mouse à janela que está embaixo

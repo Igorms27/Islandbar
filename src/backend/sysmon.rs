@@ -3,6 +3,9 @@
 //! Nada aqui precisa de administrador nem de driver extra; tudo vem de
 //! informações que o próprio Windows já oferece. O preço disso é que a
 //! temperatura depende do que cada PC expõe (veja `read_temp`).
+//!
+//! CPU e RAM custam quase nada e são lidas sempre. GPU e temperatura custam
+//! mais, então só são lidas quando pedidas (veja `Wanted`).
 
 use super::{System, Temp, TempSource};
 use std::collections::HashMap;
@@ -36,44 +39,62 @@ const GB: f32 = 1024.0 * 1024.0 * 1024.0;
 /// Ler a temperatura do disco é um comando para o próprio disco: de vez em quando basta.
 const DISK_EVERY: Duration = Duration::from_secs(15);
 
+/// O que vale a pena ler agora. Cada leitura custa um pouco de CPU, então o
+/// que não está aparecendo na tela não é lido.
+#[derive(Clone, Copy, Debug)]
+pub struct Wanted {
+    pub gpu: bool,
+    pub temp: bool,
+}
+
 pub struct SystemMonitor {
     /// (tempo ocioso, tempo total) da última leitura da CPU.
     last_cpu: Option<(u64, u64)>,
     cpu: f32,
-    thermal_zones: Option<Counter>,
-    gpu_engines: Option<Counter>,
+    thermal_zones: Lazy,
+    gpu_engines: Lazy,
+    /// Última leitura de cada um (fica valendo enquanto não é pedida de novo).
+    gpu: Option<f32>,
+    temp: Option<Temp>,
     /// Uso de GPU (0..1) de cada programa, pelo PID. Atualizado em `read`.
     pub gpu_by_pid: HashMap<u32, f32>,
-    gpu_adapters: Vec<LUID>,
+    /// Soma do uso de cada "motor" da placa: (identificador, porcentagem).
+    engines: Vec<(u64, f64)>,
+    gpu_adapters: Option<Vec<LUID>>,
     disk_temp: Option<f32>,
     disk_read_at: Option<Instant>,
 }
 
 impl SystemMonitor {
     pub fn new() -> Self {
-        unsafe {
-            Self {
-                last_cpu: None,
-                cpu: 0.0,
-                thermal_zones: Counter::open(w!("\\Thermal Zone Information(*)\\Temperature")),
-                gpu_engines: Counter::open(w!("\\GPU Engine(*)\\Utilization Percentage")),
-                gpu_by_pid: HashMap::new(),
-                gpu_adapters: gpu_adapters(),
-                disk_temp: None,
-                disk_read_at: None,
-            }
+        Self {
+            last_cpu: None,
+            cpu: 0.0,
+            thermal_zones: Lazy::new(w!("\\Thermal Zone Information(*)\\Temperature")),
+            gpu_engines: Lazy::new(w!("\\GPU Engine(*)\\Utilization Percentage")),
+            gpu: None,
+            temp: None,
+            gpu_by_pid: HashMap::new(),
+            engines: Vec::new(),
+            gpu_adapters: None,
+            disk_temp: None,
+            disk_read_at: None,
         }
     }
 
-    pub fn read(&mut self) -> System {
-        let (ram_used_gb, ram_total_gb) = read_ram();
-        System {
-            cpu: self.read_cpu(),
-            ram_used_gb,
-            ram_total_gb,
-            gpu: self.read_gpu(),
-            temp: self.read_temp(),
+    pub fn read(&mut self, wanted: Wanted) -> System {
+        if wanted.gpu {
+            let started = Instant::now();
+            self.gpu = self.read_gpu();
+            crate::perf::add_section("gpu", started);
+        } else {
+            self.gpu_by_pid.clear();
         }
+        if wanted.temp {
+            self.temp = self.read_temp();
+        }
+        let (ram_used_gb, ram_total_gb) = read_ram();
+        System { cpu: self.read_cpu(), ram_used_gb, ram_total_gb, gpu: self.gpu, temp: self.temp }
     }
 
     /// Uso da CPU = fração do tempo, desde a última leitura, em que ela não ficou ociosa.
@@ -101,22 +122,38 @@ impl SystemMonitor {
     /// O Windows informa o uso por programa e por "motor" da placa (3D, vídeo,
     /// cópia...). Somamos os programas de cada motor e ficamos com o motor
     /// mais ocupado. De passagem, guarda o uso de cada programa.
+    ///
+    /// São centenas de linhas por leitura, então os nomes são examinados
+    /// direto no formato do Windows (UTF-16), sem criar um texto para cada um.
     fn read_gpu(&mut self) -> Option<f32> {
         self.gpu_by_pid.clear();
-        let values = unsafe { self.gpu_engines.as_ref()?.read() }?;
-        let mut engines: HashMap<&str, f64> = HashMap::new();
-        for (name, percent) in &values {
-            // "pid_1234_luid_0x0_0xABCD_phys_0_eng_0_engtype_3D"
-            let engine = name.find("luid_").map_or(name.as_str(), |start| &name[start..]);
-            *engines.entry(engine).or_default() += percent;
-
-            let pid = name.strip_prefix("pid_").and_then(|rest| rest.split('_').next()).and_then(|pid| pid.parse().ok());
-            if let Some(pid) = pid {
-                let usage = self.gpu_by_pid.entry(pid).or_default();
-                *usage = usage.max((*percent / 100.0) as f32);
-            }
+        self.engines.clear();
+        let just_opened = !self.gpu_engines.opened();
+        let counter = self.gpu_engines.get()?;
+        if just_opened {
+            // Uso é uma "taxa": só existe a partir da segunda coleta.
+            return Some(0.0);
         }
-        let busiest = engines.into_values().fold(0.0, f64::max);
+        let (engines, by_pid) = (&mut self.engines, &mut self.gpu_by_pid);
+        let collected = unsafe {
+            counter.read(|name, percent| {
+                // "pid_1234_luid_0x0_0xABCD_phys_0_eng_0_engtype_3D"
+                let engine = find(name, &LUID).map_or(name, |start| &name[start..]);
+                let key = hash(engine);
+                match engines.iter_mut().find(|(k, _)| *k == key) {
+                    Some((_, total)) => *total += percent,
+                    None => engines.push((key, percent)),
+                }
+                if let Some(pid) = name.strip_prefix(&PID[..]).and_then(leading_number) {
+                    let usage = by_pid.entry(pid).or_default();
+                    *usage = usage.max((percent / 100.0) as f32);
+                }
+            })
+        };
+        if !collected {
+            return None;
+        }
+        let busiest = self.engines.iter().map(|(_, total)| *total).fold(0.0, f64::max);
         Some((busiest / 100.0).clamp(0.0, 1.0) as f32)
     }
 
@@ -131,16 +168,21 @@ impl SystemMonitor {
     /// A temperatura exata de cada núcleo do processador só existe através de
     /// um driver, por isso não aparece aqui.
     fn read_temp(&mut self) -> Option<Temp> {
-        let zone = self.thermal_zones.as_ref().and_then(|zones| {
-            let values = unsafe { zones.read() }?;
+        let zone = self.thermal_zones.get().and_then(|zones| {
+            let mut celsius = Vec::new();
             // O contador vem em Kelvin; ficamos com a zona mais quente.
-            hottest(values.iter().map(|(_, kelvin)| *kelvin as f32 - 273.15))
+            unsafe { zones.read(|_, kelvin| celsius.push(kelvin as f32 - 273.15)) };
+            hottest(celsius.into_iter())
         });
         if let Some(celsius) = zone {
             return Some(Temp { celsius, source: TempSource::System });
         }
 
-        let gpu = hottest(self.gpu_adapters.iter().filter_map(|luid| unsafe { read_gpu_temp(*luid) }));
+        let adapters = self.gpu_adapters.get_or_insert_with(|| unsafe { gpu_adapters() });
+        let gpu = hottest(adapters.iter().filter_map(|luid| unsafe { read_gpu_temp(*luid) }));
+        if debug() {
+            crate::perf::line(format!("temp sources: thermal zone={zone:?} gpu={gpu:?} ({} adapters)", adapters.len()));
+        }
         if let Some(celsius) = gpu {
             return Some(Temp { celsius, source: TempSource::Gpu });
         }
@@ -151,6 +193,38 @@ impl SystemMonitor {
         }
         self.disk_temp.map(|celsius| Temp { celsius, source: TempSource::Disk })
     }
+}
+
+const fn wide<const N: usize>(text: &[u8; N]) -> [u16; N] {
+    let mut out = [0u16; N];
+    let mut i = 0;
+    while i < N {
+        out[i] = text[i] as u16;
+        i += 1;
+    }
+    out
+}
+
+const PID: [u16; 4] = wide(b"pid_");
+const LUID: [u16; 5] = wide(b"luid_");
+
+/// Posição de `needle` dentro de `text`.
+fn find(text: &[u16], needle: &[u16]) -> Option<usize> {
+    text.windows(needle.len()).position(|window| window == needle)
+}
+
+/// O número com que `text` começa ("1234_luid..." -> 1234).
+fn leading_number(text: &[u16]) -> Option<u32> {
+    let digits = text.iter().take_while(|c| (b'0' as u16..=b'9' as u16).contains(c)).count();
+    if digits == 0 {
+        return None;
+    }
+    text[..digits].iter().try_fold(0u32, |n, c| n.checked_mul(10)?.checked_add((c - b'0' as u16) as u32))
+}
+
+/// Resumo de um nome em um número só (FNV-1a), para comparar rápido.
+fn hash(text: &[u16]) -> u64 {
+    text.iter().fold(0xcbf2_9ce4_8422_2325, |h, c| (h ^ *c as u64).wrapping_mul(0x0000_0100_0000_01b3))
 }
 
 /// Maior valor, ignorando leituras absurdas (sensores inexistentes devolvem 0 ou lixo).
@@ -176,6 +250,9 @@ fn read_ram() -> (f32, f32) {
 struct Counter {
     query: PDH_HQUERY,
     counter: PDH_HCOUNTER,
+    /// Espaço para a resposta, reaproveitado entre as leituras.
+    /// (Vec<u64> garante o alinhamento que a estrutura precisa.)
+    buffer: Vec<u64>,
 }
 
 impl Counter {
@@ -191,34 +268,63 @@ impl Counter {
         // Contadores de "taxa" (como o uso da GPU) precisam de uma coleta
         // anterior para comparar; esta é a primeira.
         PdhCollectQueryData(query);
-        Some(Self { query, counter })
+        Some(Self { query, counter, buffer: Vec::new() })
     }
 
-    /// (nome da instância, valor) de cada instância com leitura válida.
-    unsafe fn read(&self) -> Option<Vec<(String, f64)>> {
+    /// Coleta e chama `each(nome da instância, valor)` para cada instância
+    /// com leitura válida. Devolve `false` se a coleta falhou.
+    unsafe fn read(&mut self, mut each: impl FnMut(&[u16], f64)) -> bool {
         if PdhCollectQueryData(self.query) != 0 {
-            return None;
+            return false;
         }
-        let (mut bytes, mut count) = (0u32, 0u32);
-        if PdhGetFormattedCounterArrayW(self.counter, PDH_FMT_DOUBLE, &mut bytes, &mut count, None) != PDH_MORE_DATA {
-            return None;
-        }
-        // Vec<u64> garante o alinhamento que a estrutura precisa.
-        let mut buffer = vec![0u64; (bytes as usize).div_ceil(8)];
-        let items = buffer.as_mut_ptr() as *mut PDH_FMT_COUNTERVALUE_ITEM_W;
-        if PdhGetFormattedCounterArrayW(self.counter, PDH_FMT_DOUBLE, &mut bytes, &mut count, Some(items)) != 0 {
-            return None;
-        }
-        let mut values = Vec::with_capacity(count as usize);
-        for i in 0..count as usize {
-            let item = &*items.add(i);
-            // 0 = dado válido, 1 = dado novo; o resto são erros.
-            if item.FmtValue.CStatus <= 1 {
-                let name = item.szName.to_string().unwrap_or_default();
-                values.push((name, item.FmtValue.Anonymous.doubleValue));
+        let mut count = 0u32;
+        // Tenta com o espaço que já temos; se faltar, o Windows diz quanto precisa.
+        for _ in 0..3 {
+            let mut bytes = (self.buffer.len() * 8) as u32;
+            let items = self.buffer.as_mut_ptr() as *mut PDH_FMT_COUNTERVALUE_ITEM_W;
+            let space = (!self.buffer.is_empty()).then_some(items);
+            let status = PdhGetFormattedCounterArrayW(self.counter, PDH_FMT_DOUBLE, &mut bytes, &mut count, space);
+            if status == PDH_MORE_DATA {
+                // Com folga, para não repetir a cada programa que abre.
+                self.buffer.resize((bytes as usize).div_ceil(8) * 5 / 4, 0);
+                continue;
             }
+            if status != 0 {
+                return false;
+            }
+            for i in 0..count as usize {
+                let item = &*items.add(i);
+                // 0 = dado válido, 1 = dado novo; o resto são erros.
+                if item.FmtValue.CStatus <= 1 && !item.szName.is_null() {
+                    each(item.szName.as_wide(), item.FmtValue.Anonymous.doubleValue);
+                }
+            }
+            return true;
         }
-        Some(values)
+        false
+    }
+}
+
+/// Um `Counter` aberto só na primeira vez em que alguém precisa dele.
+struct Lazy {
+    path: PCWSTR,
+    /// `None`: ainda não tentou abrir. `Some(None)`: este PC não tem.
+    counter: Option<Option<Counter>>,
+}
+
+impl Lazy {
+    fn new(path: PCWSTR) -> Self {
+        Self { path, counter: None }
+    }
+
+    /// Já tentou abrir?
+    fn opened(&self) -> bool {
+        self.counter.is_some()
+    }
+
+    /// O contador, aberto agora se for a primeira vez.
+    fn get(&mut self) -> Option<&mut Counter> {
+        self.counter.get_or_insert_with(|| unsafe { Counter::open(self.path) }).as_mut()
     }
 }
 
@@ -262,6 +368,20 @@ unsafe fn read_gpu_temp(luid: LUID) -> Option<f32> {
 
 /// Temperatura do disco principal, em °C.
 unsafe fn read_disk_temp() -> Option<f32> {
+    let result = query_disk_temp();
+    if debug() {
+        crate::perf::line(format!("disk temp: {result:?}"));
+    }
+    result.ok()
+}
+
+/// Com ISLANDBAR_DEBUG_SYSMON=1, explica no stderr de onde veio (ou por que
+/// não veio) cada leitura de temperatura.
+fn debug() -> bool {
+    std::env::var_os("ISLANDBAR_DEBUG_SYSMON").is_some()
+}
+
+unsafe fn query_disk_temp() -> Result<f32, String> {
     // Acesso "0": só consulta informações, não lê nem escreve no disco.
     let disk = CreateFileW(
         w!("\\\\.\\PhysicalDrive0"),
@@ -272,7 +392,7 @@ unsafe fn read_disk_temp() -> Option<f32> {
         FILE_FLAGS_AND_ATTRIBUTES(0),
         None,
     )
-    .ok()?;
+    .map_err(|error| format!("open failed: {error}"))?;
 
     let query = STORAGE_PROPERTY_QUERY {
         PropertyId: StorageDeviceTemperatureProperty,
@@ -292,14 +412,15 @@ unsafe fn read_disk_temp() -> Option<f32> {
         None,
     );
     let _ = CloseHandle(disk);
-    result.ok()?;
+    result.map_err(|error| format!("query failed: {error}"))?;
 
     if (returned as usize) < std::mem::size_of::<STORAGE_TEMPERATURE_DATA_DESCRIPTOR>() {
-        return None;
+        return Err(format!("short answer ({returned} bytes)"));
     }
     let descriptor = &*(buffer.as_ptr() as *const STORAGE_TEMPERATURE_DATA_DESCRIPTOR);
     if descriptor.InfoCount == 0 {
-        return None;
+        return Err("the disk reports no sensor".into());
     }
-    hottest(std::iter::once(descriptor.TemperatureInfo[0].Temperature as f32))
+    let celsius = descriptor.TemperatureInfo[0].Temperature as f32;
+    hottest(std::iter::once(celsius)).ok_or_else(|| format!("reading out of range ({celsius})"))
 }
