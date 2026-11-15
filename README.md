@@ -39,7 +39,7 @@ fone/caixa de som, alarme e o uso do PC. Nos jogos, mostra FPS, CPU, GPU e RAM.
 
 - **Pílula no topo** com relógio, música atual e barrinhas que dançam com o som.
 - **Pets**: troque as barrinhas por um fantasminha ou um robozinho. Eles piscam, olham para os lados
-  e abrem a boca cantando quando sai som. A escolha fica no cartão inicial. Sem música, mostra
+  e abrem a boca cantando quando sai som, mesmo com o volume baixo. A escolha fica no cartão inicial. Sem música, mostra
   o uso de CPU, GPU e RAM.
 - **Mixer**: volume geral e de cada aplicativo, com medidor de áudio ao vivo dentro de cada slider.
   Clique no ícone para deixar no mudo.
@@ -47,7 +47,8 @@ fone/caixa de som, alarme e o uso do PC. Nos jogos, mostra FPS, CPU, GPU e RAM.
   microfone. Um clique troca o que o Windows usa para música, jogos e chamadas.
 - **Mídia**: título, artista e os botões anterior / tocar-pausar / próxima. Funciona com Spotify,
   navegadores e qualquer app que apareça no controle de mídia do Windows.
-- **Alarme**: "toca daqui a X horas/minutos", com setinhas, atalhos ou digitando o número.
+- **Alarme**: "toca daqui a X horas/minutos", com setinhas, atalhos ou digitando o número. Fica
+  guardado: fechar e abrir a ilha não perde o alarme.
   Na hora, a ilha mostra um aviso com bip de despertador e os botões Soneca e Parar.
 - **Aviso de volume**: ao usar as teclas de volume do teclado, a ilha se estica e mostra o nível.
 - **Monitor do sistema**: CPU, GPU, RAM e temperatura, sem instalar driver. No cartão inicial você
@@ -77,8 +78,8 @@ Não precisa instalar nada além do próprio programa.
 > executável não tem uma assinatura digital paga. Clique em **Mais informações → Executar assim mesmo**.
 
 **Atualizações:** a ilha confere a cada 2 minutos se saiu uma versão nova. Se saiu, ela baixa, troca o
-executável e reinicia sozinha quando estiver recolhida. Durante um jogo, ou com um alarme marcado, ela
-espera. A versão atual aparece no rodapé do painel. As notas de cada versão estão em
+executável e reinicia sozinha quando estiver recolhida. Durante um jogo, ou com o alarme tocando, ela
+espera. Um alarme marcado continua contando depois de reiniciar. A versão atual aparece no rodapé do painel. As notas de cada versão estão em
 [Releases](https://github.com/Igorms27/Islandbar/releases).
 
 ## Como usar
@@ -91,7 +92,7 @@ espera. A versão atual aparece no rodapé do painel. As notas de cada versão e
 | Marcar um alarme | Página Alarme: setinhas, atalhos (+5 min, +15 min…) ou clique no número e digite. **Enter** inicia. |
 | Tirar a ilha da frente | Com o mouse em cima dela, aperte **Ctrl**. Ela some e os cliques passam para o que está atrás (dá para soltar o Ctrl e clicar normalmente). Volta quando o mouse sai. |
 | Medir o FPS nos jogos | Na primeira vez, clique em **Ativar** no painel. O Windows pede confirmação de administrador uma vez, e passa a valer depois de sair e entrar na conta. |
-| Fechar a ilha | Abra o painel e clique em **Sair** (isso cancela um alarme marcado). |
+| Fechar a ilha | Abra o painel e clique em **Sair**. Um alarme marcado fica guardado e continua quando a ilha abre de novo (ele só toca com a ilha aberta). |
 | Ligar/desligar o início com o Windows | Abra o `islandbar.exe` de novo: o cartão aparece outra vez. |
 | Escolher o pet, os números da ilha e a temperatura | Também no cartão inicial (abra o `islandbar.exe` de novo). Cada opção de temperatura mostra o valor de agora; "n/d" quer dizer que o PC não tem aquele sensor. |
 

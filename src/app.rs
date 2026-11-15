@@ -238,7 +238,7 @@ impl IslandApp {
             gauges: [0.0; 4],
             dragging: None,
             pending_device: None,
-            alarm: Alarm::from_env(),
+            alarm: Alarm::load(),
             page: Spring::smooth(0.0),
             page_drag: None,
             wheel: 0.0,
@@ -385,11 +385,11 @@ impl eframe::App for IslandApp {
         let snap = self.backend.snapshot();
         // Atualização baixada: reinicia quando a ilha não está em uso. Durante
         // um jogo espera ele fechar, para a troca não atrapalhar a partida.
-        // (Com um alarme marcado, também espera: reiniciar o perderia.)
+        // (Um alarme marcado continua depois de reiniciar; só espera se estiver tocando.)
         if updater::ready()
             && self.mode == Mode::Collapsed
             && snap.game.is_none()
-            && !self.alarm.busy()
+            && !self.alarm.ringing()
             && !self.restarting
         {
             self.restarting = true;

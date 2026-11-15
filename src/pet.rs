@@ -111,7 +111,7 @@ pub fn draw(
 ) {
     let paint = Paint { color, face, alpha: alpha.clamp(0.0, 1.0) };
     // Quanto som está saindo: a boca abre com ele.
-    let sound = bars.iter().copied().fold(0.0, f32::max);
+    let sound = voice(bars.iter().copied().fold(0.0, f32::max));
     match pet {
         Pet::Bars => {
             // Maiores, só ficam mais altas (como sempre foram no painel); menores, encolhem inteiras.
@@ -173,8 +173,8 @@ fn draw_ghost(p: &Painter, center: Pos2, s: f32, sound: f32, pose: Pose, paint: 
 
     // Boca: fechadinha parado, abre cantando.
     let mouth = pos2(c.x + look * 0.5, head.y + 4.6 * s);
-    let open = (sound * 3.4).min(3.0) * s;
-    if open > 0.4 * s {
+    let open = sound * 3.2 * s;
+    if open > 0.5 * s {
         p.add(Shape::ellipse_filled(mouth + vec2(0.0, open * 0.3), vec2(1.8 * s + open * 0.25, open), face));
     } else {
         p.add(Shape::ellipse_filled(mouth, vec2(1.5 * s, 0.6 * s), face));
@@ -183,7 +183,7 @@ fn draw_ghost(p: &Painter, center: Pos2, s: f32, sound: f32, pose: Pose, paint: 
 
 fn draw_robot(p: &Painter, center: Pos2, s: f32, bars: &[f32], pose: Pose, paint: Paint) {
     let (color, face) = (paint.body(), paint.face());
-    let sound = bars.iter().copied().fold(0.0, f32::max);
+    let sound = voice(bars.iter().copied().fold(0.0, f32::max));
     let lift = pose.hop * 2.5 * s;
     let c = center + vec2(0.0, 2.0 * s - lift);
     // Cabeça quadradinha com orelhas.
@@ -219,12 +219,18 @@ fn draw_robot(p: &Painter, center: Pos2, s: f32, bars: &[f32], pose: Pose, paint
         let n = bars.len().min(4);
         let w = mouth.width() / n as f32;
         for (i, level) in bars.iter().take(n).enumerate() {
-            let h = (mouth.height() - 1.2 * s) * level.clamp(0.15, 1.0);
+            let h = (mouth.height() - 1.2 * s) * voice(*level).clamp(0.15, 1.0);
             let x = mouth.left() + w * (i as f32 + 0.5);
             let bar = Rect::from_center_size(pos2(x, mouth.bottom() - 0.6 * s - h / 2.0), vec2(w * 0.55, h));
             p.rect_filled(bar, 0.0, paint.light(0.5, 1.0));
         }
     }
+}
+
+/// Deixa a boca sensível a sons de volume médio (voz num vídeo, música baixa):
+/// o som fraco já abre a boca bem, e o forte abre toda (0..1).
+fn voice(level: f32) -> f32 {
+    (level.max(0.0) * 2.5).min(1.0).sqrt()
 }
 
 /// Mistura a cor com branco (`amount` 0..1).

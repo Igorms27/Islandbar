@@ -298,6 +298,14 @@ TitleCheck "depois de digitar e clicar fora (12 s)" $r $base
 Log ("perf with alarm counting:`n" + (Get-Content "$out\alarm-stderr.txt" | Select-String '^perf' | Select-Object -Last 2 | Out-String))
 StopIsland "alarm" $app
 
+# O alarme de 42 min tem que voltar ao abrir a ilha de novo (fica no registro).
+$saved = (Get-ItemProperty "HKCU:\Software\Islandbar" -Name Alarm -ErrorAction SilentlyContinue).Alarm
+Log "alarm saved after closing: $saved"
+$app = StartIsland "alarm-again"
+Shot "alarm-8-restored"
+Log ("alarm restore: " + ((Get-Content "$out\alarm-again-stderr.txt" | Select-String '^alarm') -join " | "))
+StopIsland "alarm-again" $app
+
 $env:ISLANDBAR_DEBUG_ALARM = "3"
 $app = StartIsland "ring"
 Remove-Item Env:ISLANDBAR_DEBUG_ALARM
@@ -307,6 +315,8 @@ Start-Sleep 2
 Shot "alarm-7-stopped"
 Log ("alarm lines: " + (Get-Content "$out\ring-stderr.txt" | Select-String '^alarm' | Out-String))
 StopIsland "ring" $app
+# Depois de tocar, não fica nada guardado.
+Log ("alarm saved after ringing: " + (Get-ItemProperty "HKCU:\Software\Islandbar" -Name Alarm -ErrorAction SilentlyContinue).Alarm)
 
 # ---- Rodada 5: cartão inicial ----------------------------------------------
 # Abre como quem clica no .exe: aparece o cartão. Escolhe "Placa de vídeo",
@@ -329,7 +339,7 @@ Start-Sleep 3
 Shot "welcome-3-pill"
 $saved = (Get-ItemProperty "HKCU:\Software\Islandbar" -Name Stats -ErrorAction SilentlyContinue).Stats
 Log "settings saved: $saved (expected temp=gpu;show=cpu,gpu,ram,temp;pet=ghost)"
-Log ("welcome lines: " + ((Get-Content "$out\welcome-stderr.txt" | Select-String '^(settings|temp sources)' | Select-Object -Last 4) -join " | "))
+Log ("welcome lines: " + ((Get-Content "$out\welcome-stderr.txt" | Select-String '^(store|temp sources)' | Select-Object -Last 4) -join " | "))
 StopIsland "welcome" $app
 # Aberta de novo pelo login: a escolha continua valendo.
 $app = StartIsland "welcome2"

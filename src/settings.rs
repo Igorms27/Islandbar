@@ -73,11 +73,11 @@ impl Default for Settings {
 
 impl Settings {
     pub fn load() -> Self {
-        store::read().map(|text| Self::parse(&text)).unwrap_or_default()
+        store::read("Stats").map(|text| Self::parse(&text)).unwrap_or_default()
     }
 
     pub fn save(&self) {
-        store::write(&self.to_text());
+        store::write("Stats", &self.to_text());
     }
 
     fn to_text(self) -> String {
@@ -117,22 +117,26 @@ impl Settings {
     }
 }
 
+/// Textos curtos guardados no registro, em `HKEY_CURRENT_USER\Software\Islandbar`
+/// (as escolhas do cartão em `Stats`, o alarme marcado em `Alarm`).
 #[cfg(windows)]
-mod store {
-    use windows::core::{w, PCWSTR};
-    use windows::Win32::System::Registry::{RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ};
+pub mod store {
+    use windows::core::{HSTRING, PCWSTR};
+    use windows::Win32::System::Registry::{
+        RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ,
+    };
 
-    const KEY: PCWSTR = w!("Software\\Islandbar");
-    const VALUE: PCWSTR = w!("Stats");
+    const KEY: PCWSTR = windows::core::w!("Software\\Islandbar");
 
-    pub fn read() -> Option<String> {
+    pub fn read(name: &str) -> Option<String> {
+        let name = HSTRING::from(name);
         let mut buffer = [0u16; 256];
         let mut size = std::mem::size_of_val(&buffer) as u32;
         unsafe {
             RegGetValueW(
                 HKEY_CURRENT_USER,
                 KEY,
-                VALUE,
+                &name,
                 RRF_RT_REG_SZ,
                 None,
                 Some(buffer.as_mut_ptr() as *mut std::ffi::c_void),
@@ -145,31 +149,41 @@ mod store {
         Some(String::from_utf16_lossy(&buffer[..len]))
     }
 
-    pub fn write(text: &str) {
+    pub fn write(name: &str, text: &str) {
         let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
         let _ = unsafe {
             RegSetKeyValueW(
                 HKEY_CURRENT_USER,
                 KEY,
-                VALUE,
+                &HSTRING::from(name),
                 REG_SZ.0,
                 Some(wide.as_ptr() as *const std::ffi::c_void),
                 (wide.len() * 2) as u32,
             )
         };
-        crate::perf::line(format!("settings: saved {text}"));
+        crate::perf::line(format!("store: {name} = {text}"));
+    }
+
+    pub fn delete(name: &str) {
+        let _ = unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, KEY, &HSTRING::from(name)) };
+        crate::perf::line(format!("store: {name} removed"));
     }
 }
 
-/// Fora do Windows não há registro: vale o padrão, ou ISLANDBAR_DEBUG_STATS.
+/// Fora do Windows não há registro: vale o padrão, ou ISLANDBAR_DEBUG_<NOME>
+/// (ex.: ISLANDBAR_DEBUG_STATS).
 #[cfg(not(windows))]
-mod store {
-    pub fn read() -> Option<String> {
-        std::env::var("ISLANDBAR_DEBUG_STATS").ok()
+pub mod store {
+    pub fn read(name: &str) -> Option<String> {
+        std::env::var(format!("ISLANDBAR_DEBUG_{}", name.to_uppercase())).ok()
     }
 
-    pub fn write(text: &str) {
-        crate::perf::line(format!("settings: saved {text}"));
+    pub fn write(name: &str, text: &str) {
+        crate::perf::line(format!("store: {name} = {text}"));
+    }
+
+    pub fn delete(name: &str) {
+        crate::perf::line(format!("store: {name} removed"));
     }
 }
 

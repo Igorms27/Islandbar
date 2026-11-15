@@ -3,8 +3,18 @@
 //! Tudo aqui é só conta de relógio; quem pergunta "já deu a hora?" é a
 //! interface, que também se programa para acordar no segundo certo. Assim o
 //! alarme não gasta nada enquanto espera.
+//!
+//! O horário marcado fica guardado no registro (veja `settings::store`): se a
+//! ilha fechar ou reiniciar para se atualizar, o alarme continua ao abrir.
 
+use crate::settings::store;
 use std::time::{Duration, Instant};
+
+/// Nome do valor guardado no registro.
+const STORE: &str = "Alarm";
+/// Se a hora passou com a ilha fechada há pouco, toca ao abrir. Mais que
+/// isso (ex.: PC desligado de noite), o alarme é esquecido.
+const LATE_LIMIT: Duration = Duration::from_secs(10 * 60);
 
 /// Sem ninguém mexer, o som para sozinho depois disso (o aviso continua).
 const RING_FOR: Duration = Duration::from_secs(5 * 60);
@@ -30,12 +40,29 @@ impl Alarm {
         Self { chosen: 15, due: None, ringing: None, sounding: false, rang: None }
     }
 
-    /// Liga um alarme de teste (ISLANDBAR_DEBUG_ALARM=<segundos>).
-    pub fn from_env() -> Self {
+    /// O alarme guardado (se havia um), ou um alarme de teste
+    /// (ISLANDBAR_DEBUG_ALARM=<segundos>).
+    pub fn load() -> Self {
         let mut alarm = Self::new();
         if let Some(seconds) = std::env::var("ISLANDBAR_DEBUG_ALARM").ok().and_then(|s| s.parse::<u64>().ok()) {
             alarm.set_in(Duration::from_secs(seconds));
+            return alarm;
         }
+        let saved = store::read(STORE).and_then(|text| text.trim().parse::<i64>().ok());
+        let Some(at) = saved.and_then(|ts| chrono::DateTime::from_timestamp(ts, 0)) else { return alarm };
+        let at = at.with_timezone(&chrono::Local);
+        let now = chrono::Local::now();
+        match (at - now).to_std() {
+            // Ainda vai tocar: continua contando de onde parou.
+            Ok(left) => alarm.due = Some((Instant::now() + left, at)),
+            // Passou há pouco com a ilha fechada: toca já.
+            Err(_) if (now - at).to_std().is_ok_and(|late| late <= LATE_LIMIT) => {
+                alarm.due = Some((Instant::now(), at));
+            }
+            // Passou faz tempo: esquece.
+            Err(_) => store::delete(STORE),
+        }
+        crate::perf::line(format!("alarm: restored {} (counting: {})", at.format("%H:%M:%S"), alarm.counting()));
         alarm
     }
 
@@ -59,6 +86,15 @@ impl Alarm {
     fn set_in(&mut self, wait: Duration) {
         let at = chrono::Local::now() + chrono::Duration::from_std(wait).unwrap_or_default();
         self.due = Some((Instant::now() + wait, at));
+        self.save();
+    }
+
+    /// Guarda o horário marcado (ou apaga, se não há alarme).
+    fn save(&self) {
+        match self.due {
+            Some((_, at)) => store::write(STORE, &at.timestamp().to_string()),
+            None => store::delete(STORE),
+        }
     }
 
     /// Soma minutos a um alarme que já está contando.
@@ -67,10 +103,12 @@ impl Alarm {
             *due += Duration::from_secs(minutes as u64 * 60);
             *at += chrono::Duration::minutes(minutes as i64);
         }
+        self.save();
     }
 
     pub fn cancel(&mut self) {
         self.due = None;
+        self.save();
     }
 
     /// Para o aviso e o som.
@@ -93,6 +131,7 @@ impl Alarm {
         match self.due {
             Some((due, at)) if now >= due => {
                 self.due = None;
+                self.save();
                 self.rang = Some(at.format("%H:%M").to_string());
                 self.ringing = Some(now);
                 self.sounding = true;
@@ -122,11 +161,6 @@ impl Alarm {
 
     pub fn ringing(&self) -> bool {
         self.ringing.is_some()
-    }
-
-    /// Há algo que se perderia se a ilha reiniciasse agora?
-    pub fn busy(&self) -> bool {
-        self.counting() || self.ringing()
     }
 
     /// Quanto falta para tocar.
