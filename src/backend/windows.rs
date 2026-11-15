@@ -7,8 +7,9 @@
 //!   que as configurações de som do Windows usam.
 
 use super::game::GameWatcher;
-use super::sysmon::{SystemMonitor, Wanted};
+use super::sysmon::{SystemMonitor, TempRead, Wanted};
 use super::{Command, Device, Game, Media, Session, Shared, System, VolumeKey, Wake};
+use crate::settings::Settings;
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
@@ -145,6 +146,9 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
 
     // O painel está aberto? (A interface avisa.)
     let mut panel = false;
+    // O que aparece na ilha e se o cartão inicial está aberto (a interface avisa).
+    let mut settings = Settings::default();
+    let mut welcome = false;
     // Quando cada leitura periódica deve acontecer de novo.
     let start = Instant::now();
     let (mut audio_due, mut system_due, mut media_due, mut next_tick) = (start, start, start, start);
@@ -168,6 +172,11 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
                         // Busca agora mesmo o que só o painel mostra.
                         (audio_due, system_due, media_due, devices_due, next_tick) = (now, now, now, now, now);
                     }
+                }
+                Ok(Command::Stats { settings: new, welcome: open }) => {
+                    (settings, welcome) = (new, open);
+                    // Lê já, com a escolha nova (o cartão mostra os sensores na hora).
+                    (system_due, next_tick) = (now, now);
                 }
                 Ok(Command::EnableFps) => games.request_access(),
                 Ok(Command::VolumeKey(key)) => {
@@ -237,9 +246,17 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
             let started = Instant::now();
             let fullscreen = games.look();
             crate::perf::add_section("game", started);
-            // A GPU aparece na pílula (sem música), no painel e no modo jogo;
-            // a temperatura, só no painel.
-            let wanted = Wanted { gpu: panel || media.is_none() || fullscreen, temp: panel };
+            // A GPU aparece no painel, no modo jogo e, se escolhida, na pílula
+            // (sem música). A temperatura, no painel e onde foi escolhida.
+            let pill_stats = media.is_none() || fullscreen;
+            let temp = if welcome {
+                TempRead::All
+            } else if panel || (settings.show_temp && pill_stats) {
+                TempRead::Pick(settings.temp)
+            } else {
+                TempRead::Off
+            };
+            let wanted = Wanted { gpu: panel || welcome || fullscreen || (media.is_none() && settings.gpu), temp };
             system = monitor.read(wanted);
             let started = Instant::now();
             game = games.update(&monitor.gpu_by_pid);
@@ -482,7 +499,11 @@ unsafe fn apply(cmd: Command, audio: Option<&Audio>, media: Option<&MediaManager
             current_session(media)?.TrySkipPreviousAsync()?;
         }
         // Tratados no laço principal.
-        Command::EnableFps | Command::Panel(_) | Command::SetDevice(_) | Command::VolumeKey(_) => {}
+        Command::EnableFps
+        | Command::Panel(_)
+        | Command::Stats { .. }
+        | Command::SetDevice(_)
+        | Command::VolumeKey(_) => {}
     }
     Ok(())
 }

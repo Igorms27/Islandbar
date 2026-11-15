@@ -7,6 +7,7 @@ mod app;
 mod backend;
 mod perf;
 mod platform;
+mod settings;
 mod updater;
 
 use eframe::egui;

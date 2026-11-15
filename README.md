@@ -48,8 +48,9 @@ fone/caixa de som, alarme e o uso do PC. Nos jogos, mostra FPS, CPU, GPU e RAM.
 - **Alarme**: "toca daqui a X horas/minutos", com setinhas, atalhos ou digitando o número.
   Na hora, a ilha mostra um aviso com bip de despertador e os botões Soneca e Parar.
 - **Aviso de volume**: ao usar as teclas de volume do teclado, a ilha se estica e mostra o nível.
-- **Monitor do sistema**: CPU, GPU, RAM e temperatura. A temperatura usa o melhor sensor que o PC
-  oferece sem instalar driver (placa-mãe, placa de vídeo ou disco; o rótulo diz qual).
+- **Monitor do sistema**: CPU, GPU, RAM e temperatura, sem instalar driver. No cartão inicial você
+  escolhe o sensor da temperatura (placa de vídeo, placa-mãe, disco ou automático) e quais números
+  aparecem na ilha fechada e no modo jogo.
 - **Modo jogo**: com um jogo em tela cheia, uma pílula ao lado da ilha mostra FPS, CPU, GPU e RAM.
   Navegadores e players de vídeo em tela cheia não contam como jogo.
 - **Iniciar com o Windows** (opcional) e **atualização automática**.
@@ -90,6 +91,7 @@ espera. A versão atual aparece no rodapé do painel. As notas de cada versão e
 | Medir o FPS nos jogos | Na primeira vez, clique em **Ativar** no painel. O Windows pede confirmação de administrador uma vez, e passa a valer depois de sair e entrar na conta. |
 | Fechar a ilha | Abra o painel e clique em **Sair** (isso cancela um alarme marcado). |
 | Ligar/desligar o início com o Windows | Abra o `islandbar.exe` de novo: o cartão aparece outra vez. |
+| Escolher os números da ilha e a temperatura | Também no cartão inicial (abra o `islandbar.exe` de novo). Cada opção de temperatura mostra o valor de agora; "n/d" quer dizer que o PC não tem aquele sensor. |
 
 ## Leve de verdade
 
@@ -135,7 +137,8 @@ Abra o painel, clique em **Ativar**, confirme e depois saia e entre de novo na s
 <details>
 <summary><b>A temperatura aparece "n/d"</b></summary>
 
-O PC não expõe nenhum sensor que dê para ler sem instalar um driver. Não é um defeito da ilha.
+O sensor escolhido não existe nesse PC (ou não dá para ler sem instalar um driver). Abra o
+`islandbar.exe` de novo e escolha outro no cartão inicial: cada opção mostra o valor que consegue ler.
 
 </details>
 
@@ -168,6 +171,7 @@ mentira (`src/backend/mock.rs`), útil para mexer na interface.
 | `src/app.rs` | A ilha: estados (pílula, aviso, painel, alarme), animações e desenho. |
 | `src/anim.rs` | A "mola" que dá o efeito elástico. |
 | `src/alarm.rs` | Alarme: contagem e o bip de despertador. |
+| `src/settings.rs` | Escolhas do cartão inicial (números da ilha e sensor da temperatura). |
 | `src/platform.rs` | Mouse, teclado, janela sem moldura, memória e início com o Windows. |
 | `src/updater.rs` | Atualização automática. |
 | `src/perf.rs` | Medidor interno de quadros, CPU e memória (diagnóstico). |

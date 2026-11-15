@@ -12,6 +12,7 @@ use crate::alarm::{self, Alarm};
 use crate::anim::{meter, smoothstep, Spring};
 use crate::backend::{Backend, Command, Device, FpsAccess, Game, Snapshot, System, TempSource};
 use crate::platform;
+use crate::settings::{Settings, TempChoice};
 use crate::updater;
 
 /// Tamanho da janela invisível que contém a ilha.
@@ -34,7 +35,7 @@ const FPS_ROW_HEIGHT: f32 = 36.0;
 /// Pílula do modo jogo: um pouco menor que a principal.
 const GAME_PILL_HEIGHT: f32 = 30.0;
 const GAME_PILL_GAP: f32 = 8.0;
-const WELCOME_SIZE: Vec2 = vec2(380.0, 166.0);
+const WELCOME_SIZE: Vec2 = vec2(400.0, 290.0);
 const MAX_APPS: usize = 7;
 /// Fileira de botões para escolher a saída de som ou o microfone.
 const DEVICE_ROW_HEIGHT: f32 = 32.0;
@@ -114,6 +115,10 @@ pub struct IslandApp {
     welcome: Spring,
     /// Opção marcada no cartão de boas-vindas.
     autostart: bool,
+    /// O que aparece na ilha e de qual sensor vem a temperatura.
+    settings: Settings,
+    /// Último aviso mandado ao backend sobre isso (e o cartão estar aberto).
+    sent_stats: Option<(Settings, bool)>,
     /// 0..1, mouse em cima da ilha.
     hover: Spring,
     /// 0 = sem jogo, 1 = pílula do modo jogo aberta.
@@ -216,6 +221,8 @@ impl IslandApp {
             hud: Spring::smooth(0.0),
             welcome: Spring::smooth(0.0),
             autostart: platform::autostart_enabled(),
+            settings: Settings::load(),
+            sent_stats: None,
             hover: Spring::smooth(0.0),
             game: Spring::bouncy(0.0),
             game_width: Spring::bouncy(120.0),
@@ -295,10 +302,11 @@ impl IslandApp {
         match self.mode {
             Mode::Welcome => WELCOME_SIZE,
             Mode::Collapsed => {
-                // Sem música a pílula mostra o uso do PC; com GPU precisa de mais espaço.
+                // Sem música a pílula mostra o uso do PC; quanto mais números, mais larga.
                 // (No modo jogo esses números vão para a pílula ao lado.)
-                let stats = snap.media.is_none() && snap.game.is_none() && snap.system.gpu.is_some();
-                let mut width = if stats { 300.0 } else { 250.0 };
+                let stats = snap.media.is_none() && snap.game.is_none() && self.notice_timer <= 0.0;
+                let shown = if stats { self.pill_stats(&snap.system).len() as f32 } else { 0.0 };
+                let mut width = (150.0 + 50.0 * shown).max(250.0);
                 if self.alarm.counting() {
                     width += 56.0; // sininho + tempo restante
                 }
@@ -326,7 +334,8 @@ impl IslandApp {
         self.app_peaks.retain(|name, _| snap.sessions.iter().any(|s| &s.name == name));
 
         let sys = &snap.system;
-        let targets = [sys.cpu, sys.gpu.unwrap_or(0.0), sys.ram(), sys.temp.map_or(0.0, |t| temp_fraction(t.celsius))];
+        let temp = sys.temp(self.settings.temp);
+        let targets = [sys.cpu, sys.gpu.unwrap_or(0.0), sys.ram(), temp.map_or(0.0, |t| temp_fraction(t.celsius))];
         for (gauge, target) in self.gauges.iter_mut().zip(targets) {
             *gauge += (target - *gauge) * (1.0 - (-5.0 * dt).exp());
         }
@@ -500,6 +509,11 @@ impl eframe::App for IslandApp {
             self.panel_open = panel_open;
             self.backend.send(Command::Panel(panel_open));
         }
+        let stats = (self.settings, self.mode == Mode::Welcome);
+        if self.sent_stats != Some(stats) {
+            self.sent_stats = Some(stats);
+            self.backend.send(Command::Stats { settings: stats.0, welcome: stats.1 });
+        }
 
         self.open.target = if self.mode == Mode::Expanded { 1.0 } else { 0.0 };
         self.hud.target = if self.mode == Mode::Hud { 1.0 } else { 0.0 };
@@ -576,7 +590,7 @@ impl eframe::App for IslandApp {
             self.draw_hud(&content, island, &snap, accent, hud * (1.0 - open * 2.0));
         }
         if welcome > 0.01 {
-            self.draw_welcome(ui, &content, island, accent);
+            self.draw_welcome(ui, &content, island, &snap, accent);
         }
         if open > 0.01 {
             self.draw_panel(ui, &content, island, &snap, accent);
@@ -717,14 +731,13 @@ impl IslandApp {
                 clock_rect.left() - 10.0 - x,
             );
         } else {
-            // Sem música: mostra o uso do PC.
-            let sys = &snap.system;
-            let usage = match sys.gpu {
-                Some(gpu) => {
-                    format!("CPU {:.0}%  GPU {:.0}%  RAM {:.0}%", sys.cpu * 100.0, gpu * 100.0, sys.ram() * 100.0)
-                }
-                None => format!("CPU {:.0}%  RAM {:.0}%", sys.cpu * 100.0, sys.ram() * 100.0),
-            };
+            // Sem música: mostra o uso do PC (o que foi escolhido no cartão inicial).
+            let usage: Vec<String> = self
+                .pill_stats(&snap.system)
+                .into_iter()
+                .map(|(label, value)| if label == "TEMP" { value } else { format!("{label} {value}") })
+                .collect();
+            let usage = usage.join("  ");
             let x = left + 32.0;
             text_fit(
                 p,
@@ -1412,16 +1425,13 @@ impl IslandApp {
         let Some(game) = &self.last_game else { return };
 
         // Monta os trechos: (rótulo, valor, valor largo típico, cor do valor).
-        let sys = &snap.system;
         let mut parts: Vec<(&str, String, &str, Color32)> = Vec::new();
         if let Some(fps) = game.fps {
             parts.push(("FPS", format!("{fps:.0}"), "000", fps_color(fps)));
         }
-        parts.push(("CPU", format!("{:.0}%", sys.cpu * 100.0), "00%", TEXT));
-        if let Some(gpu) = sys.gpu {
-            parts.push(("GPU", format!("{:.0}%", gpu * 100.0), "00%", TEXT));
+        for (label, value) in self.pill_stats(&snap.system) {
+            parts.push((label, value, if label == "TEMP" { "00°C" } else { "00%" }, TEXT));
         }
-        parts.push(("RAM", format!("{:.0}%", sys.ram() * 100.0), "00%", TEXT));
 
         let label_font = FontId::proportional(10.0);
         let value_font = FontId::proportional(12.5);
@@ -1530,17 +1540,24 @@ impl IslandApp {
         let tile = vec2((width - TILE_GAP) / 2.0, TILE_HEIGHT);
         // O rótulo diz de onde a temperatura veio, para ninguém confundir a
         // do disco com a do processador.
-        let temp_label = match sys.temp.map(|t| t.source) {
+        let temp = sys.temp(self.settings.temp);
+        let temp_label = match temp.map(|t| t.source) {
             Some(TempSource::Gpu) => "Temp GPU",
             Some(TempSource::Disk) => "Temp SSD",
-            Some(TempSource::System) | None => "Temp",
+            Some(TempSource::Board) => "Temp placa-mãe",
+            None => match self.settings.temp {
+                TempChoice::Gpu => "Temp GPU",
+                TempChoice::Disk => "Temp SSD",
+                TempChoice::Board => "Temp placa-mãe",
+                TempChoice::Auto => "Temp",
+            },
         };
         let not_available = || "n/d".to_string();
         let tiles = [
             ("CPU", format!("{:.0}%", sys.cpu * 100.0), true),
             ("GPU", sys.gpu.map_or_else(not_available, |g| format!("{:.0}%", g * 100.0)), sys.gpu.is_some()),
             ("RAM", format!("{:.1} / {:.0} GB", sys.ram_used_gb, sys.ram_total_gb), true),
-            (temp_label, sys.temp.map_or_else(not_available, |t| format!("{:.0}°C", t.celsius)), sys.temp.is_some()),
+            (temp_label, temp.map_or_else(not_available, |t| format!("{:.0}°C", t.celsius)), temp.is_some()),
         ];
         for (i, (label, value, available)) in tiles.into_iter().enumerate() {
             let (column, row) = ((i % 2) as f32, (i / 2) as f32);
@@ -1573,8 +1590,29 @@ impl IslandApp {
         }
     }
 
-    /// Cartão inicial com a opção de abrir junto com o Windows.
-    fn draw_welcome(&mut self, ui: &mut Ui, p: &Painter, island: Rect, accent: Color32) {
+    /// Números da pílula, na ordem: (rótulo, valor). Só os escolhidos no
+    /// cartão inicial e que o PC informa.
+    fn pill_stats(&self, sys: &System) -> Vec<(&'static str, String)> {
+        let s = &self.settings;
+        let mut stats = Vec::new();
+        if s.cpu {
+            stats.push(("CPU", format!("{:.0}%", sys.cpu * 100.0)));
+        }
+        if let Some(gpu) = sys.gpu.filter(|_| s.gpu) {
+            stats.push(("GPU", format!("{:.0}%", gpu * 100.0)));
+        }
+        if s.ram {
+            stats.push(("RAM", format!("{:.0}%", sys.ram() * 100.0)));
+        }
+        if let Some(temp) = sys.temp(s.temp).filter(|_| s.show_temp) {
+            stats.push(("TEMP", format!("{:.0}°C", temp.celsius)));
+        }
+        stats
+    }
+
+    /// Cartão inicial: abrir junto com o Windows, o que aparece na ilha e de
+    /// qual sensor vem a temperatura.
+    fn draw_welcome(&mut self, ui: &mut Ui, p: &Painter, island: Rect, snap: &Snapshot, accent: Color32) {
         let interactive = self.mode == Mode::Welcome;
         let a = smoothstep(self.welcome.value * 1.6 - 0.4);
         let left = island.left() + PADDING + 4.0;
@@ -1585,13 +1623,13 @@ impl IslandApp {
         p.text(
             pos2(left, top + 32.0),
             Align2::LEFT_CENTER,
-            "Tudo pronto. Só uma pergunta antes de começar:",
+            "Tudo pronto. Escolha como a ilha vai começar:",
             FontId::proportional(12.5),
             fade(TEXT_DIM, a),
         );
 
         // Linha da opção: clicar em qualquer lugar dela liga/desliga.
-        let row = Rect::from_min_max(pos2(left, top + 52.0), pos2(right, top + 84.0));
+        let row = Rect::from_min_max(pos2(left, top + 48.0), pos2(right, top + 80.0));
         let id = ui.scope_id().with("autostart");
         if interactive {
             let resp = ui.interact(row, id, Sense::click());
@@ -1616,10 +1654,67 @@ impl IslandApp {
         let knob = pos2(switch.left() + 12.0 + 20.0 * on, switch.center().y);
         p.circle_filled(knob, 9.0, fade(Color32::WHITE, a));
 
+        // O que aparece na ilha fechada e no modo jogo: cada botão liga/desliga.
+        let cy = top + 100.0;
+        p.text(pos2(left, cy), Align2::LEFT_CENTER, "Mostrar na ilha", FontId::proportional(14.0), fade(TEXT, a));
+        let (chip_width, chip_gap) = (52.0, 6.0);
+        let shows = [
+            ("CPU", self.settings.cpu),
+            ("GPU", self.settings.gpu),
+            ("RAM", self.settings.ram),
+            ("Temp", self.settings.show_temp),
+        ];
+        let mut toggled = None;
+        for (i, (label, on)) in shows.into_iter().enumerate() {
+            let x = right - (4 - i) as f32 * chip_width - (3 - i) as f32 * chip_gap;
+            let chip = Rect::from_min_size(pos2(x, cy - 13.0), vec2(chip_width, 26.0));
+            if choice_chip(ui, p, ("show", i), chip, label, None, on, accent, a, interactive) {
+                toggled = Some(i);
+            }
+        }
+        match toggled {
+            Some(0) => self.settings.cpu = !self.settings.cpu,
+            Some(1) => self.settings.gpu = !self.settings.gpu,
+            Some(2) => self.settings.ram = !self.settings.ram,
+            Some(3) => self.settings.show_temp = !self.settings.show_temp,
+            _ => {}
+        }
+
+        // De qual sensor vem a temperatura. Cada botão mostra o valor de agora,
+        // para dar para ver qual é qual (o PC pode não ter algum: "n/d").
+        p.text(pos2(left, top + 130.0), Align2::LEFT_CENTER, "Temperatura", FontId::proportional(14.0), fade(TEXT, a));
+        let sys = &snap.system;
+        let column = (right - left - 8.0) / 2.0;
+        for (i, choice) in TempChoice::ALL.into_iter().enumerate() {
+            let (col, line) = ((i % 2) as f32, (i / 2) as f32);
+            let corner = pos2(left + col * (column + 8.0), top + 146.0 + line * 34.0);
+            let chip = Rect::from_min_size(corner, vec2(column, 28.0));
+            let name = match choice {
+                TempChoice::Auto => "Automática",
+                TempChoice::Gpu => "Placa de vídeo",
+                TempChoice::Board => "Placa-mãe",
+                TempChoice::Disk => "SSD / disco",
+            };
+            let value = sys.temp(choice).map_or_else(|| "n/d".to_string(), |t| format!("{:.0}°C", t.celsius));
+            let chosen = self.settings.temp == choice;
+            if choice_chip(ui, p, ("temp", i), chip, name, Some(&value), chosen, accent, a, interactive) {
+                self.settings.temp = choice;
+            }
+        }
+
         // Botão "Iniciar".
         let button = Rect::from_min_max(
             pos2(right - 104.0, island.bottom() - PADDING - 32.0),
             pos2(right, island.bottom() - PADDING),
+        );
+        text_fit(
+            p,
+            pos2(left, button.center().y),
+            Align2::LEFT_CENTER,
+            "Para mudar depois, abra o .exe de novo.",
+            11.5,
+            fade(TEXT_DIM, a),
+            button.left() - 12.0 - left,
         );
         let button_id = ui.scope_id().with("start");
         let mut hover = false;
@@ -1631,6 +1726,7 @@ impl IslandApp {
             }
             if resp.clicked() {
                 platform::set_autostart(self.autostart);
+                self.settings.save();
                 self.mode = Mode::Collapsed;
             }
         }
@@ -1902,6 +1998,63 @@ fn text_button(
         p.rect_filled(rect, radius, fade(Color32::WHITE, a * (0.07 + 0.08 * hover)));
         let color = if hover > 0.5 { TEXT } else { TEXT_DIM.lerp_to_gamma(TEXT, 0.4) };
         p.text(rect.center(), Align2::CENTER_CENTER, label, FontId::proportional(12.5), fade(color, a));
+    }
+    if hovered {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    resp.is_some_and(|r| r.clicked())
+}
+
+/// Botão de escolha do cartão inicial: nome à esquerda (centralizado quando
+/// não há `value`) e um valor à direita. Marcado, fica com a cor de destaque.
+#[allow(clippy::too_many_arguments)]
+fn choice_chip(
+    ui: &mut Ui,
+    p: &Painter,
+    id_source: impl std::hash::Hash + std::fmt::Debug,
+    rect: Rect,
+    label: &str,
+    value: Option<&str>,
+    chosen: bool,
+    accent: Color32,
+    a: f32,
+    interactive: bool,
+) -> bool {
+    let id = ui.scope_id().with(id_source);
+    let resp = interactive.then(|| ui.interact(rect, id, Sense::click()));
+    let hovered = resp.as_ref().is_some_and(|r| r.hovered());
+    let hover = ui.ctx().animate_bool_with_time(id, hovered, 0.12);
+    let radius = rect.height() / 2.0;
+    if chosen {
+        p.rect_filled(rect, radius, fade(accent, a * (0.26 + 0.08 * hover)));
+        p.rect_stroke(rect, radius, Stroke::new(1.0, fade(accent, a * 0.7)), StrokeKind::Inside);
+    } else {
+        p.rect_filled(rect, radius, fade(Color32::WHITE, a * (0.06 + 0.08 * hover)));
+    }
+    let color = if chosen || hover > 0.5 { TEXT } else { TEXT_DIM };
+    match value {
+        Some(value) => {
+            let value_rect = p.text(
+                pos2(rect.right() - 12.0, rect.center().y),
+                Align2::RIGHT_CENTER,
+                value,
+                FontId::proportional(12.0),
+                fade(color, a * 0.85),
+            );
+            let x = rect.left() + 12.0;
+            text_fit(
+                p,
+                pos2(x, rect.center().y),
+                Align2::LEFT_CENTER,
+                label,
+                12.5,
+                fade(color, a),
+                value_rect.left() - 8.0 - x,
+            );
+        }
+        None => {
+            p.text(rect.center(), Align2::CENTER_CENTER, label, FontId::proportional(12.5), fade(color, a));
+        }
     }
     if hovered {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);

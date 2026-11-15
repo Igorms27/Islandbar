@@ -7,7 +7,8 @@
 //! CPU e RAM custam quase nada e são lidas sempre. GPU e temperatura custam
 //! mais, então só são lidas quando pedidas (veja `Wanted`).
 
-use super::{System, Temp, TempSource};
+use super::{System, Temps};
+use crate::settings::TempChoice;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::time::{Duration, Instant};
@@ -43,7 +44,18 @@ const DISK_EVERY: Duration = Duration::from_secs(15);
 #[derive(Clone, Copy, Debug)]
 pub struct Wanted {
     pub gpu: bool,
-    pub temp: bool,
+    pub temp: TempRead,
+}
+
+/// Quais sensores de temperatura ler.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TempRead {
+    /// Nenhum (a temperatura não está aparecendo).
+    Off,
+    /// Só o escolhido (no automático, o primeiro que responder).
+    Pick(TempChoice),
+    /// Todos (o cartão inicial mostra cada um).
+    All,
 }
 
 pub struct SystemMonitor {
@@ -54,13 +66,12 @@ pub struct SystemMonitor {
     gpu_engines: Lazy,
     /// Última leitura de cada um (fica valendo enquanto não é pedida de novo).
     gpu: Option<f32>,
-    temp: Option<Temp>,
+    temps: Temps,
     /// Uso de GPU (0..1) de cada programa, pelo PID. Atualizado em `read`.
     pub gpu_by_pid: HashMap<u32, f32>,
     /// Soma do uso de cada "motor" da placa: (identificador, porcentagem).
     engines: Vec<(u64, f64)>,
     gpu_adapters: Option<Vec<LUID>>,
-    disk_temp: Option<f32>,
     disk_read_at: Option<Instant>,
 }
 
@@ -72,11 +83,10 @@ impl SystemMonitor {
             thermal_zones: Lazy::new(w!("\\Thermal Zone Information(*)\\Temperature")),
             gpu_engines: Lazy::new(w!("\\GPU Engine(*)\\Utilization Percentage")),
             gpu: None,
-            temp: None,
+            temps: Temps::default(),
             gpu_by_pid: HashMap::new(),
             engines: Vec::new(),
             gpu_adapters: None,
-            disk_temp: None,
             disk_read_at: None,
         }
     }
@@ -89,11 +99,11 @@ impl SystemMonitor {
         } else {
             self.gpu_by_pid.clear();
         }
-        if wanted.temp {
-            self.temp = self.read_temp();
+        if wanted.temp != TempRead::Off {
+            self.read_temps(wanted.temp);
         }
         let (ram_used_gb, ram_total_gb) = read_ram();
-        System { cpu: self.read_cpu(), ram_used_gb, ram_total_gb, gpu: self.gpu, temp: self.temp }
+        System { cpu: self.read_cpu(), ram_used_gb, ram_total_gb, gpu: self.gpu, temps: self.temps }
     }
 
     /// Uso da CPU = fração do tempo, desde a última leitura, em que ela não ficou ociosa.
@@ -156,7 +166,8 @@ impl SystemMonitor {
         Some((busiest / 100.0).clamp(0.0, 1.0) as f32)
     }
 
-    /// Melhor temperatura que este PC oferece, nesta ordem:
+    /// Lê os sensores de temperatura pedidos. No automático, nesta ordem,
+    /// parando no primeiro que responder:
     ///
     /// 1. Zona térmica da placa-mãe (notebooks quase sempre têm; muitos
     ///    desktops não).
@@ -166,31 +177,41 @@ impl SystemMonitor {
     ///
     /// A temperatura exata de cada núcleo do processador só existe através de
     /// um driver, por isso não aparece aqui.
-    fn read_temp(&mut self) -> Option<Temp> {
-        let zone = self.thermal_zones.get().and_then(|zones| {
-            let mut celsius = Vec::new();
-            // O contador vem em Kelvin; ficamos com a zona mais quente.
-            unsafe { zones.read(|_, kelvin| celsius.push(kelvin as f32 - 273.15)) };
-            hottest(celsius.into_iter())
-        });
-        if let Some(celsius) = zone {
-            return Some(Temp { celsius, source: TempSource::System });
+    fn read_temps(&mut self, read: TempRead) {
+        let wants = |choice: TempChoice| match read {
+            TempRead::Off => false,
+            TempRead::All => true,
+            TempRead::Pick(picked) => picked == choice || picked == TempChoice::Auto,
+        };
+        let auto = read == TempRead::Pick(TempChoice::Auto);
+
+        if wants(TempChoice::Board) {
+            self.temps.board = self.thermal_zones.get().and_then(|zones| {
+                let mut celsius = Vec::new();
+                // O contador vem em Kelvin; ficamos com a zona mais quente.
+                unsafe { zones.read(|_, kelvin| celsius.push(kelvin as f32 - 273.15)) };
+                hottest(celsius.into_iter())
+            });
+            if auto && self.temps.board.is_some() {
+                return;
+            }
         }
 
-        let adapters = self.gpu_adapters.get_or_insert_with(|| unsafe { gpu_adapters() });
-        let gpu = hottest(adapters.iter().filter_map(|luid| unsafe { read_gpu_temp(*luid) }));
-        if debug() {
-            crate::perf::line(format!("temp sources: thermal zone={zone:?} gpu={gpu:?} ({} adapters)", adapters.len()));
-        }
-        if let Some(celsius) = gpu {
-            return Some(Temp { celsius, source: TempSource::Gpu });
+        if wants(TempChoice::Gpu) {
+            let adapters = self.gpu_adapters.get_or_insert_with(|| unsafe { gpu_adapters() });
+            self.temps.gpu = hottest(adapters.iter().filter_map(|luid| unsafe { read_gpu_temp(*luid) }));
+            if debug() {
+                crate::perf::line(format!("temp sources: {:?} ({} adapters)", self.temps, adapters.len()));
+            }
+            if auto && self.temps.gpu.is_some() {
+                return;
+            }
         }
 
-        if self.disk_read_at.is_none_or(|at| at.elapsed() >= DISK_EVERY) {
+        if wants(TempChoice::Disk) && self.disk_read_at.is_none_or(|at| at.elapsed() >= DISK_EVERY) {
             self.disk_read_at = Some(Instant::now());
-            self.disk_temp = unsafe { read_disk_temp() };
+            self.temps.disk = unsafe { read_disk_temp() };
         }
-        self.disk_temp.map(|celsius| Temp { celsius, source: TempSource::Disk })
     }
 }
 

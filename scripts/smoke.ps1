@@ -112,7 +112,7 @@ $bg = Start-Process powershell -PassThru -ArgumentList '-NoProfile', '-Execution
 Start-Sleep 4
 Shot "0-background"
 
-function StartIsland($tag) {
+function StartIsland($tag, $welcome = $false) {
   [W]::SetCursorPos(900, 700) | Out-Null
   $env:ISLANDBAR_DEBUG_SYSMON = "1"
   $env:ISLANDBAR_DEBUG_GAME = "1"
@@ -120,7 +120,10 @@ function StartIsland($tag) {
   $env:ISLANDBAR_DEBUG_PERF = "1"
   # Sem placa de som na máquina do GitHub: botões de saída/microfone de mentira.
   $env:ISLANDBAR_DEBUG_DEVICES = "1"
-  $app = Start-Process "$exeDir\islandbar.exe" -PassThru -ArgumentList '--autostart' -RedirectStandardError "$out\$tag-stderr.txt"
+  # Com --autostart (como no login do Windows) o cartão inicial não aparece.
+  $params = @{ FilePath = "$exeDir\islandbar.exe"; PassThru = $true; RedirectStandardError = "$out\$tag-stderr.txt" }
+  if (-not $welcome) { $params.ArgumentList = '--autostart' }
+  $app = Start-Process @params
   Start-Sleep 8
   Log ("$tag app running: " + (-not $app.HasExited) + $(if ($app.HasExited) { " (exit code 0x{0:X8})" -f $app.ExitCode }))
   $app
@@ -304,5 +307,30 @@ Start-Sleep 2
 Shot "alarm-7-stopped"
 Log ("alarm lines: " + (Get-Content "$out\ring-stderr.txt" | Select-String '^alarm' | Out-String))
 StopIsland "ring" $app
+
+# ---- Rodada 5: cartão inicial ----------------------------------------------
+# Abre como quem clica no .exe: aparece o cartão. Escolhe "Placa de vídeo" e
+# liga "Temp" na ilha, clica em Iniciar. A escolha tem que ficar no registro.
+Remove-Item "HKCU:\Software\Islandbar" -Recurse -ErrorAction SilentlyContinue
+$app = StartIsland "welcome" $true
+$r = Styles "welcome start"
+$cx = [int](($r.L + $r.R) / 2)
+Shot "welcome-1-card"
+Click ($cx + 90) ($r.T + 188)    # Temperatura: Placa de vídeo
+Start-Sleep -Milliseconds 400
+Click ($cx + 152) ($r.T + 128)   # Mostrar na ilha: Temp
+Start-Sleep -Milliseconds 600
+Shot "welcome-2-chosen"
+Click ($cx + 126) ($r.T + 266)   # Iniciar
+Start-Sleep 3
+Shot "welcome-3-pill"
+$saved = (Get-ItemProperty "HKCU:\Software\Islandbar" -Name Stats -ErrorAction SilentlyContinue).Stats
+Log "settings saved: $saved (expected temp=gpu;show=cpu,gpu,ram,temp)"
+Log ("welcome lines: " + ((Get-Content "$out\welcome-stderr.txt" | Select-String '^(settings|temp sources)' | Select-Object -Last 4) -join " | "))
+StopIsland "welcome" $app
+# Aberta de novo pelo login: a escolha continua valendo.
+$app = StartIsland "welcome2"
+Log ("after restart: " + ((Get-Content "$out\welcome2-stderr.txt" | Select-String '^temp sources' | Select-Object -Last 1) -join ""))
+StopIsland "welcome2" $app
 
 exit 0

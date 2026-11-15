@@ -1,0 +1,166 @@
+//! Escolhas feitas no cartão inicial: o que aparece na ilha e de qual sensor
+//! vem a temperatura.
+//!
+//! Ficam guardadas no registro do Windows, na conta do usuário
+//! (`HKEY_CURRENT_USER\Software\Islandbar`, valor `Stats`), num texto curto
+//! como `temp=gpu;show=cpu,gpu,ram,temp`. Assim continuam valendo quando a
+//! ilha abre sozinha com o Windows ou depois de uma atualização.
+
+/// De qual sensor a ilha mostra a temperatura.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TempChoice {
+    /// O primeiro que o PC oferecer: placa-mãe, depois placa de vídeo, depois disco.
+    #[default]
+    Auto,
+    Gpu,
+    Board,
+    Disk,
+}
+
+impl TempChoice {
+    pub const ALL: [TempChoice; 4] = [TempChoice::Auto, TempChoice::Gpu, TempChoice::Board, TempChoice::Disk];
+
+    fn key(self) -> &'static str {
+        match self {
+            TempChoice::Auto => "auto",
+            TempChoice::Gpu => "gpu",
+            TempChoice::Board => "board",
+            TempChoice::Disk => "disk",
+        }
+    }
+}
+
+/// O que aparece na pílula (sem música) e na pílula do modo jogo. O painel
+/// aberto sempre mostra tudo.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Settings {
+    pub temp: TempChoice,
+    pub cpu: bool,
+    pub gpu: bool,
+    pub ram: bool,
+    pub show_temp: bool,
+}
+
+impl Default for Settings {
+    /// O mesmo que a ilha mostrava antes desta opção existir.
+    fn default() -> Self {
+        Self { temp: TempChoice::Auto, cpu: true, gpu: true, ram: true, show_temp: false }
+    }
+}
+
+impl Settings {
+    pub fn load() -> Self {
+        store::read().map(|text| Self::parse(&text)).unwrap_or_default()
+    }
+
+    pub fn save(&self) {
+        store::write(&self.to_text());
+    }
+
+    fn to_text(self) -> String {
+        let shown: Vec<&str> = [(self.cpu, "cpu"), (self.gpu, "gpu"), (self.ram, "ram"), (self.show_temp, "temp")]
+            .into_iter()
+            .filter_map(|(on, name)| on.then_some(name))
+            .collect();
+        format!("temp={};show={}", self.temp.key(), shown.join(","))
+    }
+
+    /// Lê o texto guardado. O que não for entendido fica no padrão.
+    fn parse(text: &str) -> Self {
+        let mut settings = Self::default();
+        for part in text.split(';') {
+            match part.trim().split_once('=') {
+                Some(("temp", value)) => {
+                    if let Some(choice) = TempChoice::ALL.into_iter().find(|c| c.key() == value.trim()) {
+                        settings.temp = choice;
+                    }
+                }
+                Some(("show", value)) => {
+                    let names: Vec<&str> = value.split(',').map(str::trim).collect();
+                    settings.cpu = names.contains(&"cpu");
+                    settings.gpu = names.contains(&"gpu");
+                    settings.ram = names.contains(&"ram");
+                    settings.show_temp = names.contains(&"temp");
+                }
+                _ => {}
+            }
+        }
+        settings
+    }
+}
+
+#[cfg(windows)]
+mod store {
+    use windows::core::{w, PCWSTR};
+    use windows::Win32::System::Registry::{RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ};
+
+    const KEY: PCWSTR = w!("Software\\Islandbar");
+    const VALUE: PCWSTR = w!("Stats");
+
+    pub fn read() -> Option<String> {
+        let mut buffer = [0u16; 256];
+        let mut size = std::mem::size_of_val(&buffer) as u32;
+        unsafe {
+            RegGetValueW(
+                HKEY_CURRENT_USER,
+                KEY,
+                VALUE,
+                RRF_RT_REG_SZ,
+                None,
+                Some(buffer.as_mut_ptr() as *mut std::ffi::c_void),
+                Some(&mut size),
+            )
+        }
+        .ok()
+        .ok()?;
+        let len = buffer.iter().position(|&c| c == 0).unwrap_or(buffer.len());
+        Some(String::from_utf16_lossy(&buffer[..len]))
+    }
+
+    pub fn write(text: &str) {
+        let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+        let _ = unsafe {
+            RegSetKeyValueW(
+                HKEY_CURRENT_USER,
+                KEY,
+                VALUE,
+                REG_SZ.0,
+                Some(wide.as_ptr() as *const std::ffi::c_void),
+                (wide.len() * 2) as u32,
+            )
+        };
+        crate::perf::line(format!("settings: saved {text}"));
+    }
+}
+
+/// Fora do Windows não há registro: vale o padrão, ou ISLANDBAR_DEBUG_STATS.
+#[cfg(not(windows))]
+mod store {
+    pub fn read() -> Option<String> {
+        std::env::var("ISLANDBAR_DEBUG_STATS").ok()
+    }
+
+    pub fn write(text: &str) {
+        crate::perf::line(format!("settings: saved {text}"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn guarda_e_le_de_volta() {
+        let settings = Settings { temp: TempChoice::Gpu, cpu: true, gpu: false, ram: true, show_temp: true };
+        assert_eq!(settings.to_text(), "temp=gpu;show=cpu,ram,temp");
+        assert_eq!(Settings::parse(&settings.to_text()), settings);
+    }
+
+    #[test]
+    fn texto_estranho_fica_no_padrao() {
+        assert_eq!(Settings::parse(""), Settings::default());
+        assert_eq!(Settings::parse("temp=xyz"), Settings::default());
+        let nothing = Settings::parse("show=");
+        assert!(!nothing.cpu && !nothing.gpu && !nothing.ram && !nothing.show_temp);
+    }
+}

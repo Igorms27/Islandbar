@@ -4,9 +4,7 @@
 //! números do sistema uma vez por segundo, e acorda a interface só quando
 //! algo que ela mostra mudou.
 
-use super::{
-    Command, Device, FpsAccess, Game, Media, Session, Shared, Snapshot, System, Temp, TempSource, VolumeKey, Wake,
-};
+use super::{Command, Device, FpsAccess, Game, Media, Session, Shared, Snapshot, System, Temps, VolumeKey, Wake};
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
@@ -84,6 +82,9 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
                 }
                 Command::EnableFps => snap.fps_access = FpsAccess::Requested,
                 Command::Panel(open) => panel = open,
+                Command::Stats { settings, welcome } => {
+                    crate::perf::line(format!("stats: {settings:?} welcome={welcome}"));
+                }
             }
         }
 
@@ -109,7 +110,7 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
                 ram_used_gb: 9.6 + (t * 0.2).sin(),
                 ram_total_gb: 16.0,
                 gpu: Some(0.45 + 0.3 * (t * 0.5).sin()),
-                temp: Some(Temp { celsius: 58.0 + 9.0 * (t * 0.4).sin(), source: TempSource::System }),
+                temps: Temps { board: Some(31.0), gpu: Some(58.0 + 9.0 * (t * 0.4).sin()), disk: Some(38.0) },
             };
             // ISLANDBAR_DEBUG_GAME=1 simula um jogo em tela cheia depois de 3 segundos.
             if debug_game && t > 3.0 {

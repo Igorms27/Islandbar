@@ -7,6 +7,7 @@
 //! está aparecendo na tela, e avisa a interface quando há algo novo para
 //! desenhar (veja `Wake`).
 
+use crate::settings::{Settings, TempChoice};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
@@ -55,10 +56,9 @@ pub struct Device {
 
 /// De qual sensor veio a temperatura.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(not(windows), allow(dead_code))] // o backend de teste só usa `System`
 pub enum TempSource {
     /// Zona térmica informada pela placa-mãe (em geral, perto do processador).
-    System,
+    Board,
     /// Placa de vídeo.
     Gpu,
     /// Disco principal (SSD/HD).
@@ -71,6 +71,14 @@ pub struct Temp {
     pub source: TempSource,
 }
 
+/// Temperatura de cada sensor, em °C. `None`: o PC não informa (ou não foi lida).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Temps {
+    pub board: Option<f32>,
+    pub gpu: Option<f32>,
+    pub disk: Option<f32>,
+}
+
 /// Uso do computador.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct System {
@@ -80,11 +88,25 @@ pub struct System {
     pub ram_total_gb: f32,
     /// Uso da placa de vídeo, 0..1. `None` quando o Windows não informa.
     pub gpu: Option<f32>,
-    /// Melhor temperatura disponível. `None` quando o PC não expõe nenhum sensor.
-    pub temp: Option<Temp>,
+    /// Só os sensores que foram pedidos são lidos (veja `Command::Stats`).
+    pub temps: Temps,
 }
 
 impl System {
+    /// A temperatura que a ilha deve mostrar, conforme a escolha do cartão inicial.
+    pub fn temp(&self, choice: TempChoice) -> Option<Temp> {
+        let t = &self.temps;
+        let board = t.board.map(|celsius| Temp { celsius, source: TempSource::Board });
+        let gpu = t.gpu.map(|celsius| Temp { celsius, source: TempSource::Gpu });
+        let disk = t.disk.map(|celsius| Temp { celsius, source: TempSource::Disk });
+        match choice {
+            TempChoice::Auto => board.or(gpu).or(disk),
+            TempChoice::Board => board,
+            TempChoice::Gpu => gpu,
+            TempChoice::Disk => disk,
+        }
+    }
+
     pub fn ram(&self) -> f32 {
         if self.ram_total_gb > 0.0 {
             self.ram_used_gb / self.ram_total_gb
@@ -161,6 +183,14 @@ pub enum Command {
     /// backend não lê o que só aparece no painel (volume de cada app,
     /// temperatura...).
     Panel(bool),
+    /// O que aparece na ilha (escolhido no cartão inicial) e se o cartão está
+    /// aberto. Com ele, o backend só lê o sensor de temperatura escolhido, e
+    /// só quando ela aparece; com o cartão aberto, lê todos (o cartão mostra
+    /// cada um para a pessoa escolher).
+    Stats {
+        settings: Settings,
+        welcome: bool,
+    },
 }
 
 pub type Shared = Arc<Mutex<Snapshot>>;
