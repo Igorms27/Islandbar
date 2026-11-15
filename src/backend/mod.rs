@@ -10,12 +10,12 @@
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
-#[cfg(not(windows))]
-mod mock;
 #[cfg(windows)]
 mod fps;
 #[cfg(windows)]
 mod game;
+#[cfg(not(windows))]
+mod mock;
 #[cfg(windows)]
 mod sysmon;
 #[cfg(windows)]
@@ -84,7 +84,11 @@ pub struct System {
 
 impl System {
     pub fn ram(&self) -> f32 {
-        if self.ram_total_gb > 0.0 { self.ram_used_gb / self.ram_total_gb } else { 0.0 }
+        if self.ram_total_gb > 0.0 {
+            self.ram_used_gb / self.ram_total_gb
+        } else {
+            0.0
+        }
     }
 }
 

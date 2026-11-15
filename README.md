@@ -1,117 +1,188 @@
+<div align="center">
+
 # Islandbar
 
-Uma "Dynamic Island" para Windows, escrita em Rust. Fica no topo da tela, sempre
-visível, e se expande com animações elásticas.
+**Uma "Dynamic Island" para o Windows, leve e animada.**
 
-## O que já faz
+Fica no topo da tela e se abre num painel com mixer de volume, mídia, troca de
+fone/caixa de som, alarme e o uso do PC. Nos jogos, mostra FPS, CPU, GPU e RAM.
 
-- **Pílula** no topo com relógio, música atual e barrinhas que dançam com o som.
-- **Mixer**: clique na ilha para abrir. Volume geral + volume de cada aplicativo,
-  com medidor de áudio ao vivo dentro de cada slider. Clique no ícone para mutar.
-- **Saída de som e microfone**: no painel, um botão para cada saída (fone, TV, caixa de som) e
-  outro para cada microfone. Um clique troca o que o Windows usa (para música, jogos e chamadas).
-  A maioria dos programas segue na hora; alguns antigos só depois de reabertos.
-- **Mídia**: título/artista do que está tocando e botões anterior / play-pause / próxima
-  (funciona com Spotify, navegadores e qualquer app que apareça no controle de mídia do Windows).
-- **Alarme**: arraste o painel para o lado (ou clique nas bolinhas do rodapé) para chegar à
-  página do alarme. Escolha em quantas horas/minutos ele toca (setinhas ou atalhos +5 min, +15 min…)
-  e clique em Iniciar. Também dá para clicar no número e digitar (Enter já inicia). A pílula mostra um sininho com o tempo que falta; na hora, a ilha mostra
-  um aviso com bip de despertador, com os botões Soneca e Parar. (Fechar a ilha cancela o alarme.)
-- **Ilha na frente de algo** (ex.: uma aba do navegador)? Com o mouse em cima dela, aperte **Ctrl**:
-  ela some e os cliques passam para o que está atrás (pode soltar o Ctrl e clicar normalmente).
-  Ela volta quando o mouse sai de cima.
+[![Build](https://github.com/Igorms27/Islandbar/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/Igorms27/Islandbar/actions/workflows/build.yml)
+[![Versão](https://img.shields.io/github/v/release/Igorms27/Islandbar?label=vers%C3%A3o)](https://github.com/Igorms27/Islandbar/releases/latest)
+[![Licença: GPL-3.0](https://img.shields.io/badge/licen%C3%A7a-GPL--3.0-blue)](LICENSE)
+![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6)
+![Feito em Rust](https://img.shields.io/badge/feito%20em-Rust-orange)
+
+**[⬇ Baixar o islandbar.exe](https://github.com/Igorms27/Islandbar/releases/latest/download/islandbar.exe)**
+
+<img src="docs/images/pilula.png" alt="A pílula no topo da tela com o uso do PC, um alarme marcado e o relógio" width="400">
+
+</div>
+
+<p align="center">
+  <img src="docs/images/painel-som.png" alt="Painel aberto na página Som: saída de som, microfone, mixer e uso do PC" width="45%">
+  &nbsp;
+  <img src="docs/images/painel-alarme.png" alt="Painel na página Alarme: escolha de horas e minutos" width="45%">
+</p>
+
+## Sumário
+
+- [Recursos](#recursos)
+- [Instalação](#instalação)
+- [Como usar](#como-usar)
+- [Leve de verdade](#leve-de-verdade)
+- [Solução de problemas](#solução-de-problemas)
+- [Para desenvolvedores](#para-desenvolvedores)
+- [Licença](#licença)
+
+## Recursos
+
+- **Pílula no topo** com relógio, música atual e barrinhas que dançam com o som. Sem música, mostra
+  o uso de CPU, GPU e RAM.
+- **Mixer**: volume geral e de cada aplicativo, com medidor de áudio ao vivo dentro de cada slider.
+  Clique no ícone para deixar no mudo.
+- **Saída de som e microfone**: um botão para cada saída (fone, TV, caixa de som) e para cada
+  microfone. Um clique troca o que o Windows usa para música, jogos e chamadas.
+- **Mídia**: título, artista e os botões anterior / tocar-pausar / próxima. Funciona com Spotify,
+  navegadores e qualquer app que apareça no controle de mídia do Windows.
+- **Alarme**: "toca daqui a X horas/minutos", com setinhas, atalhos ou digitando o número.
+  Na hora, a ilha mostra um aviso com bip de despertador e os botões Soneca e Parar.
 - **Aviso de volume**: ao usar as teclas de volume do teclado, a ilha se estica e mostra o nível.
-- **Monitor do sistema**: CPU, GPU, RAM e temperatura no painel (e CPU/GPU/RAM na pílula quando não há música).
-  O uso da GPU é o mesmo número do Gerenciador de Tarefas. A temperatura usa o melhor sensor que o PC
-  oferece sem instalar driver: zona térmica da placa-mãe, depois placa de vídeo, depois o disco principal
-  (o rótulo indica qual). Se nenhum existir, aparece "n/d".
-- **Modo jogo**: com um jogo em tela cheia em primeiro plano, uma pílula pequena aparece ao lado da ilha
-  com FPS, CPU, GPU e RAM. Navegadores e players de vídeo em tela cheia não contam como jogo.
-  O FPS é medido como na Xbox Game Bar, sem mexer no jogo; o Windows exige uma permissão para isso,
-  que a ilha oferece ativar no painel (pede confirmação de administrador uma vez e vale depois de
-  sair e entrar na conta).
-  A ilha se mantém na frente do jogo mesmo quando ele se marca como "sempre no topo" (comum em tela
-  cheia). A exceção é a tela cheia *exclusiva*, em que o Windows não mostra nenhuma outra janela:
-  nesse caso, use o modo "janela sem bordas" nas opções do jogo.
-  **Jogos Vulkan/OpenGL em placa NVIDIA** (ex.: Savage Wind Recomp): mesmo sem bordas, o driver pode
-  mandar a imagem direto para o monitor e esconder a ilha. Resolve assim: Painel de Controle NVIDIA →
-  Gerenciar as configurações 3D → Configurações de programa → adicione o `.exe` do jogo → "Método de
-  apresentação Vulkan/OpenGL" → "Preferir em camadas na cadeia de troca DXGI" (em inglês, "Prefer
-  layered on DXGI Swapchain").
-- **Iniciar com o Windows**: ao abrir o executável, um cartão pergunta se a ilha deve abrir
-  sozinha no login. Para mudar depois, é só abrir o executável de novo.
-- **Atualização automática**: a cada 2 minutos a ilha confere se saiu versão nova no GitHub
-  (um arquivinho de texto, quase nada de internet); se saiu, baixa, troca o executável e
-  reinicia sozinha assim que estiver recolhida. Durante um jogo em tela cheia ela espera o jogo
-  fechar. O número da versão aparece no rodapé do painel.
-- A janela é transparente, sem borda nem sombra; só a ilha aparece.
+- **Monitor do sistema**: CPU, GPU, RAM e temperatura. A temperatura usa o melhor sensor que o PC
+  oferece sem instalar driver (placa-mãe, placa de vídeo ou disco; o rótulo diz qual).
+- **Modo jogo**: com um jogo em tela cheia, uma pílula ao lado da ilha mostra FPS, CPU, GPU e RAM.
+  Navegadores e players de vídeo em tela cheia não contam como jogo.
+- **Iniciar com o Windows** (opcional) e **atualização automática**.
 
-## Consumo
+<p align="center">
+  <img src="docs/images/modo-jogo.png" alt="Modo jogo: a pílula com FPS, CPU e GPU ao lado da ilha" width="480">
+  <br>
+  <img src="docs/images/alarme-tocando.png" alt="Aviso do alarme tocando, com os botões Soneca e Parar" width="400">
+</p>
 
-A ilha foi feita para não pesar no PC nem roubar desempenho dos jogos:
+## Instalação
 
-- **Parada, ela dorme.** Só é redesenhada quando algo na tela muda (um número, a música, o relógio):
-  cerca de 1 vez por segundo. O mouse é vigiado por uma thread minúscula, que acorda a ilha quando
-  ele chega perto.
-- **Com som tocando**, as barrinhas animam a 30 quadros por segundo. As animações de abrir e fechar
-  e o painel aberto usam a taxa do monitor, para ficarem lisas.
-- **No modo jogo ela fica quieta**: não dança com o som e só atualiza os números, 1 vez por segundo.
-- **Só lê o que está na tela**: o volume de cada app e a temperatura só são consultados com o painel
-  aberto; o uso da GPU, só quando ele aparece.
-- **Memória**: 30 segundos depois do último uso, a ilha devolve ao Windows a memória que ficou parada.
+Não precisa instalar nada além do próprio programa.
 
-Para medir no seu PC, abra a ilha pelo terminal com a variável `ISLANDBAR_DEBUG_PERF=1` e o stderr
-indo para um arquivo (`islandbar.exe 2> perf.txt`): a cada 5 segundos ela anota quadros por segundo,
-uso de CPU e memória.
+1. Baixe o **[islandbar.exe](https://github.com/Igorms27/Islandbar/releases/latest/download/islandbar.exe)**
+   da versão mais recente.
+2. Coloque o arquivo numa pasta sua (ex.: `Documentos\Islandbar`) e abra.
+3. Na primeira vez, um cartão pergunta se a ilha deve abrir junto com o Windows.
+
+> [!NOTE]
+> O Windows pode mostrar o aviso "O Windows protegeu o computador" (SmartScreen), porque o
+> executável não tem uma assinatura digital paga. Clique em **Mais informações → Executar assim mesmo**.
+
+**Atualizações:** a ilha confere a cada 2 minutos se saiu uma versão nova. Se saiu, ela baixa, troca o
+executável e reinicia sozinha quando estiver recolhida. Durante um jogo, ou com um alarme marcado, ela
+espera. A versão atual aparece no rodapé do painel. As notas de cada versão estão em
+[Releases](https://github.com/Igorms27/Islandbar/releases).
 
 ## Como usar
 
-### Opção 1: Baixar e rodar (Recomendado)
+| Para… | Faça |
+| --- | --- |
+| Abrir o painel | Clique na ilha. Ele fecha sozinho quando o mouse sai. |
+| Mudar de página (Som ↔ Alarme) | Arraste o painel para o lado, use a rodinha lateral ou clique nas bolinhas do rodapé. |
+| Trocar fone / TV / microfone | Página Som: clique no botão do dispositivo. |
+| Marcar um alarme | Página Alarme: setinhas, atalhos (+5 min, +15 min…) ou clique no número e digite. **Enter** inicia. |
+| Tirar a ilha da frente | Com o mouse em cima dela, aperte **Ctrl**. Ela some e os cliques passam para o que está atrás (dá para soltar o Ctrl e clicar normalmente). Volta quando o mouse sai. |
+| Medir o FPS nos jogos | Na primeira vez, clique em **Ativar** no painel. O Windows pede confirmação de administrador uma vez, e passa a valer depois de sair e entrar na conta. |
+| Fechar a ilha | Abra o painel e clique em **Sair** (isso cancela um alarme marcado). |
+| Ligar/desligar o início com o Windows | Abra o `islandbar.exe` de novo: o cartão aparece outra vez. |
 
-Você **não precisa instalar o Rust** nem ferramentas de desenvolvimento para usar:
+## Leve de verdade
 
-1. Baixe o executável pronto mais recente:
-   👉 **[Download islandbar.exe](https://github.com/Igorms27/Islandbar/releases/latest/download/islandbar.exe)**
-2. Basta abrir o arquivo `islandbar.exe`.
-3. Na primeira inicialização, um cartão perguntará se deseja iniciar a ilha automaticamente com o Windows.
+A ilha foi feita para não pesar no PC nem roubar desempenho dos jogos.
 
-> **Atualizações automáticas:** cada atualização publicada na branch `main` é baixada e aplicada automaticamente pela própria ilha, sem necessidade de reinstalar.
+- **Parada, ela dorme**: só é redesenhada quando algo na tela muda, cerca de 1 vez por segundo,
+  com uso de CPU perto de zero.
+- **Com som tocando**, as barrinhas animam a 30 quadros por segundo. Abrir, fechar e o painel aberto
+  usam a taxa do monitor, para ficarem lisos.
+- **No modo jogo ela fica quieta**: não dança com o som e só atualiza os números, 1 vez por segundo.
+- **Só lê o que está na tela**: o volume de cada app, a temperatura e a lista de dispositivos só são
+  consultados com o painel aberto.
+- **Memória**: 30 segundos depois do último uso, ela devolve ao Windows a memória que ficou parada.
 
-Para fechar: abra a ilha com um clique e selecione **Sair** no canto inferior direito.
+Para medir no seu PC, abra pelo terminal com `ISLANDBAR_DEBUG_PERF=1` e o stderr indo para um arquivo
+(`islandbar.exe 2> perf.txt`). A cada 5 segundos ela anota quadros por segundo, uso de CPU e memória.
 
----
+## Solução de problemas
 
-### Opção 2: Compilando do código-fonte (para desenvolvedores)
+<details>
+<summary><b>A ilha some atrás de um jogo em tela cheia</b></summary>
 
-Se você quiser modificar o código ou compilar por conta própria:
+A ilha volta para a frente sozinha mesmo quando o jogo se marca como "sempre no topo". Duas exceções:
 
-1. Instale o Rust: <https://rustup.rs>
-2. No terminal, dentro da pasta do projeto:
+- **Tela cheia exclusiva**: nesse modo o Windows não mostra nenhuma outra janela. Use o modo
+  "janela sem bordas" (borderless) nas opções de vídeo do jogo.
+- **Jogos Vulkan/OpenGL em placa NVIDIA** (ex.: Savage Wind Recomp): mesmo sem bordas, o driver pode
+  mandar a imagem direto para o monitor. Para resolver, vá no Painel de Controle NVIDIA →
+  **Gerenciar as configurações 3D** → **Configurações de programa**, adicione o `.exe` do jogo e mude
+  **Método de apresentação Vulkan/OpenGL** para **Preferir em camadas na cadeia de troca DXGI**
+  (em inglês, *Prefer layered on DXGI Swapchain*).
+
+</details>
+
+<details>
+<summary><b>O FPS não aparece no modo jogo</b></summary>
+
+Falta a permissão do Windows para medir o FPS de outros programas (a mesma que a Xbox Game Bar usa).
+Abra o painel, clique em **Ativar**, confirme e depois saia e entre de novo na sua conta do Windows.
+
+</details>
+
+<details>
+<summary><b>A temperatura aparece "n/d"</b></summary>
+
+O PC não expõe nenhum sensor que dê para ler sem instalar um driver. Não é um defeito da ilha.
+
+</details>
+
+<details>
+<summary><b>Troquei a saída de som, mas um programa continuou no dispositivo antigo</b></summary>
+
+A maioria dos programas segue a troca na hora. Alguns, principalmente jogos mais antigos, só passam a
+usar o novo dispositivo depois de reabertos. O mesmo acontece quando a troca é feita pelo Windows.
+
+</details>
+
+Encontrou outro problema? [Abra uma issue](https://github.com/Igorms27/Islandbar/issues/new/choose)
+com a versão (rodapé do painel) e os passos para ele acontecer.
+
+## Para desenvolvedores
+
+Feito em Rust com [egui/eframe](https://github.com/emilk/egui) e o crate
+[windows](https://github.com/microsoft/windows-rs).
 
 ```bash
 cargo run --release
 ```
 
-O executável final fica em `target\release\islandbar.exe`.
-
-## Estrutura do código
+O executável fica em `target\release\islandbar.exe`. Fora do Windows, o programa compila com dados de
+mentira (`src/backend/mock.rs`), útil para mexer na interface.
 
 | Arquivo | O que tem |
 | --- | --- |
 | `src/main.rs` | Cria a janela transparente, sem borda, sempre no topo. |
-| `src/app.rs` | A ilha: estados (pílula / aviso / painel), animações e desenho. |
+| `src/app.rs` | A ilha: estados (pílula, aviso, painel, alarme), animações e desenho. |
 | `src/anim.rs` | A "mola" que dá o efeito elástico. |
-| `src/backend/windows.rs` | Conversa com o Windows: WASAPI (volume) e controle de mídia. |
-| `src/backend/mock.rs` | Dados de mentira para testar a interface fora do Windows. |
+| `src/alarm.rs` | Alarme: contagem e o bip de despertador. |
+| `src/platform.rs` | Mouse, teclado, janela sem moldura, memória e início com o Windows. |
+| `src/updater.rs` | Atualização automática. |
+| `src/perf.rs` | Medidor interno de quadros, CPU e memória (diagnóstico). |
+| `src/backend/windows.rs` | Volume, dispositivos de som e controle de mídia do Windows. |
 | `src/backend/sysmon.rs` | CPU, GPU, RAM e temperatura. |
 | `src/backend/game.rs` | Modo jogo: detecta um jogo em tela cheia. |
 | `src/backend/fps.rs` | Mede o FPS de outros programas. |
+| `src/backend/mock.rs` | Dados de mentira para testar fora do Windows. |
 | `examples/fake_game.rs` | "Jogo falso" usado pelo teste visual. |
-| `src/updater.rs` | Atualização automática. |
-| `src/alarm.rs` | Alarme: contagem e o bip de despertador. |
-| `src/perf.rs` | Medidor interno de quadros por segundo, CPU e memória (só para diagnóstico). |
-| `scripts/smoke.ps1` | Teste visual: o GitHub abre a ilha num Windows real e guarda screenshots na branch `ci-results`. |
-| `src/platform.rs` | Mouse, janela sem moldura, memória e inicialização com o Windows. |
+| `scripts/smoke.ps1` | Teste visual: abre a ilha num Windows real do GitHub e tira screenshots. |
 
-Feito com [egui/eframe](https://github.com/emilk/egui) e o crate
-[windows](https://github.com/microsoft/windows-rs).
+Como testar, o fluxo de versões e as regras do código estão em [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Licença
+
+Distribuído sob a licença **GNU GPL v3.0 ou posterior**: você pode usar, estudar, modificar e
+redistribuir, desde que as versões modificadas que você distribuir também sejam GPL e com o código
+aberto. Veja [LICENSE](LICENSE).

@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use eframe::egui::{
-    self, ecolor::Hsva, epaint::Shadow, pos2, vec2, Align2, Color32, FontId, Painter, Pos2, Rect,
-    Sense, Shape, Stroke, StrokeKind, Ui, Vec2,
+    self, ecolor::Hsva, epaint::Shadow, pos2, vec2, Align2, Color32, FontId, Painter, Pos2, Rect, Sense, Shape, Stroke,
+    StrokeKind, Ui, Vec2,
 };
 
 use crate::alarm::{self, Alarm};
@@ -326,12 +326,7 @@ impl IslandApp {
         self.app_peaks.retain(|name, _| snap.sessions.iter().any(|s| &s.name == name));
 
         let sys = &snap.system;
-        let targets = [
-            sys.cpu,
-            sys.gpu.unwrap_or(0.0),
-            sys.ram(),
-            sys.temp.map_or(0.0, |t| temp_fraction(t.celsius)),
-        ];
+        let targets = [sys.cpu, sys.gpu.unwrap_or(0.0), sys.ram(), sys.temp.map_or(0.0, |t| temp_fraction(t.celsius))];
         for (gauge, target) in self.gauges.iter_mut().zip(targets) {
             *gauge += (target - *gauge) * (1.0 - (-5.0 * dt).exp());
         }
@@ -458,10 +453,8 @@ impl eframe::App for IslandApp {
 
         // Diagnóstico (ISLANDBAR_DEBUG_UI=1): registra quando o estado do mouse muda.
         if self.debug_ui {
-            let state = format!(
-                "mode={:?} hovered={hovered} down={pointer_down} pointer_known={pointer_known}",
-                self.mode
-            );
+            let state =
+                format!("mode={:?} hovered={hovered} down={pointer_down} pointer_known={pointer_known}", self.mode);
             if state != self.debug_last {
                 crate::perf::line(format!("ui: {state}"));
                 self.debug_last = state;
@@ -550,8 +543,7 @@ impl eframe::App for IslandApp {
         // Brilho colorido que pulsa com o som.
         let glow = (0.10 + self.master_peak * 0.9 + self.hover.value * 0.15).min(1.0);
         painter.add(
-            Shadow { offset: [0, 0], blur: 26, spread: 1, color: fade(accent, glow * 0.55) }
-                .as_shape(island, radius),
+            Shadow { offset: [0, 0], blur: 26, spread: 1, color: fade(accent, glow * 0.55) }.as_shape(island, radius),
         );
         painter.add(
             Shadow { offset: [0, 6], blur: 18, spread: 0, color: Color32::from_black_alpha(110) }
@@ -595,8 +587,17 @@ impl eframe::App for IslandApp {
 
         // --- Quando redesenhar ---
         let springs = [
-            &self.width, &self.height, &self.open, &self.hud, &self.hover, &self.welcome, &self.game, &self.game_width,
-            &self.ring, &self.page, &self.ghost_fade,
+            &self.width,
+            &self.height,
+            &self.open,
+            &self.hud,
+            &self.hover,
+            &self.welcome,
+            &self.game,
+            &self.game_width,
+            &self.ring,
+            &self.page,
+            &self.ghost_fade,
         ];
         let animating = springs.iter().any(|s| !s.settled());
         // O cartão do alarme tocando não precisa da taxa do monitor (veja abaixo).
@@ -667,13 +668,8 @@ impl IslandApp {
         draw_bars(p, pos2(left, cy), &self.bars, 16.0, fade(accent, alpha));
 
         let clock = chrono::Local::now().format("%H:%M").to_string();
-        let mut clock_rect = p.text(
-            pos2(right, cy),
-            Align2::RIGHT_CENTER,
-            clock,
-            FontId::proportional(13.5),
-            fade(TEXT, alpha),
-        );
+        let mut clock_rect =
+            p.text(pos2(right, cy), Align2::RIGHT_CENTER, clock, FontId::proportional(13.5), fade(TEXT, alpha));
         // Alarme marcado: sininho e quanto falta, antes do relógio. (O resto
         // da pílula se ajeita no espaço que sobra à esquerda dele.)
         if let Some(left_time) = self.alarm.remaining(Instant::now()) {
@@ -694,7 +690,15 @@ impl IslandApp {
                 Some(build) => format!("Atualizado: versão {build}"),
                 None => "Atualizado".to_string(),
             };
-            text_fit(p, pos2(x, cy), Align2::LEFT_CENTER, &notice, 12.5, fade(accent, alpha), clock_rect.left() - 10.0 - x);
+            text_fit(
+                p,
+                pos2(x, cy),
+                Align2::LEFT_CENTER,
+                &notice,
+                12.5,
+                fade(accent, alpha),
+                clock_rect.left() - 10.0 - x,
+            );
         } else if let Some(media) = &snap.media {
             let x = left + 32.0;
             let max_width = clock_rect.left() - 10.0 - x;
@@ -703,21 +707,34 @@ impl IslandApp {
         } else if let Some(game) = &snap.game {
             // Jogando sem música: o nome do jogo (os números estão na pílula ao lado).
             let x = left + 32.0;
-            text_fit(p, pos2(x, cy), Align2::LEFT_CENTER, &game.name, 12.5, fade(TEXT_DIM, alpha), clock_rect.left() - 10.0 - x);
+            text_fit(
+                p,
+                pos2(x, cy),
+                Align2::LEFT_CENTER,
+                &game.name,
+                12.5,
+                fade(TEXT_DIM, alpha),
+                clock_rect.left() - 10.0 - x,
+            );
         } else {
             // Sem música: mostra o uso do PC.
             let sys = &snap.system;
             let usage = match sys.gpu {
-                Some(gpu) => format!(
-                    "CPU {:.0}%  GPU {:.0}%  RAM {:.0}%",
-                    sys.cpu * 100.0,
-                    gpu * 100.0,
-                    sys.ram() * 100.0
-                ),
+                Some(gpu) => {
+                    format!("CPU {:.0}%  GPU {:.0}%  RAM {:.0}%", sys.cpu * 100.0, gpu * 100.0, sys.ram() * 100.0)
+                }
                 None => format!("CPU {:.0}%  RAM {:.0}%", sys.cpu * 100.0, sys.ram() * 100.0),
             };
             let x = left + 32.0;
-            text_fit(p, pos2(x, cy), Align2::LEFT_CENTER, &usage, 12.0, fade(TEXT_DIM, alpha), clock_rect.left() - 10.0 - x);
+            text_fit(
+                p,
+                pos2(x, cy),
+                Align2::LEFT_CENTER,
+                &usage,
+                12.0,
+                fade(TEXT_DIM, alpha),
+                clock_rect.left() - 10.0 - x,
+            );
         }
     }
 
@@ -727,10 +744,7 @@ impl IslandApp {
         let level = if snap.master_muted { 0.0 } else { snap.master };
         draw_speaker(p, pos2(island.left() + 26.0, cy), 9.0, level, snap.master_muted, fade(TEXT, alpha));
 
-        let track = Rect::from_min_max(
-            pos2(island.left() + 50.0, cy - 3.5),
-            pos2(island.right() - 56.0, cy + 3.5),
-        );
+        let track = Rect::from_min_max(pos2(island.left() + 50.0, cy - 3.5), pos2(island.right() - 56.0, cy + 3.5));
         p.rect_filled(track, 4.0, fade(Color32::WHITE, alpha * 0.14));
         if level > 0.0 {
             let fill = Rect::from_min_size(track.min, vec2((track.width() * level).max(7.0), track.height()));
@@ -777,12 +791,28 @@ impl IslandApp {
         match &snap.media {
             Some(media) => {
                 let artist = if media.artist.is_empty() { "Tocando agora" } else { &media.artist };
-                text_fit(p, pos2(text_x, cy - 10.0), Align2::LEFT_CENTER, &media.title, 15.0, fade(TEXT, a), text_width);
+                text_fit(
+                    p,
+                    pos2(text_x, cy - 10.0),
+                    Align2::LEFT_CENTER,
+                    &media.title,
+                    15.0,
+                    fade(TEXT, a),
+                    text_width,
+                );
                 text_fit(p, pos2(text_x, cy + 10.0), Align2::LEFT_CENTER, artist, 12.5, fade(TEXT_DIM, a), text_width);
             }
             None => {
                 let date = chrono::Local::now().format("%d/%m/%Y").to_string();
-                text_fit(p, pos2(text_x, cy - 10.0), Align2::LEFT_CENTER, "Nada tocando", 15.0, fade(TEXT, a), text_width);
+                text_fit(
+                    p,
+                    pos2(text_x, cy - 10.0),
+                    Align2::LEFT_CENTER,
+                    "Nada tocando",
+                    15.0,
+                    fade(TEXT, a),
+                    text_width,
+                );
                 text_fit(p, pos2(text_x, cy + 10.0), Align2::LEFT_CENTER, &date, 12.5, fade(TEXT_DIM, a), text_width);
             }
         }
@@ -797,7 +827,8 @@ impl IslandApp {
         ];
         for (i, (icon, cmd)) in icons.into_iter().enumerate() {
             let center = pos2(buttons_left + 18.0 + i as f32 * 36.0, cy);
-            let (clicked, scale) = icon_button(ui, p, ("media", i), center, 16.0, interactive && has_media, media_alpha);
+            let (clicked, scale) =
+                icon_button(ui, p, ("media", i), center, 16.0, interactive && has_media, media_alpha);
             draw_media_icon(p, center, 7.5 * scale, icon, fade(TEXT, media_alpha));
             if clicked {
                 self.backend.send(cmd);
@@ -805,16 +836,16 @@ impl IslandApp {
         }
 
         let line_y = island.top() + PADDING + HEADER_HEIGHT + 7.0;
-        p.line_segment(
-            [pos2(left, line_y), pos2(right, line_y)],
-            Stroke::new(1.0, fade(Color32::WHITE, a * 0.08)),
-        );
+        p.line_segment([pos2(left, line_y), pos2(right, line_y)], Stroke::new(1.0, fade(Color32::WHITE, a * 0.08)));
 
         // ---- Meio do painel: páginas que deslizam (Som | Alarme) ----
         let page_top = line_y + 7.0;
         let middle_bottom = page_top + self.middle_height(snap);
-        let clip = Rect::from_min_max(pos2(island.left() + 1.0, line_y + 1.0), pos2(island.right() - 1.0, middle_bottom + 4.0))
-            .intersect(p.clip_rect());
+        let clip = Rect::from_min_max(
+            pos2(island.left() + 1.0, line_y + 1.0),
+            pos2(island.right() - 1.0, middle_bottom + 4.0),
+        )
+        .intersect(p.clip_rect());
         if interactive {
             self.swipe_pages(ui, clip, island.width());
         }
@@ -832,7 +863,8 @@ impl IslandApp {
 
             // ---- Saída de som e microfone ----
             if self.pending_device.as_ref().is_some_and(|(id, at)| {
-                at.elapsed() > DEVICE_PENDING || snap.outputs.iter().chain(&snap.inputs).any(|d| d.default && d.id == *id)
+                at.elapsed() > DEVICE_PENDING
+                    || snap.outputs.iter().chain(&snap.inputs).any(|d| d.default && d.id == *id)
             }) {
                 self.pending_device = None;
             }
@@ -845,7 +877,11 @@ impl IslandApp {
                 }
                 let names = short_names(shown);
                 // O destaque vai para o clicado assim que ele for clicado.
-                let pending = self.pending_device.as_ref().map(|(id, _)| id.clone()).filter(|id| shown.iter().any(|d| d.id == *id));
+                let pending = self
+                    .pending_device
+                    .as_ref()
+                    .map(|(id, _)| id.clone())
+                    .filter(|id| shown.iter().any(|d| d.id == *id));
                 let gap = 6.0;
                 let chips_left = left + 38.0;
                 let chip_width = (right - chips_left - gap * (columns - 1) as f32) / columns as f32;
@@ -866,7 +902,8 @@ impl IslandApp {
                         let x = chips_left + column as f32 * (chip_width + gap);
                         let chip = Rect::from_min_size(pos2(x, cy - 12.0), vec2(chip_width, 24.0));
                         let current = pending.as_ref().map_or(device.default, |id| *id == device.id);
-                        let clicked = self.draw_device_chip(ui, p, chip, device, &names[index], current, accent, a, interactive);
+                        let clicked =
+                            self.draw_device_chip(ui, p, chip, device, &names[index], current, accent, a, interactive);
                         if clicked && !current {
                             self.backend.send(Command::SetDevice(device.id.clone()));
                             self.pending_device = Some((device.id.clone(), Instant::now()));
@@ -876,13 +913,8 @@ impl IslandApp {
             }
 
             // ---- Mixer ----
-            let mut rows: Vec<(String, String, f32, bool, f32)> = vec![(
-                MASTER_KEY.to_string(),
-                "Geral".to_string(),
-                snap.master,
-                snap.master_muted,
-                self.master_peak,
-            )];
+            let mut rows: Vec<(String, String, f32, bool, f32)> =
+                vec![(MASTER_KEY.to_string(), "Geral".to_string(), snap.master, snap.master_muted, self.master_peak)];
             for s in snap.sessions.iter().take(apps_shown(snap)) {
                 let peak = self.app_peaks.get(&s.name).copied().unwrap_or(0.0);
                 rows.push((s.name.clone(), s.name.clone(), s.volume, s.muted, peak));
@@ -892,7 +924,8 @@ impl IslandApp {
             for (key, label, volume, muted, peak) in rows {
                 let a = next_alpha(open);
                 let is_master = key == MASTER_KEY;
-                let rect = Rect::from_min_max(pos2(left, y), pos2(right, y + ROW_HEIGHT)).translate(vec2(0.0, (1.0 - a) * 12.0));
+                let rect = Rect::from_min_max(pos2(left, y), pos2(right, y + ROW_HEIGHT))
+                    .translate(vec2(0.0, (1.0 - a) * 12.0));
                 y += ROW_HEIGHT;
                 let cy = rect.center().y;
                 let color = if is_master { accent } else { name_color(&label) };
@@ -1003,11 +1036,8 @@ impl IslandApp {
         }
 
         let quit = Rect::from_min_max(pos2(right - 40.0, footer_y - 11.0), pos2(right, footer_y + 11.0));
-        let quit_resp = if interactive {
-            Some(ui.interact(quit, ui.scope_id().with("quit"), Sense::click()))
-        } else {
-            None
-        };
+        let quit_resp =
+            if interactive { Some(ui.interact(quit, ui.scope_id().with("quit"), Sense::click())) } else { None };
         let quit_hover = quit_resp.as_ref().is_some_and(|r| r.hovered());
         let quit_color = if quit_hover { Color32::from_rgb(255, 105, 97) } else { TEXT_DIM };
         p.text(pos2(right, footer_y), Align2::RIGHT_CENTER, "Sair", FontId::proportional(12.0), fade(quit_color, a));
@@ -1068,14 +1098,36 @@ impl IslandApp {
 
     /// Página do alarme: escolher o tempo, ou ver quanto falta.
     #[allow(clippy::too_many_arguments)]
-    fn draw_alarm_page(&mut self, ui: &mut Ui, p: &Painter, left: f32, right: f32, top: f32, accent: Color32, a: f32, interactive: bool) {
+    fn draw_alarm_page(
+        &mut self,
+        ui: &mut Ui,
+        p: &Painter,
+        left: f32,
+        right: f32,
+        top: f32,
+        accent: Color32,
+        a: f32,
+        interactive: bool,
+    ) {
         let cx = (left + right) / 2.0;
         let now = Instant::now();
         if let Some(left_time) = self.alarm.remaining(now) {
             // ---- Contando ----
-            p.text(pos2(cx, top + 52.0), Align2::CENTER_CENTER, alarm::countdown(left_time), FontId::proportional(38.0), fade(TEXT, a));
+            p.text(
+                pos2(cx, top + 52.0),
+                Align2::CENTER_CENTER,
+                alarm::countdown(left_time),
+                FontId::proportional(38.0),
+                fade(TEXT, a),
+            );
             let at = self.alarm.due_clock().unwrap_or_default();
-            p.text(pos2(cx, top + 92.0), Align2::CENTER_CENTER, format!("Toca às {at}"), FontId::proportional(13.0), fade(TEXT_DIM, a));
+            p.text(
+                pos2(cx, top + 92.0),
+                Align2::CENTER_CENTER,
+                format!("Toca às {at}"),
+                FontId::proportional(13.0),
+                fade(TEXT_DIM, a),
+            );
             let row = top + 138.0;
             let more = Rect::from_center_size(pos2(cx - 62.0, row), vec2(112.0, 30.0));
             let cancel = Rect::from_center_size(pos2(cx + 62.0, row), vec2(112.0, 30.0));
@@ -1098,7 +1150,9 @@ impl IslandApp {
         // Apertou o mouse fora dos números: o que foi digitado vale.
         let pressed_outside = ui.input(|i| {
             i.pointer.any_pressed()
-                && i.pointer.interact_pos().is_none_or(|pos| !digit_rect(0).contains(pos) && !digit_rect(1).contains(pos))
+                && i.pointer
+                    .interact_pos()
+                    .is_none_or(|pos| !digit_rect(0).contains(pos) && !digit_rect(1).contains(pos))
         });
         if self.editing.is_some() && pressed_outside {
             self.end_editing(true);
@@ -1141,16 +1195,27 @@ impl IslandApp {
                 p.rect_filled(rect, 12.0, fade(accent, a * 0.12));
                 p.rect_stroke(rect, 12.0, Stroke::new(1.5, fade(accent, a * 0.8)), StrokeKind::Inside);
             }
-            let shown = p.text(pos2(x, digits_y), Align2::CENTER_CENTER, text, FontId::proportional(36.0), fade(color, a));
+            let shown =
+                p.text(pos2(x, digits_y), Align2::CENTER_CENTER, text, FontId::proportional(36.0), fade(color, a));
             // Cursor piscando enquanto digita.
             if typing.is_some() && (time * 2.0) as i64 % 2 == 0 {
                 let caret_x = shown.right() + 2.0;
-                p.line_segment([pos2(caret_x, digits_y - 14.0), pos2(caret_x, digits_y + 14.0)], Stroke::new(2.0, fade(accent, a)));
+                p.line_segment(
+                    [pos2(caret_x, digits_y - 14.0), pos2(caret_x, digits_y + 14.0)],
+                    Stroke::new(2.0, fade(accent, a)),
+                );
             }
-            p.text(pos2(x + 26.0, digits_y + 6.0), Align2::LEFT_CENTER, unit, FontId::proportional(13.0), fade(TEXT_DIM, a));
+            p.text(
+                pos2(x + 26.0, digits_y + 6.0),
+                Align2::LEFT_CENTER,
+                unit,
+                FontId::proportional(13.0),
+                fade(TEXT_DIM, a),
+            );
             for (row, direction) in [(-1.0f32, 1), (1.0, -1)] {
                 let center = pos2(x, digits_y + row * 34.0);
-                let (clicked, scale) = icon_button(ui, p, ("alarm-step", column, direction), center, 13.0, interactive, a);
+                let (clicked, scale) =
+                    icon_button(ui, p, ("alarm-step", column, direction), center, 13.0, interactive, a);
                 draw_chevron(p, center, 5.5 * scale, row < 0.0, fade(TEXT_DIM, a));
                 if clicked {
                     self.end_editing(true);
@@ -1158,7 +1223,13 @@ impl IslandApp {
                 }
             }
         }
-        p.text(pos2(cx - 5.0, digits_y - 2.0), Align2::CENTER_CENTER, ":", FontId::proportional(30.0), fade(TEXT_DIM, a));
+        p.text(
+            pos2(cx - 5.0, digits_y - 2.0),
+            Align2::CENTER_CENTER,
+            ":",
+            FontId::proportional(30.0),
+            fade(TEXT_DIM, a),
+        );
 
         // Atalhos: somam ao tempo escolhido.
         let presets = [("+5 min", 5), ("+15 min", 15), ("+30 min", 30), ("+1 h", 60)];
@@ -1265,7 +1336,13 @@ impl IslandApp {
             Some(at) => format!("Marcado para {at}"),
             None => "Deu a hora".to_string(),
         };
-        p.text(pos2(text_x, cy + 10.0), Align2::LEFT_CENTER, subtitle, FontId::proportional(12.0), fade(TEXT_DIM, alpha));
+        p.text(
+            pos2(text_x, cy + 10.0),
+            Align2::LEFT_CENTER,
+            subtitle,
+            FontId::proportional(12.0),
+            fade(TEXT_DIM, alpha),
+        );
 
         let stop = Rect::from_min_max(pos2(right - 76.0, cy - 15.0), pos2(right, cy + 15.0));
         let snooze = Rect::from_min_max(pos2(stop.left() - 8.0 - 92.0, cy - 15.0), pos2(stop.left() - 8.0, cy + 15.0));
@@ -1362,8 +1439,9 @@ impl IslandApp {
                 (label, value, space)
             })
             .collect();
-        let content_width: f32 = galleys.iter().map(|(label, _, space)| label.size().x + inner_gap + space).sum::<f32>()
-            + part_gap * (galleys.len() as f32 - 1.0);
+        let content_width: f32 =
+            galleys.iter().map(|(label, _, space)| label.size().x + inner_gap + space).sum::<f32>()
+                + part_gap * (galleys.len() as f32 - 1.0);
         self.game_width.target = ((content_width + 2.0 * padding) / 8.0).ceil() * 8.0;
         self.game_width.update(dt);
 
@@ -1375,8 +1453,13 @@ impl IslandApp {
         let alpha = smoothstep((grow - 0.55) / 0.45);
 
         painter.add(
-            Shadow { offset: [0, 4], blur: 14, spread: 0, color: Color32::from_black_alpha((90.0 * grow.min(1.0)) as u8) }
-                .as_shape(rect, radius),
+            Shadow {
+                offset: [0, 4],
+                blur: 14,
+                spread: 0,
+                color: Color32::from_black_alpha((90.0 * grow.min(1.0)) as u8),
+            }
+            .as_shape(rect, radius),
         );
         painter.rect_filled(rect, radius, ISLAND);
         painter.rect_stroke(rect, radius, Stroke::new(1.0, fade(accent, 0.18)), StrokeKind::Inside);
@@ -1396,7 +1479,16 @@ impl IslandApp {
 
     /// Linha do painel para liberar a medição de FPS.
     #[allow(clippy::too_many_arguments)]
-    fn draw_fps_row(&mut self, ui: &mut Ui, p: &Painter, row: Rect, access: FpsAccess, accent: Color32, a: f32, interactive: bool) {
+    fn draw_fps_row(
+        &mut self,
+        ui: &mut Ui,
+        p: &Painter,
+        row: Rect,
+        access: FpsAccess,
+        accent: Color32,
+        a: f32,
+        interactive: bool,
+    ) {
         let cy = row.center().y + (1.0 - a) * 12.0;
         if access == FpsAccess::Requested {
             let text = "Permissão pedida. Saia e entre no Windows para o FPS aparecer.";
@@ -1406,7 +1498,15 @@ impl IslandApp {
 
         let button = Rect::from_center_size(pos2(row.right() - 36.0, cy), vec2(72.0, 24.0));
         let text = "Mostrar FPS nos jogos exige uma permissão do Windows";
-        text_fit(p, pos2(row.left(), cy), Align2::LEFT_CENTER, text, 12.0, fade(TEXT_DIM, a), button.left() - 10.0 - row.left());
+        text_fit(
+            p,
+            pos2(row.left(), cy),
+            Align2::LEFT_CENTER,
+            text,
+            12.0,
+            fade(TEXT_DIM, a),
+            button.left() - 10.0 - row.left(),
+        );
 
         let id = ui.scope_id().with("enable-fps");
         let mut hover = false;
@@ -1453,9 +1553,23 @@ impl IslandApp {
             draw_ring(p, center, 12.5, level, fade(level_color(level), alpha), fade(Color32::WHITE, alpha * 0.12));
 
             let x = rect.left() + 46.0;
-            p.text(pos2(x, rect.center().y - 8.0), Align2::LEFT_CENTER, label, FontId::proportional(11.0), fade(TEXT_DIM, alpha));
+            p.text(
+                pos2(x, rect.center().y - 8.0),
+                Align2::LEFT_CENTER,
+                label,
+                FontId::proportional(11.0),
+                fade(TEXT_DIM, alpha),
+            );
             let value_color = if available { TEXT } else { TEXT_DIM };
-            text_fit(p, pos2(x, rect.center().y + 8.0), Align2::LEFT_CENTER, &value, 12.5, fade(value_color, alpha), rect.right() - 6.0 - x);
+            text_fit(
+                p,
+                pos2(x, rect.center().y + 8.0),
+                Align2::LEFT_CENTER,
+                &value,
+                12.5,
+                fade(value_color, alpha),
+                rect.right() - 6.0 - x,
+            );
         }
     }
 
@@ -1503,7 +1617,10 @@ impl IslandApp {
         p.circle_filled(knob, 9.0, fade(Color32::WHITE, a));
 
         // Botão "Iniciar".
-        let button = Rect::from_min_max(pos2(right - 104.0, island.bottom() - PADDING - 32.0), pos2(right, island.bottom() - PADDING));
+        let button = Rect::from_min_max(
+            pos2(right - 104.0, island.bottom() - PADDING - 32.0),
+            pos2(right, island.bottom() - PADDING),
+        );
         let button_id = ui.scope_id().with("start");
         let mut hover = false;
         if interactive {
@@ -1631,10 +1748,7 @@ fn draw_ring(p: &Painter, center: Pos2, radius: f32, level: f32, color: Color32,
 fn draw_bars(p: &Painter, left_center: Pos2, bars: &[f32], max_height: f32, color: Color32) {
     for (i, level) in bars.iter().enumerate() {
         let height = 3.0 + level * (max_height - 3.0);
-        let rect = Rect::from_center_size(
-            pos2(left_center.x + 1.5 + i as f32 * 6.0, left_center.y),
-            vec2(3.0, height),
-        );
+        let rect = Rect::from_center_size(pos2(left_center.x + 1.5 + i as f32 * 6.0, left_center.y), vec2(3.0, height));
         p.rect_filled(rect, 1.5, color);
     }
 }
@@ -1649,11 +1763,7 @@ enum MediaIcon {
 
 fn draw_media_icon(p: &Painter, c: Pos2, r: f32, icon: MediaIcon, color: Color32) {
     let triangle = |tip_x: f32, base_x: f32| {
-        Shape::convex_polygon(
-            vec![pos2(base_x, c.y - r), pos2(tip_x, c.y), pos2(base_x, c.y + r)],
-            color,
-            Stroke::NONE,
-        )
+        Shape::convex_polygon(vec![pos2(base_x, c.y - r), pos2(tip_x, c.y), pos2(base_x, c.y + r)], color, Stroke::NONE)
     };
     match icon {
         MediaIcon::Play => {
@@ -1669,11 +1779,7 @@ fn draw_media_icon(p: &Painter, c: Pos2, r: f32, icon: MediaIcon, color: Color32
             let dir = if matches!(icon, MediaIcon::Next) { 1.0 } else { -1.0 };
             let r = r * 0.8;
             let tri = Shape::convex_polygon(
-                vec![
-                    pos2(c.x - dir * r, c.y - r),
-                    pos2(c.x + dir * r * 0.6, c.y),
-                    pos2(c.x - dir * r, c.y + r),
-                ],
+                vec![pos2(c.x - dir * r, c.y - r), pos2(c.x + dir * r * 0.6, c.y), pos2(c.x - dir * r, c.y + r)],
                 color,
                 Stroke::NONE,
             );
@@ -1709,7 +1815,15 @@ fn draw_speaker(p: &Painter, c: Pos2, r: f32, level: f32, muted: bool, color: Co
         p.line_segment([m + vec2(-d, d), m + vec2(d, -d)], stroke);
         return;
     }
-    let waves = if level > 0.66 { 3 } else if level > 0.33 { 2 } else if level > 0.0 { 1 } else { 0 };
+    let waves = if level > 0.66 {
+        3
+    } else if level > 0.33 {
+        2
+    } else if level > 0.0 {
+        1
+    } else {
+        0
+    };
     for i in 0..waves {
         let radius = r * (0.4 + 0.35 * i as f32);
         let points: Vec<Pos2> = (0..=10)

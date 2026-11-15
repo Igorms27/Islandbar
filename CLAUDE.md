@@ -41,6 +41,9 @@ O ambiente do Claude é Linux; a ilha é para Windows.
 
 - `cargo build` / `cargo clippy` no Linux compilam com o backend de mentira
   (`src/backend/mock.rs`), útil para checar erros de compilação.
+- O CI falha se `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`
+  ou `cargo test` não passarem. Antes de enviar: `cargo fmt` e conferir o clippy
+  também com `--target x86_64-pc-windows-gnu` (o alvo já está instalado aqui).
 - O teste de verdade roda no Windows do GitHub Actions (`.github/workflows/build.yml`
   e `scripts/smoke.ps1`): abre a ilha com OpenGL por software (Mesa), simula o
   mouse, abre um jogo falso (`examples/fake_game.rs`), tira screenshots e

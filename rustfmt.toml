@@ -1,0 +1,4 @@
+# Formatação padrão do projeto (cargo fmt). Linhas de até 120 colunas, como o
+# código já era escrito.
+max_width = 120
+use_small_heuristics = "Max"

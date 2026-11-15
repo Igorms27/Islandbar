@@ -155,7 +155,11 @@ impl Drop for Alarm {
 pub fn countdown(left: Duration) -> String {
     let seconds = left.as_secs() + u64::from(left.subsec_nanos() > 0);
     let (h, m, s) = (seconds / 3600, seconds / 60 % 60, seconds % 60);
-    if h > 0 { format!("{h}:{m:02}:{s:02}") } else { format!("{m}:{s:02}") }
+    if h > 0 {
+        format!("{h}:{m:02}:{s:02}")
+    } else {
+        format!("{m}:{s:02}")
+    }
 }
 
 /// Curto, para a pílula: "1h15", "25 min", "45 s".
@@ -165,7 +169,11 @@ pub fn short(left: Duration) -> String {
         return format!("{seconds} s");
     }
     let minutes = seconds.div_ceil(60);
-    if minutes < 60 { format!("{minutes} min") } else { format!("{}h{:02}", minutes / 60, minutes % 60) }
+    if minutes < 60 {
+        format!("{minutes} min")
+    } else {
+        format!("{}h{:02}", minutes / 60, minutes % 60)
+    }
 }
 
 /// Quanto a ilha pode dormir sem que o texto da pílula fique errado.

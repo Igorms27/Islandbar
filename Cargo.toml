@@ -2,7 +2,15 @@
 name = "islandbar"
 version = "0.1.0"
 edition = "2021"
-description = "Uma Dynamic Island para Windows: mixer de volume, mídia e mais."
+description = "Uma Dynamic Island para Windows: mixer de volume, mídia, alarme, monitor do sistema e modo jogo."
+authors = ["Igorms27"]
+license = "GPL-3.0-or-later"
+repository = "https://github.com/Igorms27/Islandbar"
+homepage = "https://github.com/Igorms27/Islandbar"
+readme = "README.md"
+keywords = ["windows", "dynamic-island", "egui", "volume-mixer", "overlay"]
+categories = ["gui"]
+publish = false
 
 [dependencies]
 eframe = { version = "0.37", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }

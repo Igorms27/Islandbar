@@ -122,9 +122,7 @@ mod sys {
     use windows::Win32::System::ProcessStatus::{
         K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX,
     };
-    use windows::Win32::System::Threading::{
-        GetCurrentProcess, GetCurrentThread, GetProcessTimes, GetThreadTimes,
-    };
+    use windows::Win32::System::Threading::{GetCurrentProcess, GetCurrentThread, GetProcessTimes, GetThreadTimes};
 
     fn ticks(time: FILETIME) -> u64 {
         ((time.dwHighDateTime as u64) << 32) | time.dwLowDateTime as u64

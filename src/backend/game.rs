@@ -19,13 +19,12 @@ use windows::Win32::Foundation::{CloseHandle, HWND, RECT};
 use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
 use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::System::Threading::{
-    GetCurrentProcessId, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
-    PROCESS_QUERY_LIMITED_INFORMATION,
+    GetCurrentProcessId, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows::Win32::UI::Shell::{SHQueryUserNotificationState, QUNS_RUNNING_D3D_FULL_SCREEN};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetClassNameW, GetForegroundWindow, GetWindowLongPtrW, GetWindowRect, GetWindowTextW,
-    GetWindowThreadProcessId, IsZoomed, GWL_STYLE, WS_CAPTION,
+    GetClassNameW, GetForegroundWindow, GetWindowLongPtrW, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId,
+    IsZoomed, GWL_STYLE, WS_CAPTION,
 };
 
 /// Uso de GPU a partir do qual um programa em tela cheia conta como jogo.
@@ -45,9 +44,28 @@ const TOLERANCE: i32 = 10;
 const SHELL_CLASSES: [&str; 4] = ["Progman", "WorkerW", "Shell_TrayWnd", "Windows.UI.Core.CoreWindow"];
 /// Programas que ficam em tela cheia desenhando, mas não são jogos.
 const NOT_GAMES: [&str; 22] = [
-    "chrome", "msedge", "firefox", "opera", "opera_gx", "brave", "vivaldi", "vlc", "mpv", "mpc-hc",
-    "mpc-hc64", "mpc-be", "mpc-be64", "potplayermini64", "wmplayer", "video.ui", "microsoft.media.player",
-    "kodi", "stremio", "obs64", "explorer", "powerpnt",
+    "chrome",
+    "msedge",
+    "firefox",
+    "opera",
+    "opera_gx",
+    "brave",
+    "vivaldi",
+    "vlc",
+    "mpv",
+    "mpc-hc",
+    "mpc-hc64",
+    "mpc-be",
+    "mpc-be64",
+    "potplayermini64",
+    "wmplayer",
+    "video.ui",
+    "microsoft.media.player",
+    "kodi",
+    "stremio",
+    "obs64",
+    "explorer",
+    "powerpnt",
 ];
 
 struct Fullscreen {
@@ -297,5 +315,9 @@ fn exe_stem(pid: u32) -> String {
 
 fn process_name(pid: u32) -> String {
     let stem = exe_stem(pid);
-    if stem.is_empty() { "Jogo".to_string() } else { stem }
+    if stem.is_empty() {
+        "Jogo".to_string()
+    } else {
+        stem
+    }
 }

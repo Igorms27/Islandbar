@@ -15,18 +15,14 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
         sessions: ["Spotify", "Chrome", "Discord", "Jogo"]
             .iter()
             .zip([0.8, 0.55, 0.7, 0.4])
-            .map(|(name, volume)| Session {
-                name: name.to_string(),
-                volume,
-                ..Default::default()
-            })
+            .map(|(name, volume)| Session { name: name.to_string(), volume, ..Default::default() })
             .collect(),
-        media: Some(Media {
-            title: "Faixa de demonstração".into(),
-            artist: "Islandbar".into(),
-            playing: true,
-        }),
-        outputs: fake_devices(&["Fones de ouvido (Realtek(R) Audio)", "TV LG (NVIDIA High Definition Audio)", "Alto-falantes (Realtek(R) Audio)"]),
+        media: Some(Media { title: "Faixa de demonstração".into(), artist: "Islandbar".into(), playing: true }),
+        outputs: fake_devices(&[
+            "Fones de ouvido (Realtek(R) Audio)",
+            "TV LG (NVIDIA High Definition Audio)",
+            "Alto-falantes (Realtek(R) Audio)",
+        ]),
         inputs: fake_devices(&["Microfone (Fone USB)", "Microfone (Webcam C920)"]),
         ..Default::default()
     };

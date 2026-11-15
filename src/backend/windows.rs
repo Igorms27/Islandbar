@@ -379,10 +379,8 @@ unsafe fn list_streams(device: &IMMDevice, names: &mut HashMap<u32, String>) -> 
             pids.push(pid);
             names.entry(pid).or_insert_with(|| process_name(pid)).clone()
         };
-        let (Ok(volume), Ok(meter)) = (
-            control.cast::<ISimpleAudioVolume>(),
-            control.cast::<IAudioMeterInformation>(),
-        ) else {
+        let (Ok(volume), Ok(meter)) = (control.cast::<ISimpleAudioVolume>(), control.cast::<IAudioMeterInformation>())
+        else {
             continue;
         };
         streams.push(Stream { name, volume, meter });
@@ -441,11 +439,8 @@ unsafe fn apply(cmd: Command, audio: Option<&Audio>, media: Option<&MediaManager
             }
         }
         Command::ToggleSessionMute(name) => {
-            let streams: Vec<&Stream> =
-                audio.iter().flat_map(|a| &a.streams).filter(|s| s.name == name).collect();
-            let all_muted = streams
-                .iter()
-                .all(|s| s.volume.GetMute().map(|b| b.as_bool()).unwrap_or(false));
+            let streams: Vec<&Stream> = audio.iter().flat_map(|a| &a.streams).filter(|s| s.name == name).collect();
+            let all_muted = streams.iter().all(|s| s.volume.GetMute().map(|b| b.as_bool()).unwrap_or(false));
             for s in streams {
                 let _ = s.volume.SetMute(!all_muted, no_ctx);
             }
@@ -521,20 +516,14 @@ fn fake_list(names: &[&str]) -> Vec<Device> {
 }
 
 fn current_session(manager: Option<&MediaManager>) -> Result<MediaSession> {
-    manager
-        .ok_or_else(windows::core::Error::empty)?
-        .GetCurrentSession()
+    manager.ok_or_else(windows::core::Error::empty)?.GetCurrentSession()
 }
 
 fn read_media(manager: &MediaManager) -> Result<Media> {
     let session = manager.GetCurrentSession()?;
     let props = session.TryGetMediaPropertiesAsync()?.join()?;
     let playing = session.GetPlaybackInfo()?.PlaybackStatus()? == PlaybackStatus::Playing;
-    Ok(Media {
-        title: props.Title()?.to_string(),
-        artist: props.Artist()?.to_string(),
-        playing,
-    })
+    Ok(Media { title: props.Title()?.to_string(), artist: props.Artist()?.to_string(), playing })
 }
 
 /// "C:\...\chrome.exe" -> "Chrome"
@@ -545,22 +534,14 @@ fn process_name(pid: u32) -> String {
         };
         let mut buf = [0u16; 512];
         let mut len = buf.len() as u32;
-        let ok = QueryFullProcessImageNameW(
-            handle,
-            PROCESS_NAME_WIN32,
-            PWSTR(buf.as_mut_ptr()),
-            &mut len,
-        );
+        let ok = QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &mut len);
         let _ = CloseHandle(handle);
         if ok.is_err() {
             return format!("PID {pid}");
         }
         String::from_utf16_lossy(&buf[..len as usize])
     };
-    let stem = std::path::Path::new(&path)
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or(path);
+    let stem = std::path::Path::new(&path).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or(path);
     let mut chars = stem.chars();
     match chars.next() {
         Some(first) => first.to_uppercase().chain(chars).collect(),

@@ -1,0 +1,21 @@
+name: Ideia ou melhoria
+description: Sugira algo novo para a ilha.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: Qual é a ideia?
+      description: O que você gostaria que a ilha fizesse?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Para que serve?
+      description: Em que situação do dia a dia isso ajudaria?
+  - type: textarea
+    id: how
+    attributes:
+      label: Como você imagina?
+      description: Onde apareceria, como seria usado. Desenhos e prints ajudam.

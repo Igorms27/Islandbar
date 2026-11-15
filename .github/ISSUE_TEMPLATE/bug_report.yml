@@ -1,0 +1,48 @@
+name: Problema (bug)
+description: Algo não funciona como deveria.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Obrigado por avisar! Quanto mais detalhes, mais rápido dá para corrigir.
+  - type: textarea
+    id: what
+    attributes:
+      label: O que aconteceu?
+      description: Descreva o problema. Se puder, cole um print da tela.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Como fazer acontecer de novo
+      description: Os passos, na ordem, até o problema aparecer.
+      placeholder: |
+        1. Abri o painel
+        2. Cliquei em ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: O que você esperava?
+  - type: input
+    id: version
+    attributes:
+      label: Versão da ilha
+      description: Aparece no rodapé do painel (ex.: "versão 68").
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows
+      placeholder: Windows 11 23H2
+  - type: input
+    id: gpu
+    attributes:
+      label: Placa de vídeo
+      description: Importa para problemas no modo jogo ou de a ilha sumir.
+      placeholder: NVIDIA RTX 5060

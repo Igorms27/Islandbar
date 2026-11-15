@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Baixar a versão mais recente
+    url: https://github.com/Igorms27/Islandbar/releases/latest
+    about: Antes de relatar um problema, confira se ele continua na versão mais nova.

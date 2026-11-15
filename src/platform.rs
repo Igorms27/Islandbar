@@ -149,10 +149,10 @@ mod window {
     use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
     use windows::Win32::UI::WindowsAndMessaging::{
         GetWindow, GetWindowLongPtrW, GetWindowRect, IsWindow, IsWindowVisible, SetWindowLongPtrW, SetWindowPos,
-        GWL_EXSTYLE, GWL_STYLE, GW_HWNDPREV, HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
-        SWP_NOSIZE, SWP_NOZORDER, WS_CAPTION, WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-        WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE, WM_NCACTIVATE, WM_NCCALCSIZE,
-        WM_STYLECHANGING, STYLESTRUCT, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+        GWL_EXSTYLE, GWL_STYLE, GW_HWNDPREV, HWND_TOPMOST, STYLESTRUCT, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
+        SWP_NOSIZE, SWP_NOZORDER, WM_NCACTIVATE, WM_NCCALCSIZE, WM_STYLECHANGING, WS_CAPTION, WS_EX_APPWINDOW,
+        WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX,
+        WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
     };
 
     pub fn handle(frame: &eframe::Frame) -> Option<HWND> {
@@ -168,8 +168,7 @@ mod window {
     static HOOKED: AtomicBool = AtomicBool::new(false);
 
     /// Estilos de "janela normal" (barra de título, botões, borda).
-    const FRAME_BITS: u32 =
-        WS_CAPTION.0 | WS_THICKFRAME.0 | WS_SYSMENU.0 | WS_MINIMIZEBOX.0 | WS_MAXIMIZEBOX.0;
+    const FRAME_BITS: u32 = WS_CAPTION.0 | WS_THICKFRAME.0 | WS_SYSMENU.0 | WS_MINIMIZEBOX.0 | WS_MAXIMIZEBOX.0;
 
     /// Intercepta as mensagens com que o Windows desenharia uma moldura de
     /// janela em volta da ilha (a "barra de título de Windows antigo"):
@@ -476,9 +475,7 @@ mod instance {
     use std::sync::atomic::{AtomicIsize, Ordering};
     use windows::core::w;
     use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS, HANDLE, WAIT_OBJECT_0};
-    use windows::Win32::System::Threading::{
-        CreateEventW, CreateMutexW, ResetEvent, SetEvent, WaitForSingleObject,
-    };
+    use windows::Win32::System::Threading::{CreateEventW, CreateMutexW, ResetEvent, SetEvent, WaitForSingleObject};
 
     /// Evento "pode fechar", compartilhado entre todas as ilhas abertas.
     static QUIT_EVENT: AtomicIsize = AtomicIsize::new(0);

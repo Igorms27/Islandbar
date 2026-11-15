@@ -17,11 +17,10 @@ use base64::Engine;
 use windows::core::{w, GUID, HSTRING, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_ALREADY_EXISTS, ERROR_SUCCESS};
 use windows::Win32::System::Diagnostics::Etw::{
-    CloseTrace, ControlTraceW, EnableTraceEx2, OpenTraceW, ProcessTrace, StartTraceW,
-    CONTROLTRACE_HANDLE, ENABLE_TRACE_PARAMETERS, ENABLE_TRACE_PARAMETERS_VERSION_2,
-    EVENT_CONTROL_CODE_ENABLE_PROVIDER, EVENT_FILTER_DESCRIPTOR, EVENT_FILTER_TYPE_EVENT_ID,
-    EVENT_RECORD, EVENT_TRACE_CONTROL_STOP, EVENT_TRACE_LOGFILEW, EVENT_TRACE_PROPERTIES,
-    EVENT_TRACE_REAL_TIME_MODE, PROCESS_TRACE_MODE_EVENT_RECORD, PROCESS_TRACE_MODE_REAL_TIME,
+    CloseTrace, ControlTraceW, EnableTraceEx2, OpenTraceW, ProcessTrace, StartTraceW, CONTROLTRACE_HANDLE,
+    ENABLE_TRACE_PARAMETERS, ENABLE_TRACE_PARAMETERS_VERSION_2, EVENT_CONTROL_CODE_ENABLE_PROVIDER,
+    EVENT_FILTER_DESCRIPTOR, EVENT_FILTER_TYPE_EVENT_ID, EVENT_RECORD, EVENT_TRACE_CONTROL_STOP, EVENT_TRACE_LOGFILEW,
+    EVENT_TRACE_PROPERTIES, EVENT_TRACE_REAL_TIME_MODE, PROCESS_TRACE_MODE_EVENT_RECORD, PROCESS_TRACE_MODE_REAL_TIME,
     TRACE_LEVEL_VERBOSE, WNODE_FLAG_TRACED_GUID,
 };
 use windows::Win32::UI::Shell::ShellExecuteW;
@@ -165,7 +164,8 @@ unsafe extern "system" fn on_event(record: *mut EVENT_RECORD) {
     let id = header.EventDescriptor.Id;
     let provider = header.ProviderId;
     let kernel = provider == DXGKRNL && DXGKRNL_PRESENTS.contains(&id);
-    let runtime = (provider == DXGI && DXGI_PRESENTS.contains(&id)) || (provider == D3D9 && D3D9_PRESENTS.contains(&id));
+    let runtime =
+        (provider == DXGI && DXGI_PRESENTS.contains(&id)) || (provider == D3D9 && D3D9_PRESENTS.contains(&id));
     if !kernel && !runtime {
         return;
     }

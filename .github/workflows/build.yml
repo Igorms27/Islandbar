@@ -9,12 +9,28 @@ on:
 permissions:
   contents: write
 
+# Um envio novo numa branch de teste cancela o teste anterior dela. No main
+# nunca: cada envio vira uma versão.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   build:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Histórico completo: as notas da versão listam os commits desde a anterior.
+          fetch-depth: 0
       - uses: Swatinem/rust-cache@v2
+      # Qualidade: formatação padrão, nenhum aviso do compilador e testes passando.
+      - name: Formatação (cargo fmt)
+        run: cargo fmt --check
+      - name: Avisos (cargo clippy)
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Testes (cargo test)
+        run: cargo test
       - name: Build
         run: cargo build --release
         env:
@@ -32,10 +48,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           echo "${{ github.run_number }}" > version.txt
+          # Notas: os commits desde a versão anterior.
+          previous=$(git tag --list 'build-*' --sort=-v:refname | head -n 1)
+          range=${previous:+$previous..HEAD}
+          {
+            echo "## O que mudou"
+            echo
+            git log --no-merges --format='- %s' ${range:-HEAD~10..HEAD}
+            echo
+            echo "Baixe o \`islandbar.exe\` abaixo. Quem já usa recebe esta versão sozinho em alguns minutos."
+            echo
+            echo "Compilada automaticamente a partir de ${{ github.sha }}."
+          } > notes.md
           gh release create "build-${{ github.run_number }}" \
             target/release/islandbar.exe version.txt \
             --title "Versão ${{ github.run_number }}" \
-            --notes "Compilada automaticamente a partir de ${{ github.sha }}." \
+            --notes-file notes.md \
             --latest
       # Abre a ilha no Windows da máquina de build e guarda screenshots,
       # para conferir a aparência real sem depender de um PC.

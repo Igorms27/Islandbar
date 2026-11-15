@@ -32,9 +32,9 @@ fn main() -> windows::core::Result<()> {
     use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, DispatchMessageW, GetSystemMetrics, PeekMessageW, PostQuitMessage,
-        RegisterClassW, SetForegroundWindow, SetWindowPos, TranslateMessage, HWND_TOPMOST, MSG, PM_REMOVE,
-        SM_CXSCREEN, SM_CYSCREEN, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WINDOW_EX_STYLE, WM_ACTIVATE,
-        WM_DESTROY, WM_QUIT, WNDCLASSW, WS_POPUP, WS_VISIBLE,
+        RegisterClassW, SetForegroundWindow, SetWindowPos, TranslateMessage, HWND_TOPMOST, MSG, PM_REMOVE, SM_CXSCREEN,
+        SM_CYSCREEN, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WINDOW_EX_STYLE, WM_ACTIVATE, WM_DESTROY, WM_QUIT,
+        WNDCLASSW, WS_POPUP, WS_VISIBLE,
     };
 
     static TOPMOST: AtomicBool = AtomicBool::new(false);
