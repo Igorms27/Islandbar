@@ -738,15 +738,16 @@ impl IslandApp {
                 .map(|(label, value)| if label == "TEMP" { value } else { format!("{label} {value}") })
                 .collect();
             let usage = usage.join("  ");
-            let x = left + 32.0;
+            // Centralizado entre a animação do som e o relógio, com a mesma folga dos dois lados.
+            let (start, end) = (left + 27.0 + 12.0, clock_rect.left() - 12.0);
             text_fit(
                 p,
-                pos2(x, cy),
-                Align2::LEFT_CENTER,
+                pos2((start + end) / 2.0, cy),
+                Align2::CENTER_CENTER,
                 &usage,
                 12.0,
                 fade(TEXT_DIM, alpha),
-                clock_rect.left() - 10.0 - x,
+                end - start,
             );
         }
     }
