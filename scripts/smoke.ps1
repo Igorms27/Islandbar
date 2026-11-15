@@ -353,7 +353,15 @@ Start-Sleep -Milliseconds 400
 Click ($cx + 28) ($r.T + 162)    # Pet: Fantasma
 Start-Sleep -Milliseconds 600
 Shot "welcome-2-chosen"
-Click ($cx + 126) ($r.T + 300)   # Iniciar
+Click ($cx + 103) ($r.T + 292)   # Pedidos do iFood: Instalar extensão
+Start-Sleep 2
+$extDir = "$env:LOCALAPPDATA\Islandbar\extensao-ifood"
+Log ("extension folder: " + ((Get-ChildItem $extDir -ErrorAction SilentlyContinue | ForEach-Object Name) -join ", ") + " (expected background.js, bridge.js, manifest.json, page.js)")
+# Fecha a janela do Explorador que o botão abriu (senão cobre as próximas fotos).
+(New-Object -ComObject Shell.Application).Windows() | Where-Object { $_.LocationURL -like '*extensao-ifood*' } | ForEach-Object { $_.Quit() }
+Start-Sleep 1
+Shot "welcome-2b-extension"
+Click ($cx + 126) ($r.T + 364)   # Iniciar
 Start-Sleep 3
 Shot "welcome-3-pill"
 $saved = (Get-ItemProperty "HKCU:\Software\Islandbar" -Name Stats -ErrorAction SilentlyContinue).Stats
@@ -368,5 +376,36 @@ Start-Sleep 30
 Log ("after restart: " + ((Get-Content "$out\welcome2-stderr.txt" | Select-String '^temp sources' | Select-Object -Last 1) -join ""))
 Log ("perf idle with pet:`n" + (Get-Content "$out\welcome2-stderr.txt" | Select-String '^perf' | Select-Object -Last 4 | Out-String))
 StopIsland "welcome2" $app
+
+# ---- Rodada 6: pedido do iFood ---------------------------------------------
+# Faz o papel da extensão do navegador: manda o andamento do pedido para a
+# ilha (127.0.0.1:47615). A pílula do pedido aparece à esquerda da ilha.
+$app = StartIsland "ifood"
+function PostOrder($body, $origin = "chrome-extension://smoketest") {
+  [IO.File]::WriteAllText("$out\order.txt", $body)
+  $curlArgs = @('-s', '-o', 'NUL', '-w', '%{http_code}', '--data-binary', "@$out\order.txt", 'http://127.0.0.1:47615/ifood')
+  if ($origin) { $curlArgs = @('-H', "Origin: $origin") + $curlArgs }
+  & curl.exe @curlArgs
+}
+$order = "order=0a1b2c3d-0000-4000-8000-00000000smoke"
+Log ("order preparing: " + (PostOrder "$order`nstage=preparing`nstore=Lanche Bom`neta=20:10-20:25`ncode=`nchat=0"))
+Start-Sleep 1
+Shot "ifood-1-preparing"
+Start-Sleep 9
+Log ("order shipping: " + (PostOrder "$order`nstage=shipping`nstore=Lanche Bom`neta=20:10-20:25`ncode=4821`nchat=0"))
+Start-Sleep 1
+Log ("new message: " + (PostOrder "$order`nstage=shipping`nstore=Lanche Bom`neta=20:10-20:25`ncode=4821`nchat=1"))
+Start-Sleep 1
+Shot "ifood-2-shipping-message"
+Log ("from a website (expected 403): " + (PostOrder "order=evil`nstage=preparing" "https://example.com"))
+Log ("without origin (expected 403): " + (PostOrder "order=evil`nstage=preparing" ""))
+# Parada com a pílula do pedido: o custo tem que voltar ao de repouso.
+Start-Sleep 20
+Log ("perf idle with order:`n" + (Get-Content "$out\ifood-stderr.txt" | Select-String '^perf' | Select-Object -Last 2 | Out-String))
+Log ("tab closed: " + (PostOrder "gone=0a1b2c3d-0000-4000-8000-00000000smoke"))
+Start-Sleep 2
+Shot "ifood-3-gone"
+Log ("ifood lines: " + ((Get-Content "$out\ifood-stderr.txt" | Select-String '^ifood' | Select-Object -Last 6) -join " | "))
+StopIsland "ifood" $app
 
 exit 0

@@ -5,6 +5,7 @@ mod alarm;
 mod anim;
 mod app;
 mod backend;
+mod delivery;
 mod perf;
 mod pet;
 mod platform;

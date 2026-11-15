@@ -79,3 +79,8 @@ O ambiente do Claude é Linux; a ilha é para Windows.
   estilo estendido ali: forçar o `GWL_EXSTYLE` congelou a imagem da ilha (ela não
   voltava depois do Ctrl). A máquina do GitHub não mostra essa barra; o teste
   visual confere, mas a confirmação é no PC do dono.
+- Pedidos do iFood: a extensão (`extension/`) vai dentro do .exe (`include_str!`
+  em `src/delivery.rs`) e manda o pedido para `127.0.0.1:47615`. Dá para testar
+  a cadeia inteira aqui no Linux: ilha sob Xvfb + Playwright/Chromium com
+  `--load-extension` e uma página falsa do iFood via `context.route` (servir o
+  HTML com `charset=utf-8`, senão "Previsão" vira lixo e não é lida).

@@ -30,6 +30,7 @@ fone/caixa de som, alarme e o uso do PC. Nos jogos, mostra FPS, CPU, GPU e RAM.
 - [Recursos](#recursos)
 - [Instalação](#instalação)
 - [Como usar](#como-usar)
+- [Pedidos do iFood](#pedidos-do-ifood)
 - [Leve de verdade](#leve-de-verdade)
 - [Solução de problemas](#solução-de-problemas)
 - [Para desenvolvedores](#para-desenvolvedores)
@@ -57,6 +58,11 @@ fone/caixa de som, alarme e o uso do PC. Nos jogos, mostra FPS, CPU, GPU e RAM.
   aparecem na ilha fechada e no modo jogo.
 - **Modo jogo**: com um jogo em tela cheia, uma pílula ao lado da ilha mostra FPS, CPU, GPU e RAM.
   Navegadores e players de vídeo em tela cheia não contam como jogo.
+- **Pedidos do iFood**: com a página do pedido aberta no Chrome ou no Edge (pode ficar numa aba de
+  fundo), uma segunda pílula à esquerda da ilha mostra a etapa (em preparo, a caminho, entregador
+  chegou…), a previsão de entrega, o código de entrega e quantas mensagens o chat do pedido tem.
+  Ela brilha em vermelho quando algo muda. Precisa de uma extensão pequena, instalada uma vez
+  (veja [Pedidos do iFood](#pedidos-do-ifood)).
 - **Iniciar com o Windows** (opcional) e **atualização automática**.
 
 <p align="center">
@@ -95,7 +101,26 @@ espera. Um alarme marcado continua contando depois de reiniciar. A versão atual
 | Medir o FPS nos jogos | Na primeira vez, clique em **Ativar** no painel. O Windows pede confirmação de administrador uma vez, e passa a valer depois de sair e entrar na conta. |
 | Fechar a ilha | Abra o painel e clique em **Sair**. Um alarme marcado continua valendo: na hora, o Windows abre a ilha e ele toca. Para desistir dele, cancele na página Alarme antes de sair. |
 | Ligar/desligar o início com o Windows | Abra o `islandbar.exe` de novo: o cartão aparece outra vez. |
+| Acompanhar um pedido do iFood | Deixe a página do pedido aberta no navegador (pode ser uma aba de fundo). A pílula aparece sozinha e some uns minutos depois da entrega ou quando a aba fecha. |
 | Escolher o pet, os números da ilha e a temperatura | Também no cartão inicial (abra o `islandbar.exe` de novo). Cada opção de temperatura mostra o valor de agora; "n/d" quer dizer que o PC não tem aquele sensor. |
+
+### Pedidos do iFood
+
+A ilha não lê o navegador sozinha: quem lê a página do pedido é uma extensão pequena, que vai junto
+com a ilha. Ela só funciona em `www.ifood.com.br`, só manda para a ilha no seu próprio PC
+(`127.0.0.1`) e não guarda nem envia seu login.
+
+Para instalar (uma vez só), no Chrome ou no Edge:
+
+1. Abra o `islandbar.exe`. No cartão inicial, clique em **Instalar extensão**. Abre a pasta
+   `%LOCALAPPDATA%\Islandbar\extensao-ifood`.
+2. No navegador, abra `chrome://extensions` (no Edge, `edge://extensions`).
+3. Ligue o **Modo do desenvolvedor** (no Chrome fica no canto de cima; no Edge, no menu da esquerda).
+4. Clique em **Carregar sem compactação** e escolha a pasta que abriu.
+5. Recarregue a página do pedido no iFood (F5).
+
+Depois disso, é só abrir a página do pedido (**Pedidos** → **Acompanhar**). As atualizações da ilha
+também atualizam os arquivos da extensão; o navegador passa a usar a versão nova quando é reiniciado.
 
 ## Leve de verdade
 
@@ -150,6 +175,20 @@ O sensor escolhido não existe nesse PC (ou não dá para ler sem instalar um dr
 </details>
 
 <details>
+<summary><b>A pílula do iFood não aparece</b></summary>
+
+- Confira se a extensão "Islandbar - pedidos do iFood" está ligada em `chrome://extensions` (ou
+  `edge://extensions`) e recarregue a página do pedido (F5).
+- A pílula aparece com a página do pedido aberta (**Pedidos** → **Acompanhar**), não só com a
+  página inicial do iFood.
+- Se ela some depois de um tempo com a aba de fundo, a "Economia de memória" do navegador pode ter
+  colocado a aba para dormir. Em Configurações → Desempenho, adicione `www.ifood.com.br` em
+  "Sempre manter estes sites ativos".
+- Firefox não é suportado.
+
+</details>
+
+<details>
 <summary><b>Troquei a saída de som, mas um programa continuou no dispositivo antigo</b></summary>
 
 A maioria dos programas segue a troca na hora. Alguns, principalmente jogos mais antigos, só passam a
@@ -180,6 +219,8 @@ mentira (`src/backend/mock.rs`), útil para mexer na interface.
 | `src/alarm.rs` | Alarme: contagem e o bip de despertador. |
 | `src/settings.rs` | Escolhas do cartão inicial (números da ilha, sensor da temperatura e pet). |
 | `src/pet.rs` | Os pets (fantasma, robô e as barrinhas): desenho e gestos. |
+| `src/delivery.rs` | Pedidos do iFood: recebe o andamento da extensão e guarda o pedido mostrado. |
+| `extension/` | A extensão do navegador que lê a página do pedido do iFood. Os nomes dos eventos do site vieram do projeto [iFood PiP](https://github.com/luannsr12/ifood-pip) (Apache 2.0). |
 | `src/platform.rs` | Mouse, teclado, janela sem moldura, memória e início com o Windows. |
 | `src/updater.rs` | Atualização automática. |
 | `src/perf.rs` | Medidor interno de quadros, CPU e memória (diagnóstico). |

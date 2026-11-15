@@ -11,6 +11,7 @@ use eframe::egui::{
 use crate::alarm::{self, Alarm};
 use crate::anim::{meter, smoothstep, Spring};
 use crate::backend::{Backend, Command, Device, FpsAccess, Game, Snapshot, System, TempSource};
+use crate::delivery::{self, Order, Stage};
 use crate::pet;
 use crate::platform;
 use crate::settings::{Pet, Settings, TempChoice};
@@ -36,7 +37,7 @@ const FPS_ROW_HEIGHT: f32 = 36.0;
 /// Pílula do modo jogo: um pouco menor que a principal.
 const GAME_PILL_HEIGHT: f32 = 30.0;
 const GAME_PILL_GAP: f32 = 8.0;
-const WELCOME_SIZE: Vec2 = vec2(400.0, 324.0);
+const WELCOME_SIZE: Vec2 = vec2(400.0, 388.0);
 const MAX_APPS: usize = 7;
 /// Fileira de botões para escolher a saída de som ou o microfone.
 const DEVICE_ROW_HEIGHT: f32 = 32.0;
@@ -77,6 +78,10 @@ const SOUND: f32 = 0.005;
 const TRIM_AFTER: Duration = Duration::from_secs(30);
 
 const ISLAND: Color32 = Color32::from_rgb(9, 9, 11);
+/// Vermelho da pílula do pedido (cor de comida/entrega).
+const FOOD: Color32 = Color32::from_rgb(234, 29, 44);
+/// Previsão de entrega que já passou.
+const LATE: Color32 = Color32::from_rgb(255, 159, 10);
 const TEXT: Color32 = Color32::from_rgb(245, 245, 247);
 const TEXT_DIM: Color32 = Color32::from_rgb(150, 150, 158);
 const MASTER_KEY: &str = "\0master";
@@ -127,6 +132,15 @@ pub struct IslandApp {
     game_width: Spring,
     /// Último jogo visto (continua desenhado enquanto a pílula fecha).
     last_game: Option<Game>,
+    /// 0 = sem pedido, 1 = pílula do pedido do iFood aberta (à esquerda da ilha).
+    order: Spring,
+    order_width: Spring,
+    /// Último pedido visto (continua desenhado enquanto a pílula fecha).
+    last_order: Option<Order>,
+    /// Novidade do pedido que já ganhou o "pulinho" da pílula.
+    order_bumped: Option<Instant>,
+    /// O botão da extensão do iFood já foi clicado no cartão inicial.
+    extension_opened: bool,
 
     hud_timer: f32,
     leave_timer: f32,
@@ -212,6 +226,7 @@ impl IslandApp {
         // já" sempre rende dois.)
         let wake = |ctx: egui::Context| move || ctx.request_repaint_after(Duration::from_millis(1));
         platform::watch_cursor(wake(cc.egui_ctx.clone()));
+        delivery::start(wake(cc.egui_ctx.clone()));
         Self {
             backend: Backend::spawn(wake(cc.egui_ctx.clone())),
             mode,
@@ -228,6 +243,11 @@ impl IslandApp {
             game: Spring::bouncy(0.0),
             game_width: Spring::bouncy(120.0),
             last_game: None,
+            order: Spring::bouncy(0.0),
+            order_width: Spring::bouncy(160.0),
+            last_order: None,
+            order_bumped: None,
+            extension_opened: false,
             hud_timer: if mode == Mode::Hud { f32::INFINITY } else { 0.0 },
             leave_timer: 0.0,
             uptime: 0.0,
@@ -573,6 +593,7 @@ impl eframe::App for IslandApp {
         );
 
         self.draw_game_pill(&painter, island, &snap, accent, dt);
+        let order_highlight = self.draw_order_pill(&painter, island, accent, now, time, dt);
 
         let content = painter.with_clip_rect(island.shrink(1.0));
         let open = smoothstep(self.open.value);
@@ -610,6 +631,8 @@ impl eframe::App for IslandApp {
             &self.welcome,
             &self.game,
             &self.game_width,
+            &self.order,
+            &self.order_width,
             &self.ring,
             &self.page,
             &self.ghost_fade,
@@ -635,7 +658,7 @@ impl eframe::App for IslandApp {
         self.resting = false;
         if busy {
             ctx.request_repaint();
-        } else if hovered || dancing || swinging || gesturing {
+        } else if hovered || dancing || swinging || gesturing || order_highlight {
             ctx.request_repaint_after(AMBIENT_FRAME);
         } else {
             // Nada se mexendo: dorme até alguém avisar que algo mudou.
@@ -652,6 +675,10 @@ impl eframe::App for IslandApp {
             // Acorda para o próximo gesto do pet.
             if let Some(next) = pet_next {
                 wait = wait.min(Duration::from_secs_f64(next));
+            }
+            // E quando o pedido do iFood deve sumir sozinho.
+            if let Some(next) = delivery::next_change(now) {
+                wait = wait.min(next.max(Duration::from_millis(1)));
             }
             ctx.request_repaint_after(wait);
         }
@@ -1501,6 +1528,127 @@ impl IslandApp {
         }
     }
 
+    /// Pílula do pedido do iFood, à esquerda da ilha: etapa, previsão,
+    /// código de entrega e mensagens. Devolve se ela está chamando atenção
+    /// (acabou de ter novidade), para a ilha desenhar a animação.
+    fn draw_order_pill(
+        &mut self,
+        painter: &Painter,
+        island: Rect,
+        accent: Color32,
+        now: Instant,
+        time: f32,
+        dt: f32,
+    ) -> bool {
+        let current = delivery::current(now);
+        if current.is_some() {
+            self.last_order = current.clone();
+        }
+        // Como a do modo jogo: com o painel (ou um cartão) aberto ela sai.
+        let visible = current.is_some() && matches!(self.mode, Mode::Collapsed | Mode::Hud);
+        self.order.target = if visible { 1.0 } else { 0.0 };
+        // Novidade: a pílula dá um pulinho.
+        if let Some(changed) = current.as_ref().and_then(|o| o.changed) {
+            if visible && self.order_bumped != Some(changed) && self.order.value > 0.9 {
+                self.order.value = 0.82;
+            }
+            if self.order.value > 0.5 || !visible {
+                self.order_bumped = Some(changed);
+            }
+        }
+        self.order.update(dt);
+        let grow = self.order.value;
+        if grow <= 0.01 {
+            self.order_width.finish();
+            return false;
+        }
+        let Some(order) = self.last_order.clone() else { return false };
+        let highlight = if visible { order.highlight(now) } else { 0.0 };
+
+        // Trechos depois do ícone: (texto, tamanho, cor, é o balão de mensagens).
+        let stage = (order.stage.text().to_string(), 12.5, TEXT, false);
+        let eta = (!order.eta.is_empty() && order.stage < Stage::Arrived).then(|| {
+            let color = if eta_passed(&order.eta) { LATE } else { TEXT_DIM };
+            (order.eta.replace('-', "–"), 12.0, color, false)
+        });
+        let code = (order.stage.on_the_way() && !order.code.is_empty())
+            .then(|| (format!("código {}", order.code), 12.0, accent, false));
+        let chat = (order.chats > 0).then(|| (order.chats.to_string(), 11.5, TEXT, true));
+        let (padding, icon, gap, bubble) = (12.0, 16.0, 10.0, 16.0);
+        // Espaço até a beirada da janela (pela largura final da ilha, para não
+        // ficar trocando no meio da animação). Se faltar, sai primeiro a
+        // previsão, depois as mensagens, depois o código.
+        let room = WINDOW_SIZE[0] / 2.0 - self.width.target / 2.0 - GAME_PILL_GAP - 14.0;
+        let mut galleys = Vec::new();
+        let mut content = 0.0;
+        for drop in 0..4 {
+            let parts = [Some(stage.clone()), eta.clone().filter(|_| drop < 1), code.clone().filter(|_| drop < 3)]
+                .into_iter()
+                .chain([chat.clone().filter(|_| drop < 2)])
+                .flatten();
+            galleys = parts
+                .map(|(text, size, color, is_chat)| {
+                    (painter.layout_no_wrap(text, FontId::proportional(size), color), color, is_chat)
+                })
+                .collect();
+            content = icon
+                + galleys
+                    .iter()
+                    .map(|(g, _, is_chat)| gap + g.size().x + if *is_chat { bubble } else { 0.0 })
+                    .sum::<f32>();
+            if content + padding + 14.0 <= room {
+                break;
+            }
+        }
+        self.order_width.target = (((content + padding + 14.0) / 8.0).ceil() * 8.0).min(room.max(80.0));
+        self.order_width.update(dt);
+
+        let size = vec2(self.order_width.value * grow.min(1.15), GAME_PILL_HEIGHT * grow.clamp(0.0, 1.0));
+        let right = island.left() - GAME_PILL_GAP * grow.min(1.0);
+        let center_y = TOP_MARGIN + PILL_HEIGHT / 2.0;
+        let rect = Rect::from_min_size(pos2(right - size.x, center_y - size.y / 2.0), size);
+        let radius = size.y / 2.0;
+        let alpha = smoothstep((grow - 0.55) / 0.45);
+
+        // Novidade: brilho vermelho pulsando por alguns segundos.
+        if highlight > 0.0 {
+            let pulse = 0.6 + 0.4 * (time * 6.0).sin();
+            painter.add(
+                Shadow { offset: [0, 0], blur: 22, spread: 1, color: fade(FOOD, highlight * pulse * 0.8) }
+                    .as_shape(rect, radius),
+            );
+        }
+        painter.add(
+            Shadow {
+                offset: [0, 4],
+                blur: 14,
+                spread: 0,
+                color: Color32::from_black_alpha((90.0 * grow.min(1.0)) as u8),
+            }
+            .as_shape(rect, radius),
+        );
+        painter.rect_filled(rect, radius, ISLAND);
+        let border = fade(FOOD, 0.35 + 0.65 * highlight);
+        painter.rect_stroke(rect, radius, Stroke::new(1.0, border), StrokeKind::Inside);
+
+        let p = painter.with_clip_rect(rect.shrink(1.0));
+        let mut x = rect.left() + padding;
+        draw_bag(&p, pos2(x + icon / 2.0, center_y), fade(FOOD, alpha));
+        x += icon + gap;
+        for (galley, color, is_chat) in galleys {
+            if is_chat {
+                // Mensagem nova: o balãozinho fica vermelho enquanto chama atenção.
+                let bubble_color = if order.new_chat && highlight > 0.0 { FOOD } else { TEXT_DIM };
+                draw_chat(&p, pos2(x + 6.5, center_y), fade(bubble_color, alpha));
+                x += bubble;
+            }
+            let pos = pos2(x, center_y - galley.size().y / 2.0);
+            x += galley.size().x + gap;
+            p.galley_with_override_text_color(pos, galley, fade(color, alpha));
+        }
+        highlight > 0.0
+    }
+
     /// Linha do painel para liberar a medição de FPS.
     #[allow(clippy::too_many_arguments)]
     fn draw_fps_row(
@@ -1738,6 +1886,28 @@ impl IslandApp {
             if choice_chip(ui, p, ("temp", i), chip, name, Some(&value), chosen, accent, a, interactive) {
                 self.settings.temp = choice;
             }
+        }
+
+        // Pedidos do iFood: prepara a extensão do navegador e abre a pasta dela.
+        let cy = top + 264.0;
+        p.text(pos2(left, cy), Align2::LEFT_CENTER, "Pedidos do iFood", FontId::proportional(14.0), fade(TEXT, a));
+        let chip = Rect::from_min_max(pos2(right - 150.0, cy - 13.0), pos2(right, cy + 13.0));
+        let label = if self.extension_opened { "Pasta aberta" } else { "Instalar extensão" };
+        if choice_chip(ui, p, ("ifood", 0), chip, label, None, self.extension_opened, accent, a, interactive) {
+            self.extension_opened = true;
+            delivery::extension::open();
+        }
+        let hint: &[&str] = if self.extension_opened {
+            &[
+                "No Chrome/Edge, abra Extensões e ligue o Modo do desenvolvedor.",
+                "Clique em Carregar sem compactação e escolha a pasta aberta.",
+            ]
+        } else {
+            &["Com a aba do pedido aberta no navegador, uma pílula ao lado", "da ilha mostra o andamento."]
+        };
+        for (i, line) in hint.iter().enumerate() {
+            let y = top + 289.0 + i as f32 * 15.0;
+            text_fit(p, pos2(left, y), Align2::LEFT_CENTER, line, 11.0, fade(TEXT_DIM, a), right - left);
         }
 
         // Botão "Iniciar".
@@ -2191,4 +2361,40 @@ fn brighten(color: Color32) -> Color32 {
 
 fn fade(color: Color32, alpha: f32) -> Color32 {
     color.gamma_multiply(alpha.clamp(0.0, 1.0))
+}
+
+/// A previsão de entrega ("20:10-20:25") já passou? Vale o último horário.
+fn eta_passed(eta: &str) -> bool {
+    use chrono::Timelike;
+    let Some((h, m)) = eta.rsplit('-').next().and_then(|t| t.split_once(':')) else { return false };
+    let (Ok(h), Ok(m)) = (h.parse::<i32>(), m.parse::<i32>()) else { return false };
+    let now = chrono::Local::now();
+    let late = (now.hour() as i32 * 60 + now.minute() as i32 - (h * 60 + m)).rem_euclid(24 * 60);
+    // Até 12 h "depois" é atraso; mais que isso é a previsão de amanhã (ou de antes da meia-noite).
+    late > 0 && late < 12 * 60
+}
+
+/// Sacolinha de comida.
+fn draw_bag(p: &Painter, c: Pos2, color: Color32) {
+    let body = Rect::from_center_size(c + vec2(0.0, 2.0), vec2(13.0, 10.5));
+    p.rect_filled(body, 2.5, color);
+    let handle: Vec<Pos2> = (0..=10)
+        .map(|i| {
+            let a = std::f32::consts::PI * i as f32 / 10.0;
+            pos2(c.x + 3.4 * a.cos(), body.top() + 0.5 - 3.6 * a.sin())
+        })
+        .collect();
+    p.add(Shape::line(handle, Stroke::new(1.6, color)));
+}
+
+/// Balãozinho de conversa.
+fn draw_chat(p: &Painter, c: Pos2, color: Color32) {
+    let bubble = Rect::from_center_size(c - vec2(0.0, 1.0), vec2(13.0, 9.5));
+    p.rect_filled(bubble, 3.0, color);
+    let tail = vec![
+        pos2(bubble.left() + 2.5, bubble.bottom() - 0.5),
+        pos2(bubble.left() + 6.5, bubble.bottom() - 0.5),
+        pos2(bubble.left() + 2.0, bubble.bottom() + 3.0),
+    ];
+    p.add(Shape::convex_polygon(tail, color, Stroke::NONE));
 }
