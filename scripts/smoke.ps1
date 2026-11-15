@@ -309,28 +309,35 @@ Log ("alarm lines: " + (Get-Content "$out\ring-stderr.txt" | Select-String '^ala
 StopIsland "ring" $app
 
 # ---- Rodada 5: cartão inicial ----------------------------------------------
-# Abre como quem clica no .exe: aparece o cartão. Escolhe "Placa de vídeo" e
-# liga "Temp" na ilha, clica em Iniciar. A escolha tem que ficar no registro.
+# Abre como quem clica no .exe: aparece o cartão. Escolhe "Placa de vídeo",
+# liga "Temp" na ilha, escolhe o pet Fantasma e clica em Iniciar. A escolha tem
+# que ficar no registro.
 Remove-Item "HKCU:\Software\Islandbar" -Recurse -ErrorAction SilentlyContinue
 $app = StartIsland "welcome" $true
 $r = Styles "welcome start"
 $cx = [int](($r.L + $r.R) / 2)
 Shot "welcome-1-card"
-Click ($cx + 90) ($r.T + 188)    # Temperatura: Placa de vídeo
+Click ($cx + 90) ($r.T + 222)    # Temperatura: Placa de vídeo
 Start-Sleep -Milliseconds 400
 Click ($cx + 152) ($r.T + 128)   # Mostrar na ilha: Temp
+Start-Sleep -Milliseconds 400
+Click ($cx + 28) ($r.T + 162)    # Pet: Fantasma
 Start-Sleep -Milliseconds 600
 Shot "welcome-2-chosen"
-Click ($cx + 126) ($r.T + 266)   # Iniciar
+Click ($cx + 126) ($r.T + 300)   # Iniciar
 Start-Sleep 3
 Shot "welcome-3-pill"
 $saved = (Get-ItemProperty "HKCU:\Software\Islandbar" -Name Stats -ErrorAction SilentlyContinue).Stats
-Log "settings saved: $saved (expected temp=gpu;show=cpu,gpu,ram,temp)"
+Log "settings saved: $saved (expected temp=gpu;show=cpu,gpu,ram,temp;pet=ghost)"
 Log ("welcome lines: " + ((Get-Content "$out\welcome-stderr.txt" | Select-String '^(settings|temp sources)' | Select-Object -Last 4) -join " | "))
 StopIsland "welcome" $app
 # Aberta de novo pelo login: a escolha continua valendo.
 $app = StartIsland "welcome2"
+Shot "welcome-4-pet-pill"
+# Parada com o pet: ele faz gestos de tempos em tempos (custo em repouso).
+Start-Sleep 30
 Log ("after restart: " + ((Get-Content "$out\welcome2-stderr.txt" | Select-String '^temp sources' | Select-Object -Last 1) -join ""))
+Log ("perf idle with pet:`n" + (Get-Content "$out\welcome2-stderr.txt" | Select-String '^perf' | Select-Object -Last 4 | Out-String))
 StopIsland "welcome2" $app
 
 exit 0

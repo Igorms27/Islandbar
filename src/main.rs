@@ -6,6 +6,7 @@ mod anim;
 mod app;
 mod backend;
 mod perf;
+mod pet;
 mod platform;
 mod settings;
 mod updater;

@@ -1,9 +1,9 @@
-//! Escolhas feitas no cartão inicial: o que aparece na ilha e de qual sensor
-//! vem a temperatura.
+//! Escolhas feitas no cartão inicial: o que aparece na ilha, de qual sensor
+//! vem a temperatura e o pet.
 //!
 //! Ficam guardadas no registro do Windows, na conta do usuário
 //! (`HKEY_CURRENT_USER\Software\Islandbar`, valor `Stats`), num texto curto
-//! como `temp=gpu;show=cpu,gpu,ram,temp`. Assim continuam valendo quando a
+//! como `temp=gpu;show=cpu,gpu,ram,temp;pet=ghost`. Assim continuam valendo quando a
 //! ilha abre sozinha com o Windows ou depois de uma atualização.
 
 /// De qual sensor a ilha mostra a temperatura.
@@ -30,11 +30,34 @@ impl TempChoice {
     }
 }
 
+/// O bichinho no lugar das barrinhas do som (veja `pet.rs`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Pet {
+    /// As barrinhas que dançam com o som (o original).
+    #[default]
+    Bars,
+    Ghost,
+    Robot,
+}
+
+impl Pet {
+    pub const ALL: [Pet; 3] = [Pet::Bars, Pet::Ghost, Pet::Robot];
+
+    fn key(self) -> &'static str {
+        match self {
+            Pet::Bars => "bars",
+            Pet::Ghost => "ghost",
+            Pet::Robot => "robot",
+        }
+    }
+}
+
 /// O que aparece na pílula (sem música) e na pílula do modo jogo. O painel
 /// aberto sempre mostra tudo.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Settings {
     pub temp: TempChoice,
+    pub pet: Pet,
     pub cpu: bool,
     pub gpu: bool,
     pub ram: bool,
@@ -44,7 +67,7 @@ pub struct Settings {
 impl Default for Settings {
     /// O mesmo que a ilha mostrava antes desta opção existir.
     fn default() -> Self {
-        Self { temp: TempChoice::Auto, cpu: true, gpu: true, ram: true, show_temp: false }
+        Self { temp: TempChoice::Auto, pet: Pet::Bars, cpu: true, gpu: true, ram: true, show_temp: false }
     }
 }
 
@@ -62,7 +85,7 @@ impl Settings {
             .into_iter()
             .filter_map(|(on, name)| on.then_some(name))
             .collect();
-        format!("temp={};show={}", self.temp.key(), shown.join(","))
+        format!("temp={};show={};pet={}", self.temp.key(), shown.join(","), self.pet.key())
     }
 
     /// Lê o texto guardado. O que não for entendido fica no padrão.
@@ -73,6 +96,11 @@ impl Settings {
                 Some(("temp", value)) => {
                     if let Some(choice) = TempChoice::ALL.into_iter().find(|c| c.key() == value.trim()) {
                         settings.temp = choice;
+                    }
+                }
+                Some(("pet", value)) => {
+                    if let Some(pet) = Pet::ALL.into_iter().find(|p| p.key() == value.trim()) {
+                        settings.pet = pet;
                     }
                 }
                 Some(("show", value)) => {
@@ -151,8 +179,9 @@ mod tests {
 
     #[test]
     fn guarda_e_le_de_volta() {
-        let settings = Settings { temp: TempChoice::Gpu, cpu: true, gpu: false, ram: true, show_temp: true };
-        assert_eq!(settings.to_text(), "temp=gpu;show=cpu,ram,temp");
+        let settings =
+            Settings { temp: TempChoice::Gpu, pet: Pet::Robot, cpu: true, gpu: false, ram: true, show_temp: true };
+        assert_eq!(settings.to_text(), "temp=gpu;show=cpu,ram,temp;pet=robot");
         assert_eq!(Settings::parse(&settings.to_text()), settings);
     }
 

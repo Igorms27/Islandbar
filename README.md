@@ -37,7 +37,9 @@ fone/caixa de som, alarme e o uso do PC. Nos jogos, mostra FPS, CPU, GPU e RAM.
 
 ## Recursos
 
-- **Pílula no topo** com relógio, música atual e barrinhas que dançam com o som. Sem música, mostra
+- **Pílula no topo** com relógio, música atual e barrinhas que dançam com o som.
+- **Pets**: troque as barrinhas por um fantasminha ou um robozinho. Eles piscam, olham para os lados
+  e abrem a boca cantando quando sai som. A escolha fica no cartão inicial. Sem música, mostra
   o uso de CPU, GPU e RAM.
 - **Mixer**: volume geral e de cada aplicativo, com medidor de áudio ao vivo dentro de cada slider.
   Clique no ícone para deixar no mudo.
@@ -91,7 +93,7 @@ espera. A versão atual aparece no rodapé do painel. As notas de cada versão e
 | Medir o FPS nos jogos | Na primeira vez, clique em **Ativar** no painel. O Windows pede confirmação de administrador uma vez, e passa a valer depois de sair e entrar na conta. |
 | Fechar a ilha | Abra o painel e clique em **Sair** (isso cancela um alarme marcado). |
 | Ligar/desligar o início com o Windows | Abra o `islandbar.exe` de novo: o cartão aparece outra vez. |
-| Escolher os números da ilha e a temperatura | Também no cartão inicial (abra o `islandbar.exe` de novo). Cada opção de temperatura mostra o valor de agora; "n/d" quer dizer que o PC não tem aquele sensor. |
+| Escolher o pet, os números da ilha e a temperatura | Também no cartão inicial (abra o `islandbar.exe` de novo). Cada opção de temperatura mostra o valor de agora; "n/d" quer dizer que o PC não tem aquele sensor. |
 
 ## Leve de verdade
 
@@ -101,7 +103,10 @@ A ilha foi feita para não pesar no PC nem roubar desempenho dos jogos.
   com uso de CPU perto de zero.
 - **Com som tocando**, as barrinhas animam a 30 quadros por segundo. Abrir, fechar e o painel aberto
   usam a taxa do monitor, para ficarem lisos.
-- **No modo jogo ela fica quieta**: não dança com o som e só atualiza os números, 1 vez por segundo.
+- **Com um pet**, parada ela acorda só durante os gestos (menos de 1 segundo, a cada poucos segundos).
+  As barrinhas continuam sendo a opção mais leve.
+- **No modo jogo ela fica quieta**: não dança com o som, o pet não faz gestos e só atualiza os números,
+  1 vez por segundo.
 - **Só lê o que está na tela**: o volume de cada app, a temperatura e a lista de dispositivos só são
   consultados com o painel aberto.
 - **Memória**: 30 segundos depois do último uso, ela devolve ao Windows a memória que ficou parada.
@@ -171,7 +176,8 @@ mentira (`src/backend/mock.rs`), útil para mexer na interface.
 | `src/app.rs` | A ilha: estados (pílula, aviso, painel, alarme), animações e desenho. |
 | `src/anim.rs` | A "mola" que dá o efeito elástico. |
 | `src/alarm.rs` | Alarme: contagem e o bip de despertador. |
-| `src/settings.rs` | Escolhas do cartão inicial (números da ilha e sensor da temperatura). |
+| `src/settings.rs` | Escolhas do cartão inicial (números da ilha, sensor da temperatura e pet). |
+| `src/pet.rs` | Os pets (fantasma, robô e as barrinhas): desenho e gestos. |
 | `src/platform.rs` | Mouse, teclado, janela sem moldura, memória e início com o Windows. |
 | `src/updater.rs` | Atualização automática. |
 | `src/perf.rs` | Medidor interno de quadros, CPU e memória (diagnóstico). |

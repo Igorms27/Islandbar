@@ -11,8 +11,9 @@ use eframe::egui::{
 use crate::alarm::{self, Alarm};
 use crate::anim::{meter, smoothstep, Spring};
 use crate::backend::{Backend, Command, Device, FpsAccess, Game, Snapshot, System, TempSource};
+use crate::pet;
 use crate::platform;
-use crate::settings::{Settings, TempChoice};
+use crate::settings::{Pet, Settings, TempChoice};
 use crate::updater;
 
 /// Tamanho da janela invisível que contém a ilha.
@@ -35,7 +36,7 @@ const FPS_ROW_HEIGHT: f32 = 36.0;
 /// Pílula do modo jogo: um pouco menor que a principal.
 const GAME_PILL_HEIGHT: f32 = 30.0;
 const GAME_PILL_GAP: f32 = 8.0;
-const WELCOME_SIZE: Vec2 = vec2(400.0, 290.0);
+const WELCOME_SIZE: Vec2 = vec2(400.0, 324.0);
 const MAX_APPS: usize = 7;
 /// Fileira de botões para escolher a saída de som ou o microfone.
 const DEVICE_ROW_HEIGHT: f32 = 32.0;
@@ -620,6 +621,11 @@ impl eframe::App for IslandApp {
         let swinging = self.mode == Mode::Ringing && self.alarm.sounding();
         // As barrinhas ainda estão se mexendo (ou vão começar)?
         let dancing = level > SOUND || self.master_peak > SOUND || self.bars.iter().any(|bar| *bar > 0.01);
+        // O pet faz um gesto de tempos em tempos (só na pílula, fora do modo jogo).
+        let pet_awake =
+            self.settings.pet != Pet::Bars && self.mode == Mode::Collapsed && snap.game.is_none() && !self.ghost;
+        let pet_next = pet_awake.then(|| pet::next_gesture_in(ctx.input(|i| i.time)));
+        let gesturing = pet_next == Some(0.0);
 
         let mode = self.mode;
         self.perf.frame(|| {
@@ -629,7 +635,7 @@ impl eframe::App for IslandApp {
         self.resting = false;
         if busy {
             ctx.request_repaint();
-        } else if hovered || dancing || swinging {
+        } else if hovered || dancing || swinging || gesturing {
             ctx.request_repaint_after(AMBIENT_FRAME);
         } else {
             // Nada se mexendo: dorme até alguém avisar que algo mudou.
@@ -642,6 +648,10 @@ impl eframe::App for IslandApp {
             // que o alarme deve tocar.
             if let Some(left) = self.alarm.remaining(now) {
                 wait = wait.min(alarm::next_change(left));
+            }
+            // Acorda para o próximo gesto do pet.
+            if let Some(next) = pet_next {
+                wait = wait.min(Duration::from_secs_f64(next));
             }
             ctx.request_repaint_after(wait);
         }
@@ -679,7 +689,9 @@ impl IslandApp {
         let left = island.left() + 16.0;
         let right = island.right() - 14.0;
 
-        draw_bars(p, pos2(left, cy), &self.bars, 16.0, fade(accent, alpha));
+        // O pet (ou as barrinhas) no canto esquerdo. No modo jogo ele fica quieto.
+        let pose = if snap.game.is_some() { pet::Pose::default() } else { pet::gesture(p.ctx().input(|i| i.time)) };
+        pet::draw(p, self.settings.pet, pos2(left + 13.5, cy), 1.0, &self.bars, pose, accent, ISLAND, alpha);
 
         let clock = chrono::Local::now().format("%H:%M").to_string();
         let mut clock_rect =
@@ -795,8 +807,8 @@ impl IslandApp {
         let art = Rect::from_min_size(pos2(left, top), Vec2::splat(HEADER_HEIGHT));
         p.rect_filled(art, 14.0, fade(accent, a * 0.22));
         p.rect_stroke(art, 14.0, Stroke::new(1.0, fade(accent, a * 0.5)), StrokeKind::Inside);
-        let bars_width = BARS as f32 * 6.0 - 3.0;
-        draw_bars(p, pos2(art.center().x - bars_width / 2.0, art.center().y), &self.bars, 26.0, fade(accent, a));
+        let pose = pet::gesture(ui.input(|i| i.time));
+        pet::draw(p, self.settings.pet, art.center(), 1.65, &self.bars, pose, accent, ISLAND, a);
 
         let buttons_left = right - 3.0 * 36.0;
         let text_x = art.right() + 14.0;
@@ -1612,8 +1624,8 @@ impl IslandApp {
         stats
     }
 
-    /// Cartão inicial: abrir junto com o Windows, o que aparece na ilha e de
-    /// qual sensor vem a temperatura.
+    /// Cartão inicial: abrir junto com o Windows, o que aparece na ilha, o pet
+    /// e de qual sensor vem a temperatura.
     fn draw_welcome(&mut self, ui: &mut Ui, p: &Painter, island: Rect, snap: &Snapshot, accent: Color32) {
         let interactive = self.mode == Mode::Welcome;
         let a = smoothstep(self.welcome.value * 1.6 - 0.4);
@@ -1682,14 +1694,38 @@ impl IslandApp {
             _ => {}
         }
 
+        // O pet: cada botão mostra ele se mexendo (o cartão já desenha a toda velocidade).
+        let cy = top + 134.0;
+        p.text(pos2(left, cy), Align2::LEFT_CENTER, "Pet", FontId::proportional(14.0), fade(TEXT, a));
+        let (pet_width, pet_gap) = (96.0, 6.0);
+        let pose = pet::gesture(ui.input(|i| i.time));
+        // Com música, os pets do cartão cantam junto.
+        let bars = self.bars;
+        for (i, pet) in Pet::ALL.into_iter().enumerate() {
+            let x = right - (3 - i) as f32 * pet_width - (2 - i) as f32 * pet_gap;
+            let chip = Rect::from_min_size(pos2(x, cy - 14.0), vec2(pet_width, 28.0));
+            let chosen = self.settings.pet == pet;
+            if choice_chip(ui, p, ("pet", i), chip, "", None, chosen, accent, a, interactive) {
+                self.settings.pet = pet;
+            }
+            pet::draw(p, pet, pos2(chip.left() + 20.0, cy), 0.62, &bars, pose, accent, ISLAND, a);
+            let name = match pet {
+                Pet::Bars => "Barrinhas",
+                Pet::Ghost => "Fantasma",
+                Pet::Robot => "Robô",
+            };
+            let color = if chosen { TEXT } else { TEXT_DIM };
+            p.text(pos2(chip.left() + 36.0, cy), Align2::LEFT_CENTER, name, FontId::proportional(12.5), fade(color, a));
+        }
+
         // De qual sensor vem a temperatura. Cada botão mostra o valor de agora,
         // para dar para ver qual é qual (o PC pode não ter algum: "n/d").
-        p.text(pos2(left, top + 130.0), Align2::LEFT_CENTER, "Temperatura", FontId::proportional(14.0), fade(TEXT, a));
+        p.text(pos2(left, top + 164.0), Align2::LEFT_CENTER, "Temperatura", FontId::proportional(14.0), fade(TEXT, a));
         let sys = &snap.system;
         let column = (right - left - 8.0) / 2.0;
         for (i, choice) in TempChoice::ALL.into_iter().enumerate() {
             let (col, line) = ((i % 2) as f32, (i / 2) as f32);
-            let corner = pos2(left + col * (column + 8.0), top + 146.0 + line * 34.0);
+            let corner = pos2(left + col * (column + 8.0), top + 180.0 + line * 34.0);
             let chip = Rect::from_min_size(corner, vec2(column, 28.0));
             let name = match choice {
                 TempChoice::Auto => "Automática",
@@ -1843,14 +1879,6 @@ fn draw_ring(p: &Painter, center: Pos2, radius: f32, level: f32, color: Color32,
 }
 
 /// Barrinhas de equalizador, a partir da esquerda, centradas na vertical.
-fn draw_bars(p: &Painter, left_center: Pos2, bars: &[f32], max_height: f32, color: Color32) {
-    for (i, level) in bars.iter().enumerate() {
-        let height = 3.0 + level * (max_height - 3.0);
-        let rect = Rect::from_center_size(pos2(left_center.x + 1.5 + i as f32 * 6.0, left_center.y), vec2(3.0, height));
-        p.rect_filled(rect, 1.5, color);
-    }
-}
-
 #[derive(Clone, Copy)]
 enum MediaIcon {
     Play,
