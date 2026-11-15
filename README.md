@@ -47,8 +47,9 @@ fone/caixa de som, alarme e o uso do PC. Nos jogos, mostra FPS, CPU, GPU e RAM.
   microfone. Um clique troca o que o Windows usa para música, jogos e chamadas.
 - **Mídia**: título, artista e os botões anterior / tocar-pausar / próxima. Funciona com Spotify,
   navegadores e qualquer app que apareça no controle de mídia do Windows.
-- **Alarme**: "toca daqui a X horas/minutos", com setinhas, atalhos ou digitando o número. Fica
-  guardado: fechar e abrir a ilha não perde o alarme.
+- **Alarme**: "toca daqui a X horas/minutos", com setinhas, atalhos ou digitando o número. Toca
+  mesmo com a ilha fechada: na hora, o Windows abre a ilha sozinho (por uma tarefa do Agendador de
+  Tarefas, "Islandbar - alarme", que some depois).
   Na hora, a ilha mostra um aviso com bip de despertador e os botões Soneca e Parar.
 - **Aviso de volume**: ao usar as teclas de volume do teclado, a ilha se estica e mostra o nível.
 - **Monitor do sistema**: CPU, GPU, RAM e temperatura, sem instalar driver. No cartão inicial você
@@ -92,7 +93,7 @@ espera. Um alarme marcado continua contando depois de reiniciar. A versão atual
 | Marcar um alarme | Página Alarme: setinhas, atalhos (+5 min, +15 min…) ou clique no número e digite. **Enter** inicia. |
 | Tirar a ilha da frente | Com o mouse em cima dela, aperte **Ctrl**. Ela some e os cliques passam para o que está atrás (dá para soltar o Ctrl e clicar normalmente). Volta quando o mouse sai. |
 | Medir o FPS nos jogos | Na primeira vez, clique em **Ativar** no painel. O Windows pede confirmação de administrador uma vez, e passa a valer depois de sair e entrar na conta. |
-| Fechar a ilha | Abra o painel e clique em **Sair**. Um alarme marcado fica guardado e continua quando a ilha abre de novo (ele só toca com a ilha aberta). |
+| Fechar a ilha | Abra o painel e clique em **Sair**. Um alarme marcado continua valendo: na hora, o Windows abre a ilha e ele toca. Para desistir dele, cancele na página Alarme antes de sair. |
 | Ligar/desligar o início com o Windows | Abra o `islandbar.exe` de novo: o cartão aparece outra vez. |
 | Escolher o pet, os números da ilha e a temperatura | Também no cartão inicial (abra o `islandbar.exe` de novo). Cada opção de temperatura mostra o valor de agora; "n/d" quer dizer que o PC não tem aquele sensor. |
 

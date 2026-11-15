@@ -301,6 +301,8 @@ StopIsland "alarm" $app
 # O alarme de 42 min tem que voltar ao abrir a ilha de novo (fica no registro).
 $saved = (Get-ItemProperty "HKCU:\Software\Islandbar" -Name Alarm -ErrorAction SilentlyContinue).Alarm
 Log "alarm saved after closing: $saved"
+$task = Get-ScheduledTask -TaskName "Islandbar - alarme" -ErrorAction SilentlyContinue
+Log ("wake-up task: " + $(if ($task) { $task.Triggers[0].StartBoundary + " -> " + $task.Actions[0].Arguments } else { "none" }))
 $app = StartIsland "alarm-again"
 Shot "alarm-8-restored"
 Log ("alarm restore: " + ((Get-Content "$out\alarm-again-stderr.txt" | Select-String '^alarm') -join " | "))
@@ -317,6 +319,23 @@ Log ("alarm lines: " + (Get-Content "$out\ring-stderr.txt" | Select-String '^ala
 StopIsland "ring" $app
 # Depois de tocar, não fica nada guardado.
 Log ("alarm saved after ringing: " + (Get-ItemProperty "HKCU:\Software\Islandbar" -Name Alarm -ErrorAction SilentlyContinue).Alarm)
+Log ("wake-up task after ringing: " + $(if (Get-ScheduledTask -TaskName "Islandbar - alarme" -ErrorAction SilentlyContinue) { "still there" } else { "none" }))
+
+# Alarme de 60 s e a ilha fechada logo depois: o Windows tem que abri-la na
+# hora, já tocando.
+$env:ISLANDBAR_DEBUG_ALARM = "60"
+$app = StartIsland "closed"
+Remove-Item Env:ISLANDBAR_DEBUG_ALARM
+Log ("closed lines: " + ((Get-Content "$out\closed-stderr.txt" | Select-String '^alarm') -join " | "))
+StopIsland "closed" $app
+Log ("islands running after closing: " + @(Get-Process islandbar -ErrorAction SilentlyContinue).Count)
+Start-Sleep 62
+$woke = @(Get-Process islandbar -ErrorAction SilentlyContinue)
+Log ("islands running at alarm time: " + $woke.Count + " (expected 1, opened by Windows)")
+Shot "alarm-9-woke-ringing"
+$woke | Stop-Process -ErrorAction SilentlyContinue
+Start-Sleep 1
+Log ("wake-up task after waking: " + $(if (Get-ScheduledTask -TaskName "Islandbar - alarme" -ErrorAction SilentlyContinue) { "still there" } else { "none" }))
 
 # ---- Rodada 5: cartão inicial ----------------------------------------------
 # Abre como quem clica no .exe: aparece o cartão. Escolhe "Placa de vídeo",

@@ -29,7 +29,13 @@ fn main() -> eframe::Result {
     // Depois de uma atualização automática também, mas aí mostra um aviso.
     let args: Vec<String> = std::env::args().collect();
     let updated = args.iter().any(|arg| arg == updater::UPDATED_ARG);
-    let show_welcome = !updated && !args.iter().any(|arg| arg == platform::AUTOSTART_ARG);
+    // Aberta pelo Windows na hora de um alarme (ela estava fechada): também
+    // vai direto. Se a ilha já está aberta, quem toca é ela; esta fecha.
+    let for_alarm = args.iter().any(|arg| arg == alarm::WAKE_ARG);
+    if for_alarm && platform::already_running() {
+        return Ok(());
+    }
+    let show_welcome = !updated && !for_alarm && !args.iter().any(|arg| arg == platform::AUTOSTART_ARG);
 
     platform::take_over_single_instance();
     updater::start();

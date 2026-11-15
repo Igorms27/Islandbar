@@ -6,6 +6,8 @@
 //!
 //! O horário marcado fica guardado no registro (veja `settings::store`): se a
 //! ilha fechar ou reiniciar para se atualizar, o alarme continua ao abrir.
+//! E, para tocar mesmo com a ilha fechada, a ilha deixa uma tarefa no
+//! Agendador de Tarefas do Windows que a abre na hora (veja `wakeup`).
 
 use crate::settings::store;
 use std::time::{Duration, Instant};
@@ -95,6 +97,7 @@ impl Alarm {
             Some((_, at)) => store::write(STORE, &at.timestamp().to_string()),
             None => store::delete(STORE),
         }
+        wakeup::schedule(self.due.map(|(_, at)| at));
     }
 
     /// Soma minutos a um alarme que já está contando.
@@ -221,6 +224,121 @@ pub fn next_change(left: Duration) -> Duration {
     }
 }
 
+/// Tarefa do Agendador de Tarefas do Windows que abre a ilha na hora do
+/// alarme (com `--alarm`), caso ela esteja fechada. Se a ilha estiver aberta,
+/// a cópia aberta pela tarefa vê isso e fecha na hora (veja `main.rs`), e a
+/// ilha aberta toca o alarme como sempre.
+///
+/// A tarefa é da conta do usuário (não precisa de administrador), só roda com
+/// ele conectado e expira 10 minutos depois da hora (o mesmo limite de
+/// `LATE_LIMIT`): com o PC desligado ou dormindo, não abre a ilha à toa depois.
+mod wakeup {
+    /// Argumento com que o Windows abre a ilha na hora do alarme.
+    pub const ARG: &str = "--alarm";
+
+    #[cfg(windows)]
+    pub fn schedule(at: Option<chrono::DateTime<chrono::Local>>) {
+        use std::sync::mpsc::{channel, Sender};
+        use std::sync::{Mutex, OnceLock};
+        // Uma thread só, que faz os pedidos na ordem (marcar e logo cancelar
+        // não pode terminar com a tarefa criada). Fica parada esperando.
+        static WORKER: OnceLock<Mutex<Sender<Option<chrono::DateTime<chrono::Local>>>>> = OnceLock::new();
+        let worker = WORKER.get_or_init(|| {
+            let (tx, rx) = channel();
+            let _ =
+                std::thread::Builder::new().name("islandbar-wakeup".into()).stack_size(256 * 1024).spawn(move || {
+                    use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
+                    let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
+                    while let Ok(at) = rx.recv() {
+                        let result = unsafe { apply(at) };
+                        crate::perf::line(match (&result, at) {
+                            (Ok(()), Some(at)) => format!("alarm: wake-up task set for {}", at.format("%H:%M:%S")),
+                            (Ok(()), None) => "alarm: wake-up task removed".to_string(),
+                            (Err(err), _) => format!("alarm: wake-up task failed: {err}"),
+                        });
+                    }
+                });
+            Mutex::new(tx)
+        });
+        if let Ok(tx) = worker.lock() {
+            let _ = tx.send(at);
+        }
+    }
+
+    #[cfg(windows)]
+    const NAME: &str = "Islandbar - alarme";
+
+    #[cfg(windows)]
+    unsafe fn apply(at: Option<chrono::DateTime<chrono::Local>>) -> windows::core::Result<()> {
+        use windows::core::BSTR;
+        use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
+        use windows::Win32::System::TaskScheduler::{
+            ITaskService, TaskScheduler, TASK_CREATE_OR_UPDATE, TASK_LOGON_INTERACTIVE_TOKEN,
+        };
+        use windows::Win32::System::Variant::VARIANT;
+
+        let service: ITaskService = CoCreateInstance(&TaskScheduler, None, CLSCTX_INPROC_SERVER)?;
+        let none = VARIANT::default();
+        service.Connect(&none, &none, &none, &none)?;
+        let folder = service.GetFolder(&BSTR::from("\\"))?;
+        match at {
+            Some(at) => {
+                let exe = std::env::current_exe().map_err(|_| windows::core::Error::from_thread())?;
+                let xml = task_xml(at, &exe.display().to_string());
+                folder.RegisterTask(
+                    &BSTR::from(NAME),
+                    &BSTR::from(xml),
+                    TASK_CREATE_OR_UPDATE.0,
+                    &none,
+                    &none,
+                    TASK_LOGON_INTERACTIVE_TOKEN,
+                    &none,
+                )?;
+                Ok(())
+            }
+            // Sem tarefa para apagar também está certo.
+            None => match folder.DeleteTask(&BSTR::from(NAME), 0) {
+                Err(err) if err.code() == windows::Win32::Foundation::ERROR_FILE_NOT_FOUND.to_hresult() => Ok(()),
+                other => other,
+            },
+        }
+    }
+
+    /// A tarefa, no formato do Agendador. Datas no horário local, sem fuso.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub fn task_xml(at: chrono::DateTime<chrono::Local>, exe: &str) -> String {
+        let start = at.format("%Y-%m-%dT%H:%M:%S");
+        let end = (at + chrono::Duration::from_std(super::LATE_LIMIT).unwrap_or_default()).format("%Y-%m-%dT%H:%M:%S");
+        let exe = exe.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>Abre a Islandbar na hora do alarme marcado nela, se ela estiver fechada. Some sozinha depois.</Description></RegistrationInfo>
+  <Triggers><TimeTrigger><StartBoundary>{start}</StartBoundary><EndBoundary>{end}</EndBoundary><Enabled>true</Enabled></TimeTrigger></Triggers>
+  <Principals><Principal id="Author"><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <DeleteExpiredTaskAfter>PT0S</DeleteExpiredTaskAfter>
+    <Priority>5</Priority>
+  </Settings>
+  <Actions Context="Author"><Exec><Command>{exe}</Command><Arguments>{arg}</Arguments></Exec></Actions>
+</Task>"#,
+            arg = ARG
+        )
+    }
+
+    #[cfg(not(windows))]
+    pub fn schedule(at: Option<chrono::DateTime<chrono::Local>>) {
+        let _ = at;
+    }
+}
+
+pub use wakeup::ARG as WAKE_ARG;
+
 /// O bip-bip de despertador, gerado na hora (não precisa de arquivo).
 mod sound {
     /// Um ciclo do som: 4 bipes curtos e uma pausa. Toca em repetição.
@@ -312,6 +430,17 @@ mod tests {
         assert_eq!(short(Duration::from_secs(4500)), "1h15");
         assert_eq!(short(Duration::from_secs(1490)), "25 min");
         assert_eq!(short(Duration::from_millis(44_200)), "45 s");
+    }
+
+    #[test]
+    fn tarefa_do_windows() {
+        use chrono::TimeZone;
+        let at = chrono::Local.with_ymd_and_hms(2026, 11, 15, 22, 9, 59).unwrap();
+        let xml = wakeup::task_xml(at, r"C:\Jogos & Apps\islandbar.exe");
+        assert!(xml.contains("<StartBoundary>2026-11-15T22:09:59</StartBoundary>"));
+        assert!(xml.contains("<EndBoundary>2026-11-15T22:19:59</EndBoundary>"));
+        assert!(xml.contains(r"<Command>C:\Jogos &amp; Apps\islandbar.exe</Command>"));
+        assert!(xml.contains("<Arguments>--alarm</Arguments>"));
     }
 
     #[test]

@@ -500,6 +500,18 @@ mod instance {
         }
     }
 
+    /// Já há uma ilha aberta?
+    pub fn running() -> bool {
+        unsafe {
+            let mutex = CreateMutexW(None, false, w!("Local\\IslandbarInstance"));
+            let exists = GetLastError() == ERROR_ALREADY_EXISTS;
+            if let Ok(mutex) = mutex {
+                let _ = windows::Win32::Foundation::CloseHandle(mutex);
+            }
+            exists
+        }
+    }
+
     pub fn quit_requested() -> bool {
         let quit = QUIT_EVENT.load(Ordering::Relaxed);
         quit != 0 && unsafe { WaitForSingleObject(HANDLE(quit as *mut std::ffi::c_void), 0) } == WAIT_OBJECT_0
@@ -510,6 +522,14 @@ mod instance {
 pub fn take_over_single_instance() {
     #[cfg(windows)]
     instance::take_over();
+}
+
+/// Já existe uma ilha aberta?
+pub fn already_running() -> bool {
+    #[cfg(windows)]
+    return instance::running();
+    #[cfg(not(windows))]
+    false
 }
 
 /// Outra ilha (mais nova) abriu e pediu para esta fechar?
