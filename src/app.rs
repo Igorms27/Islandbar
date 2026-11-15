@@ -1218,8 +1218,9 @@ impl IslandApp {
                     Stroke::new(2.0, fade(accent, a)),
                 );
             }
+            // "h" / "min" do lado de fora da caixa de digitação (senão a borda passa por cima).
             p.text(
-                pos2(x + 26.0, digits_y + 6.0),
+                pos2(rect.right() + 5.0, digits_y + 6.0),
                 Align2::LEFT_CENTER,
                 unit,
                 FontId::proportional(13.0),
