@@ -14,6 +14,8 @@ use std::sync::{Arc, Mutex};
 mod fps;
 #[cfg(windows)]
 mod game;
+#[cfg(windows)]
+mod keys;
 #[cfg(not(windows))]
 mod mock;
 #[cfg(windows)]
@@ -129,6 +131,15 @@ pub struct Snapshot {
     pub inputs: Vec<Device>,
 }
 
+/// Uma tecla de volume do teclado.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(not(windows), allow(dead_code))] // fora do Windows ninguém aperta
+pub enum VolumeKey {
+    Up,
+    Down,
+    Mute,
+}
+
 #[derive(Clone, Debug)]
 pub enum Command {
     SetMaster(f32),
@@ -140,6 +151,10 @@ pub enum Command {
     Prev,
     /// Passa a usar este dispositivo (saída ou microfone, pelo `Device::id`).
     SetDevice(String),
+    /// Tecla de volume apertada (a ilha cuida dela no lugar do Windows, para
+    /// a barrinha de volume do Windows não aparecer junto com o aviso da ilha).
+    #[cfg_attr(not(windows), allow(dead_code))] // fora do Windows ninguém aperta
+    VolumeKey(VolumeKey),
     /// Pede ao Windows a permissão para medir FPS.
     EnableFps,
     /// A interface avisa quando o painel abre ou fecha. Com ele fechado o
@@ -168,6 +183,8 @@ impl Backend {
         let (tx, rx) = channel();
         let thread_state = state.clone();
         let wake: Wake = Box::new(wake);
+        #[cfg(windows)]
+        keys::start(tx.clone());
         std::thread::Builder::new()
             .name("islandbar-backend".into())
             .spawn(move || run(thread_state, rx, wake))

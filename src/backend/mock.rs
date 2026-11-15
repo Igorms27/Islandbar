@@ -4,7 +4,9 @@
 //! números do sistema uma vez por segundo, e acorda a interface só quando
 //! algo que ela mostra mudou.
 
-use super::{Command, Device, FpsAccess, Game, Media, Session, Shared, Snapshot, System, Temp, TempSource, Wake};
+use super::{
+    Command, Device, FpsAccess, Game, Media, Session, Shared, Snapshot, System, Temp, TempSource, VolumeKey, Wake,
+};
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
@@ -66,6 +68,11 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
                     }
                 }
                 Command::Next | Command::Prev => {}
+                Command::VolumeKey(key) => match key {
+                    VolumeKey::Mute => snap.master_muted = !snap.master_muted,
+                    VolumeKey::Up => snap.master = (snap.master + 0.02).min(1.0),
+                    VolumeKey::Down => snap.master = (snap.master - 0.02).max(0.0),
+                },
                 Command::SetDevice(id) => {
                     for list in [&mut snap.outputs, &mut snap.inputs] {
                         if list.iter().any(|d| d.id == id) {

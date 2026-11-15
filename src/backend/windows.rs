@@ -8,7 +8,7 @@
 
 use super::game::GameWatcher;
 use super::sysmon::{SystemMonitor, Wanted};
-use super::{Command, Device, Game, Media, Session, Shared, System, Wake};
+use super::{Command, Device, Game, Media, Session, Shared, System, VolumeKey, Wake};
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
@@ -170,6 +170,15 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
                     }
                 }
                 Ok(Command::EnableFps) => games.request_access(),
+                Ok(Command::VolumeKey(key)) => {
+                    if let Some(audio) = &audio {
+                        if let Err(err) = unsafe { volume_key(audio, key) } {
+                            crate::perf::line(format!("islandbar: tecla de volume falhou: {err}"));
+                        }
+                    }
+                    // Lê o volume novo já: a ilha mostra o aviso sem esperar.
+                    next_tick = now;
+                }
                 Ok(Command::SetDevice(id)) => {
                     if let Err(err) = unsafe { set_default_device(&id) } {
                         crate::perf::line(format!("islandbar: não deu para trocar o dispositivo: {err}"));
@@ -196,6 +205,7 @@ pub fn run(state: Shared, rx: Receiver<Command>, wake: Wake) {
             if unsafe { refresh_audio(&mut enumerator, &mut audio, &mut names, panel) }.is_err() {
                 audio = None;
             }
+            super::keys::set_audio_ready(audio.is_some());
             crate::perf::add_section("audio", now);
         }
 
@@ -419,6 +429,23 @@ unsafe fn read_sessions(audio: &Audio) -> Vec<Session> {
     sessions
 }
 
+/// Faz o que o Windows faria com a tecla: o volume anda de 2 em 2, subir tira
+/// do mudo, e a tecla de mudo liga e desliga.
+unsafe fn volume_key(audio: &Audio, key: VolumeKey) -> Result<()> {
+    let no_ctx = std::ptr::null();
+    let muted = audio.endpoint.GetMute()?.as_bool();
+    if key == VolumeKey::Mute {
+        return audio.endpoint.SetMute(!muted, no_ctx);
+    }
+    let steps = (audio.endpoint.GetMasterVolumeLevelScalar()? * 50.0).round();
+    let steps = if key == VolumeKey::Up { steps + 1.0 } else { steps - 1.0 };
+    audio.endpoint.SetMasterVolumeLevelScalar((steps / 50.0).clamp(0.0, 1.0), no_ctx)?;
+    if key == VolumeKey::Up && muted {
+        audio.endpoint.SetMute(false, no_ctx)?;
+    }
+    Ok(())
+}
+
 unsafe fn apply(cmd: Command, audio: Option<&Audio>, media: Option<&MediaManager>) -> Result<()> {
     let no_ctx = std::ptr::null();
     match cmd {
@@ -455,7 +482,7 @@ unsafe fn apply(cmd: Command, audio: Option<&Audio>, media: Option<&MediaManager
             current_session(media)?.TrySkipPreviousAsync()?;
         }
         // Tratados no laço principal.
-        Command::EnableFps | Command::Panel(_) | Command::SetDevice(_) => {}
+        Command::EnableFps | Command::Panel(_) | Command::SetDevice(_) | Command::VolumeKey(_) => {}
     }
     Ok(())
 }

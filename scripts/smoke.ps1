@@ -185,6 +185,13 @@ TitleCheck "depois do Ctrl" $r $base
 Start-Sleep 3
 TitleCheck "depois do Ctrl (3 s)" $r $base
 
+# Tecla de volume: a ilha a pega antes do Windows (para a barrinha de volume
+# do Windows não aparecer). Sem placa de som aqui, ela deixa a tecla passar.
+[W]::keybd_event(0xAF, 0, 0, [UIntPtr]::Zero)
+[W]::keybd_event(0xAF, 0, 2, [UIntPtr]::Zero)
+Start-Sleep -Milliseconds 500
+Log ("volume keys: " + ((Get-Content "$out\island-stderr.txt" | Select-String '^volume keys') -join " | "))
+
 # ---- Rodada 2: modo jogo ---------------------------------------------------
 # Um "jogo falso" em tela cheia (examples/fake_game.rs) entrega quadros pelo
 # DirectX; a ilha deve abrir a pílula do modo jogo com o FPS.
