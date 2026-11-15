@@ -9,6 +9,10 @@ updates:
       dependencias:
         patterns: ["*"]
     open-pull-requests-limit: 2
+    ignore:
+      # O windows-core tem que ter a mesma versão do windows; atualizar só ele
+      # quebra a compilação. Os dois são atualizados juntos, à mão.
+      - dependency-name: windows-core
   - package-ecosystem: github-actions
     directory: /
     schedule:

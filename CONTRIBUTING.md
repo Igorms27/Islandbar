@@ -56,6 +56,7 @@ artefato `smoke` da execução e na branch `ci-results`.
 - Para testar sem publicar, use uma branch com o nome `ci/<algo>`: ela passa pelas mesmas checagens e
   pelo teste visual, mas não gera versão.
 - As notas de cada versão são montadas a partir das mensagens de commit.
+- Mudanças só em documentação (arquivos `.md`, `docs/`, modelos de issue) não geram versão.
 
 ## Variáveis de diagnóstico
 

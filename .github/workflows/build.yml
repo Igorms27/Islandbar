@@ -3,6 +3,16 @@ name: Build Windows
 on:
   push:
     branches: [main, 'ci/**']
+    # Mudança só em documentação não vira versão nova (a ilha de quem usa
+    # reiniciaria à toa para se atualizar).
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.editorconfig'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/pull_request_template.md'
+      - '.github/dependabot.yml'
   pull_request:
   workflow_dispatch:
 

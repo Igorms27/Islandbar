@@ -32,7 +32,7 @@ body:
     id: version
     attributes:
       label: Versão da ilha
-      description: Aparece no rodapé do painel (ex.: "versão 68").
+      description: 'Aparece no rodapé do painel, por exemplo "versão 68".'
     validations:
       required: true
   - type: input

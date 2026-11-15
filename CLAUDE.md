@@ -30,6 +30,8 @@ e um modo jogo com FPS. Veja o README para a lista de funções e de arquivos.
 - **Push no `main` publica uma versão** (`build-N` no GitHub Releases), e as
   ilhas instaladas se atualizam sozinhas em ~2 minutos. Só enviar ao `main`
   código compilando e testado.
+  Exceção: envios só de documentação (`*.md`, `docs/`, modelos de issue) não
+  rodam o CI nem geram versão (`paths-ignore` no `build.yml`).
 - Para testar sem publicar, usar uma branch `ci/<nome>`: o GitHub Actions
   compila e roda o teste visual, mas não cria versão.
 - O dono também faz commits direto no `main`: sempre `git pull --rebase`
