@@ -21,7 +21,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 base64 = "0.23"
 raw-window-handle = "0.6"
 # Para declarar a interface do Windows que troca o dispositivo de som (IPolicyConfig).
-windows-core = "0.62"
+windows-core = "0.100"
 windows = { version = "0.62", features = [
     "Foundation",
     "Media_Control",
