@@ -12,6 +12,7 @@ use crate::alarm::{self, Alarm};
 use crate::anim::{meter, smoothstep, Spring};
 use crate::backend::{Backend, Command, Device, FpsAccess, Game, Snapshot, System, TempSource};
 use crate::delivery::{self, Order, Stage};
+use crate::map::{self, Map};
 use crate::pet;
 use crate::platform;
 use crate::settings::{Pet, Settings, TempChoice};
@@ -50,6 +51,13 @@ const PANEL_MAX_HEIGHT: f32 = WINDOW_SIZE[1] - TOP_MARGIN - 16.0;
 const ALARM_PAGE_HEIGHT: f32 = 178.0;
 /// Cartão que aparece quando o alarme toca.
 const RINGING_SIZE: Vec2 = vec2(360.0, 76.0);
+/// Janela do pedido do iFood (abre ao clicar na pílula do pedido).
+const ORDER_WIDTH: f32 = 420.0;
+/// Até o começo do mapa: cabeçalho, etapa e a linha do andamento.
+const ORDER_TOP: f32 = 118.0;
+const ORDER_MAP_HEIGHT: f32 = 170.0;
+/// Sem os pontos do mapa: um desenho loja → você no lugar.
+const ORDER_ROUTE_HEIGHT: f32 = 64.0;
 /// Depois de um clique num dispositivo, quanto tempo esperar o Windows confirmar.
 const DEVICE_PENDING: Duration = Duration::from_secs(2);
 const BARS: usize = 5;
@@ -105,6 +113,8 @@ enum Mode {
     Expanded,
     /// O alarme está tocando.
     Ringing,
+    /// Janela do pedido do iFood: etapa, previsão, mapa.
+    Order,
 }
 
 pub struct IslandApp {
@@ -141,6 +151,18 @@ pub struct IslandApp {
     order_bumped: Option<Instant>,
     /// O botão da extensão do iFood já foi clicado no cartão inicial.
     extension_opened: bool,
+    /// Onde a pílula do pedido estava no último quadro (para o mouse e o clique).
+    order_rect: Option<Rect>,
+    /// Mouse em cima da pílula do pedido.
+    order_hovered: bool,
+    /// Onde a pílula do pedido começava quando foi clicada (a janela abre dali).
+    order_anchor: Option<f32>,
+    /// Centro da ilha na janela (só sai do meio com a janela do pedido aberta).
+    center_x: Spring,
+    /// 0..1, opacidade da janela do pedido.
+    order_open: Spring,
+    /// Os pedacinhos do mapa da janela do pedido.
+    map: Map,
 
     hud_timer: f32,
     leave_timer: f32,
@@ -248,6 +270,12 @@ impl IslandApp {
             last_order: None,
             order_bumped: None,
             extension_opened: false,
+            order_rect: None,
+            order_hovered: false,
+            order_anchor: None,
+            center_x: Spring::bouncy(WINDOW_SIZE[0] / 2.0),
+            order_open: Spring::smooth(0.0),
+            map: Map::new(wake(cc.egui_ctx.clone())),
             hud_timer: if mode == Mode::Hud { f32::INFINITY } else { 0.0 },
             leave_timer: 0.0,
             uptime: 0.0,
@@ -299,9 +327,10 @@ impl IslandApp {
         }
     }
 
-    /// O mouse está em cima da ilha?
-    fn cursor_inside(&self, ctx: &egui::Context, island: Rect) -> bool {
-        let hit = island.expand(6.0);
+    /// O mouse está em cima da ilha (ou da pílula do pedido, `extra`)?
+    fn cursor_inside(&self, ctx: &egui::Context, island: Rect, extra: Option<Rect>) -> bool {
+        // O vigia do mouse confere um retângulo só: o que cobre as duas pílulas.
+        let hit = extra.map_or(island, |r| island.union(r)).expand(6.0);
 
         #[cfg(windows)]
         {
@@ -336,6 +365,7 @@ impl IslandApp {
             Mode::Hud => HUD_SIZE,
             Mode::Expanded => vec2(EXPANDED_WIDTH, panel_fixed_height(snap) + self.middle_height(snap)),
             Mode::Ringing => RINGING_SIZE,
+            Mode::Order => vec2(ORDER_WIDTH, order_panel_height(self.last_order.as_ref())),
         }
     }
 
@@ -403,6 +433,16 @@ impl eframe::App for IslandApp {
             std::process::exit(0);
         }
         let snap = self.backend.snapshot();
+        // O pedido do iFood (se uma aba do navegador está mostrando um).
+        let current_order = delivery::current(now);
+        if current_order.is_some() {
+            self.last_order = current_order.clone();
+        } else {
+            if self.mode == Mode::Order {
+                self.mode = Mode::Collapsed;
+            }
+            self.map.clear();
+        }
         // Atualização baixada: reinicia quando a ilha não está em uso. Durante
         // um jogo espera ele fechar, para a troca não atrapalhar a partida.
         // (Um alarme marcado continua depois de reiniciar; só espera se estiver tocando.)
@@ -447,16 +487,29 @@ impl eframe::App for IslandApp {
         self.width.update(dt);
         self.height.update(dt);
         let (w, h) = (self.width.value.max(8.0), self.height.value.max(8.0));
-        let island = Rect::from_min_size(pos2(ui.max_rect().center().x - w / 2.0, TOP_MARGIN), vec2(w, h));
+        // A janela do pedido abre a partir da pílula do pedido (à esquerda),
+        // para ficar embaixo do mouse; o resto fica no meio.
+        let middle = ui.max_rect().center().x;
+        self.center_x.target = match (self.mode, self.order_anchor) {
+            (Mode::Order, Some(left)) => (left + ORDER_WIDTH / 2.0)
+                .clamp(ORDER_WIDTH / 2.0 + 12.0, WINDOW_SIZE[0] - ORDER_WIDTH / 2.0 - 12.0)
+                .min(middle),
+            _ => middle,
+        };
+        self.center_x.update(dt);
+        let island = Rect::from_min_size(pos2(self.center_x.value - w / 2.0, TOP_MARGIN), vec2(w, h));
         let radius = (h / 2.0).min(26.0);
 
         // --- Mouse e troca de estados ---
         let pointer_down = ctx.input(|i| i.pointer.any_down());
-        let hovered = self.cursor_inside(&ctx, island);
+        // A pílula do pedido também conta como "em cima da ilha" (Ctrl e clique).
+        let order_area = self.order_rect.filter(|_| matches!(self.mode, Mode::Collapsed | Mode::Hud));
+        let hovered = self.cursor_inside(&ctx, island, order_area);
         // Ctrl com o mouse em cima: a ilha sai da frente (some e deixa os
         // cliques passarem) até o mouse sair de cima. Dá para soltar o Ctrl e
         // clicar normalmente no que estava atrás.
-        let can_ghost = matches!(self.mode, Mode::Collapsed | Mode::Hud | Mode::Expanded) && self.editing.is_none();
+        let can_ghost =
+            matches!(self.mode, Mode::Collapsed | Mode::Hud | Mode::Expanded | Mode::Order) && self.editing.is_none();
         if hovered && can_ghost && !self.ghost && platform::ctrl_over_island() {
             self.ghost = true;
             platform::set_ghost(true);
@@ -474,7 +527,9 @@ impl eframe::App for IslandApp {
         // cursor 1 pixel (alternando o lado, para ele não sair do lugar): o
         // Windows avisa a janela da posição nova e o clique passa a valer.
         self.nudge_cooldown = (self.nudge_cooldown - dt).max(0.0);
-        let pointer_known = ctx.pointer_latest_pos().is_some_and(|p| island.expand(8.0).contains(p));
+        let pointer_known = ctx
+            .pointer_latest_pos()
+            .is_some_and(|p| island.expand(8.0).contains(p) || order_area.is_some_and(|r| r.expand(8.0).contains(p)));
         if cfg!(windows) && hovered && !pointer_known && self.nudge_cooldown == 0.0 {
             self.nudge_step = -self.nudge_step;
             platform::nudge_cursor(self.nudge_step);
@@ -509,6 +564,16 @@ impl eframe::App for IslandApp {
                     self.mode = Mode::Collapsed;
                 }
             }
+            Mode::Order => {
+                if hovered || pointer_down {
+                    self.leave_timer = 0.0;
+                } else {
+                    self.leave_timer += dt;
+                    if self.leave_timer > LEAVE_SECONDS && !self.pinned {
+                        self.mode = Mode::Collapsed;
+                    }
+                }
+            }
             Mode::Collapsed | Mode::Welcome | Mode::Ringing => {}
         }
 
@@ -516,6 +581,20 @@ impl eframe::App for IslandApp {
             let click = ui.interact(island, ui.scope_id().with("island"), Sense::click());
             if click.clicked() {
                 self.mode = Mode::Expanded;
+                self.leave_timer = 0.0;
+            }
+            if click.hovered() {
+                ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+        }
+        // Clique na pílula do pedido: abre a janela do pedido.
+        self.order_hovered = false;
+        if let Some(area) = order_area.filter(|_| !self.ghost) {
+            let click = ui.interact(area, ui.scope_id().with("order"), Sense::click());
+            self.order_hovered = click.hovered();
+            if click.clicked() {
+                self.mode = Mode::Order;
+                self.order_anchor = Some(area.left());
                 self.leave_timer = 0.0;
             }
             if click.hovered() {
@@ -547,6 +626,8 @@ impl eframe::App for IslandApp {
         self.page.update(dt);
         self.ghost_fade.target = if self.ghost { 1.0 } else { 0.0 };
         self.ghost_fade.update(dt);
+        self.order_open.target = if self.mode == Mode::Order { 1.0 } else { 0.0 };
+        self.order_open.update(dt);
 
         // Digitação do alarme: termina se o painel fechou, saiu da página, ou
         // se você clicou em outro programa (ele ficou com o teclado).
@@ -593,7 +674,7 @@ impl eframe::App for IslandApp {
         );
 
         self.draw_game_pill(&painter, island, &snap, accent, dt);
-        let order_highlight = self.draw_order_pill(&painter, island, accent, now, time, dt);
+        let order_highlight = self.draw_order_pill(&painter, island, current_order.as_ref(), accent, now, dt);
 
         let content = painter.with_clip_rect(island.shrink(1.0));
         let open = smoothstep(self.open.value);
@@ -601,7 +682,9 @@ impl eframe::App for IslandApp {
 
         let welcome = smoothstep(self.welcome.value);
         let ring = smoothstep(self.ring.value);
+        let order_open = smoothstep(self.order_open.value);
         let pill_alpha = (1.0 - open * 2.0).clamp(0.0, 1.0)
+            * (1.0 - order_open * 2.0).max(0.0)
             * (1.0 - hud)
             * (1.0 - welcome * 2.0).max(0.0)
             * (1.0 - ring * 2.0).max(0.0);
@@ -620,6 +703,9 @@ impl eframe::App for IslandApp {
         if ring > 0.01 {
             self.draw_ringing(ui, &content, island, accent, ring, time);
         }
+        if order_open > 0.01 {
+            self.draw_order_panel(ui, &content, island, accent, order_open, now, time);
+        }
 
         // --- Quando redesenhar ---
         let springs = [
@@ -633,6 +719,8 @@ impl eframe::App for IslandApp {
             &self.game_width,
             &self.order,
             &self.order_width,
+            &self.order_open,
+            &self.center_x,
             &self.ring,
             &self.page,
             &self.ghost_fade,
@@ -1528,27 +1616,23 @@ impl IslandApp {
         }
     }
 
-    /// Pílula do pedido do iFood, à esquerda da ilha: etapa, previsão,
+    /// Pílula do pedido do iFood, à esquerda da ilha: logo, etapa, previsão,
     /// código de entrega e mensagens. Devolve se ela está chamando atenção
     /// (acabou de ter novidade), para a ilha desenhar a animação.
     fn draw_order_pill(
         &mut self,
         painter: &Painter,
         island: Rect,
+        current: Option<&Order>,
         accent: Color32,
         now: Instant,
-        time: f32,
         dt: f32,
     ) -> bool {
-        let current = delivery::current(now);
-        if current.is_some() {
-            self.last_order = current.clone();
-        }
         // Como a do modo jogo: com o painel (ou um cartão) aberto ela sai.
         let visible = current.is_some() && matches!(self.mode, Mode::Collapsed | Mode::Hud);
         self.order.target = if visible { 1.0 } else { 0.0 };
         // Novidade: a pílula dá um pulinho.
-        if let Some(changed) = current.as_ref().and_then(|o| o.changed) {
+        if let Some(changed) = current.and_then(|o| o.changed) {
             if visible && self.order_bumped != Some(changed) && self.order.value > 0.9 {
                 self.order.value = 0.82;
             }
@@ -1558,23 +1642,30 @@ impl IslandApp {
         }
         self.order.update(dt);
         let grow = self.order.value;
+        if grow <= 0.01 || !visible {
+            self.order_rect = None;
+        }
         if grow <= 0.01 {
             self.order_width.finish();
             return false;
         }
         let Some(order) = self.last_order.clone() else { return false };
+        // A novidade aparece na cor de destaque da ilha por alguns segundos.
         let highlight = if visible { order.highlight(now) } else { 0.0 };
+        let stage_color = TEXT.lerp_to_gamma(accent, highlight);
 
-        // Trechos depois do ícone: (texto, tamanho, cor, é o balão de mensagens).
-        let stage = (order.stage.text().to_string(), 12.5, TEXT, false);
+        // Trechos depois do logo: (texto, tamanho, cor, é o balão de mensagens).
+        let stage = (order.stage.text().to_string(), 12.5, stage_color, false);
         let eta = (!order.eta.is_empty() && order.stage < Stage::Arrived).then(|| {
             let color = if eta_passed(&order.eta) { LATE } else { TEXT_DIM };
             (order.eta.replace('-', "–"), 12.0, color, false)
         });
         let code = (order.stage.on_the_way() && !order.code.is_empty())
-            .then(|| (format!("código {}", order.code), 12.0, accent, false));
-        let chat = (order.chats > 0).then(|| (order.chats.to_string(), 11.5, TEXT, true));
-        let (padding, icon, gap, bubble) = (12.0, 16.0, 10.0, 16.0);
+            .then(|| (format!("código {}", order.code), 12.0, TEXT_DIM.lerp_to_gamma(TEXT, 0.5), false));
+        let chat_color = if order.new_chat && highlight > 0.0 { accent } else { TEXT_DIM };
+        let chat = (order.chats > 0).then(|| (order.chats.to_string(), 11.5, chat_color, true));
+        let logo = ifood_logo_width(painter, 1.0);
+        let (padding, gap, bubble) = (9.0, 10.0, 18.0);
         // Espaço até a beirada da janela (pela largura final da ilha, para não
         // ficar trocando no meio da animação). Se faltar, sai primeiro a
         // previsão, depois as mensagens, depois o código.
@@ -1591,7 +1682,7 @@ impl IslandApp {
                     (painter.layout_no_wrap(text, FontId::proportional(size), color), color, is_chat)
                 })
                 .collect();
-            content = icon
+            content = logo
                 + galleys
                     .iter()
                     .map(|(g, _, is_chat)| gap + g.size().x + if *is_chat { bubble } else { 0.0 })
@@ -1607,17 +1698,13 @@ impl IslandApp {
         let right = island.left() - GAME_PILL_GAP * grow.min(1.0);
         let center_y = TOP_MARGIN + PILL_HEIGHT / 2.0;
         let rect = Rect::from_min_size(pos2(right - size.x, center_y - size.y / 2.0), size);
+        if visible {
+            self.order_rect = Some(rect);
+        }
         let radius = size.y / 2.0;
         let alpha = smoothstep((grow - 0.55) / 0.45);
 
-        // Novidade: brilho vermelho pulsando por alguns segundos.
-        if highlight > 0.0 {
-            let pulse = 0.6 + 0.4 * (time * 6.0).sin();
-            painter.add(
-                Shadow { offset: [0, 0], blur: 22, spread: 1, color: fade(FOOD, highlight * pulse * 0.8) }
-                    .as_shape(rect, radius),
-            );
-        }
+        // O mesmo visual da ilha: fundo escuro, borda discreta e sombra.
         painter.add(
             Shadow {
                 offset: [0, 4],
@@ -1627,19 +1714,17 @@ impl IslandApp {
             }
             .as_shape(rect, radius),
         );
-        painter.rect_filled(rect, radius, ISLAND);
-        let border = fade(FOOD, 0.35 + 0.65 * highlight);
-        painter.rect_stroke(rect, radius, Stroke::new(1.0, border), StrokeKind::Inside);
+        let fill = if self.order_hovered { Color32::from_rgb(22, 22, 26) } else { ISLAND };
+        painter.rect_filled(rect, radius, fill);
+        painter.rect_stroke(rect, radius, Stroke::new(1.0, fade(accent, 0.18)), StrokeKind::Inside);
 
         let p = painter.with_clip_rect(rect.shrink(1.0));
         let mut x = rect.left() + padding;
-        draw_bag(&p, pos2(x + icon / 2.0, center_y), fade(FOOD, alpha));
-        x += icon + gap;
+        draw_ifood_logo(&p, pos2(x, center_y), 1.0, alpha);
+        x += logo + gap;
         for (galley, color, is_chat) in galleys {
             if is_chat {
-                // Mensagem nova: o balãozinho fica vermelho enquanto chama atenção.
-                let bubble_color = if order.new_chat && highlight > 0.0 { FOOD } else { TEXT_DIM };
-                draw_chat(&p, pos2(x + 6.5, center_y), fade(bubble_color, alpha));
+                draw_chat(&p, pos2(x + 6.5, center_y), fade(color, alpha));
                 x += bubble;
             }
             let pos = pos2(x, center_y - galley.size().y / 2.0);
@@ -1647,6 +1732,194 @@ impl IslandApp {
             p.galley_with_override_text_color(pos, galley, fade(color, alpha));
         }
         highlight > 0.0
+    }
+
+    /// Janela do pedido: loja, etapa, previsão, andamento, mapa e entregador.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_order_panel(
+        &mut self,
+        ui: &mut Ui,
+        p: &Painter,
+        island: Rect,
+        accent: Color32,
+        open: f32,
+        now: Instant,
+        time: f32,
+    ) {
+        let Some(order) = self.last_order.clone() else { return };
+        let interactive = self.mode == Mode::Order;
+        let a = smoothstep(open * 1.6 - 0.4);
+        let left = island.left() + PADDING;
+        let right = island.right() - PADDING;
+        let top = island.top() + PADDING;
+
+        // Cabeçalho: logo, loja e número do pedido.
+        let logo = ifood_logo_width(p, 1.2);
+        draw_ifood_logo(p, pos2(left, top + 11.0), 1.2, a);
+        let number = (!order.number.is_empty()).then(|| format!("Pedido nº {}", order.number));
+        let number_width = number.as_ref().map_or(0.0, |n| {
+            p.text(pos2(right, top + 11.0), Align2::RIGHT_CENTER, n, FontId::proportional(11.5), fade(TEXT_DIM, a))
+                .width()
+                + 12.0
+        });
+        let store = if order.store.is_empty() { "Seu pedido" } else { &order.store };
+        let x = left + logo + 10.0;
+        text_fit(p, pos2(x, top + 11.0), Align2::LEFT_CENTER, store, 15.0, fade(TEXT, a), right - number_width - x);
+
+        // Etapa (grande) e previsão de entrega.
+        let highlight = order.highlight(now);
+        let stage_color = if order.stage == Stage::Cancelled { LATE } else { TEXT.lerp_to_gamma(accent, highlight) };
+        p.text(
+            pos2(left, top + 50.0),
+            Align2::LEFT_CENTER,
+            order.stage.text(),
+            FontId::proportional(20.0),
+            fade(stage_color, a),
+        );
+        if !order.eta.is_empty() && order.stage < Stage::Arrived {
+            let late = eta_passed(&order.eta);
+            let label = if late { "Previsão (atrasado)" } else { "Previsão de entrega" };
+            p.text(pos2(right, top + 41.0), Align2::RIGHT_CENTER, label, FontId::proportional(10.5), fade(TEXT_DIM, a));
+            let color = if late { LATE } else { TEXT };
+            let eta = order.eta.replace('-', " – ");
+            p.text(pos2(right, top + 58.0), Align2::RIGHT_CENTER, eta, FontId::proportional(15.0), fade(color, a));
+        }
+
+        draw_order_steps(p, left, right, top + 86.0, order.stage, accent, a);
+
+        // Mapa (com os pontos que o site informou) ou o desenho loja → você.
+        let has_map = order.from.is_some() || order.to.is_some() || order.courier.is_some();
+        let height = if has_map { ORDER_MAP_HEIGHT } else { ORDER_ROUTE_HEIGHT };
+        let area = Rect::from_min_size(pos2(left, top + ORDER_TOP), vec2(right - left, height));
+        if has_map {
+            self.draw_order_map(ui.ctx(), p, area, &order, accent, a, time);
+        } else {
+            draw_route(p, area, order.stage, accent, a, time);
+        }
+
+        // Entregador, código e mensagens.
+        let mut chips = Vec::new();
+        if !order.driver.is_empty() {
+            let vehicle = if order.vehicle.is_empty() { String::new() } else { format!(" · {}", order.vehicle) };
+            chips.push((format!("{}{vehicle}", order.driver), TEXT));
+        } else if order.stage < Stage::Shipping && !order.stage.is_final() {
+            chips.push(("Entregador ainda não definido".to_string(), TEXT_DIM));
+        }
+        if !order.code.is_empty() && !order.stage.is_final() {
+            chips.push((format!("Código {}", order.code), TEXT));
+        }
+        if order.chats > 0 {
+            let text = if order.chats == 1 { "1 mensagem".to_string() } else { format!("{} mensagens", order.chats) };
+            let color = if order.new_chat && highlight > 0.0 { accent } else { TEXT };
+            chips.push((text, color));
+        }
+        let mut x = left;
+        let cy = area.bottom() + 12.0 + 14.0;
+        for (text, color) in chips {
+            let galley = p.layout_no_wrap(text, FontId::proportional(12.0), color);
+            let chip = Rect::from_min_size(pos2(x, cy - 13.0), vec2(galley.size().x + 20.0, 26.0));
+            if chip.right() > right {
+                break;
+            }
+            p.rect_filled(chip, 13.0, fade(Color32::WHITE, a * 0.07));
+            p.galley_with_override_text_color(chip.center() - galley.size() / 2.0, galley, fade(color, a));
+            x = chip.right() + 8.0;
+        }
+
+        // Rodapé: abrir a página do pedido no navegador.
+        let button = Rect::from_min_max(
+            pos2(right - 150.0, island.bottom() - PADDING - 30.0),
+            pos2(right, island.bottom() - PADDING),
+        );
+        if text_button(ui, p, "order-open", button, "Abrir no navegador", false, accent, a, interactive) {
+            delivery::open_order(&order.id);
+        }
+    }
+
+    /// Mapa da janela do pedido: loja, sua casa e o entregador (o que o site informar).
+    #[allow(clippy::too_many_arguments)]
+    fn draw_order_map(
+        &mut self,
+        ctx: &egui::Context,
+        p: &Painter,
+        area: Rect,
+        order: &Order,
+        accent: Color32,
+        a: f32,
+        time: f32,
+    ) {
+        self.map.receive(ctx);
+        let points: Vec<(f64, f64)> = [order.from, order.to, order.courier].into_iter().flatten().collect();
+        let Some((z, center)) = map::frame(&points, area.width() as f64, area.height() as f64) else { return };
+        let origin = (center.0 - area.width() as f64 / 2.0, center.1 - area.height() as f64 / 2.0);
+        p.rect_filled(area, 12.0, fade(Color32::from_rgb(26, 26, 30), a));
+
+        // Os azulejos que cobrem o retângulo (os que ainda não chegaram ficam no fundo cinza).
+        let clip = p.with_clip_rect(area.intersect(p.clip_rect()));
+        let count = 1i64 << z;
+        let tiles = |from: f64, size: f32| {
+            (from / map::TILE).floor() as i64..=((from + size as f64) / map::TILE).floor() as i64
+        };
+        for ty in tiles(origin.1, area.height()) {
+            if !(0..count).contains(&ty) {
+                continue;
+            }
+            for tx in tiles(origin.0, area.width()) {
+                let tile = map::Tile { z, x: tx.rem_euclid(count) as u32, y: ty as u32 };
+                if let Some(texture) = self.map.tile(tile) {
+                    let min = area.min
+                        + vec2((tx as f64 * map::TILE - origin.0) as f32, (ty as f64 * map::TILE - origin.1) as f32);
+                    let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+                    clip.image(
+                        texture.id(),
+                        Rect::from_min_size(min, Vec2::splat(map::TILE as f32)),
+                        uv,
+                        fade(Color32::WHITE, a),
+                    );
+                }
+            }
+        }
+
+        let at = |point: (f64, f64)| {
+            let (x, y) = map::project(point, z);
+            area.min + vec2((x - origin.0) as f32, (y - origin.1) as f32)
+        };
+        if let (Some(from), Some(to)) = (order.from, order.to) {
+            clip.extend(Shape::dashed_line(
+                &[at(from), at(to)],
+                Stroke::new(1.5, fade(Color32::WHITE, a * 0.45)),
+                5.0,
+                4.0,
+            ));
+        }
+        if let Some(from) = order.from {
+            draw_store_pin(&clip, at(from), a);
+        }
+        if let Some(to) = order.to {
+            draw_home_pin(&clip, at(to), a);
+        }
+        if let Some(courier) = order.courier {
+            draw_courier_pin(&clip, at(courier), accent, a, time);
+        }
+
+        // Cantos arredondados: uma moldura da cor da ilha por cima das pontas.
+        p.rect_stroke(area, 12.0, Stroke::new(6.0, fade(ISLAND, a)), StrokeKind::Outside);
+        let credits = p.layout_no_wrap(map::CREDITS.to_string(), FontId::proportional(9.0), TEXT_DIM);
+        let box_rect = Rect::from_min_size(
+            area.right_bottom() - credits.size() - vec2(14.0, 8.0),
+            credits.size() + vec2(8.0, 4.0),
+        );
+        p.rect_filled(box_rect, 4.0, fade(Color32::from_black_alpha(150), a));
+        p.galley_with_override_text_color(box_rect.min + vec2(4.0, 2.0), credits, fade(TEXT_DIM, a));
+        if self.map.loading() {
+            p.text(
+                area.center(),
+                Align2::CENTER_CENTER,
+                "Carregando mapa…",
+                FontId::proportional(11.5),
+                fade(TEXT_DIM, a * 0.8),
+            );
+        }
     }
 
     /// Linha do painel para liberar a medição de FPS.
@@ -2374,27 +2647,144 @@ fn eta_passed(eta: &str) -> bool {
     late > 0 && late < 12 * 60
 }
 
-/// Sacolinha de comida.
-fn draw_bag(p: &Painter, c: Pos2, color: Color32) {
-    let body = Rect::from_center_size(c + vec2(0.0, 2.0), vec2(13.0, 10.5));
-    p.rect_filled(body, 2.5, color);
-    let handle: Vec<Pos2> = (0..=10)
-        .map(|i| {
-            let a = std::f32::consts::PI * i as f32 / 10.0;
-            pos2(c.x + 3.4 * a.cos(), body.top() + 0.5 - 3.6 * a.sin())
-        })
-        .collect();
-    p.add(Shape::line(handle, Stroke::new(1.6, color)));
+/// Logo do iFood: "iFood" em branco num quadradinho vermelho. Devolve a largura.
+fn ifood_logo_width(p: &Painter, scale: f32) -> f32 {
+    p.layout_no_wrap("iFood".to_string(), FontId::proportional(11.5 * scale), Color32::WHITE).size().x + 10.0 * scale
 }
 
-/// Balãozinho de conversa.
+/// Desenha o logo com a ponta esquerda no meio da altura em `left_center`.
+fn draw_ifood_logo(p: &Painter, left_center: Pos2, scale: f32, a: f32) {
+    let galley = p.layout_no_wrap("iFood".to_string(), FontId::proportional(11.5 * scale), Color32::WHITE);
+    let size = vec2(galley.size().x + 10.0 * scale, 18.0 * scale);
+    let rect = Rect::from_min_size(pos2(left_center.x, left_center.y - size.y / 2.0), size);
+    p.rect_filled(rect, 5.0 * scale, fade(FOOD, a));
+    let pos = rect.center() - galley.size() / 2.0;
+    // "Negrito": a fonte da ilha é fininha, então o texto vai duas vezes, meio pixel ao lado.
+    p.galley_with_override_text_color(pos, galley.clone(), fade(Color32::WHITE, a));
+    p.galley_with_override_text_color(pos + vec2(0.55 * scale, 0.0), galley, fade(Color32::WHITE, a));
+}
+
+/// Balãozinho de conversa só com o contorno e três pontinhos.
 fn draw_chat(p: &Painter, c: Pos2, color: Color32) {
-    let bubble = Rect::from_center_size(c - vec2(0.0, 1.0), vec2(13.0, 9.5));
-    p.rect_filled(bubble, 3.0, color);
+    let bubble = Rect::from_center_size(c - vec2(0.0, 1.0), vec2(14.0, 10.0));
+    let stroke = Stroke::new(1.2, color);
+    p.rect_stroke(bubble, 3.5, stroke, StrokeKind::Inside);
     let tail = vec![
-        pos2(bubble.left() + 2.5, bubble.bottom() - 0.5),
-        pos2(bubble.left() + 6.5, bubble.bottom() - 0.5),
-        pos2(bubble.left() + 2.0, bubble.bottom() + 3.0),
+        pos2(bubble.left() + 3.5, bubble.bottom() - 0.6),
+        pos2(bubble.left() + 2.5, bubble.bottom() + 2.8),
+        pos2(bubble.left() + 6.5, bubble.bottom() - 0.6),
     ];
-    p.add(Shape::convex_polygon(tail, color, Stroke::NONE));
+    p.add(Shape::line(tail, stroke));
+    for dx in [-3.0, 0.0, 3.0] {
+        p.circle_filled(bubble.center() + vec2(dx, 0.0), 0.95, color);
+    }
+}
+
+/// Altura da janela do pedido (com ou sem mapa).
+fn order_panel_height(order: Option<&Order>) -> f32 {
+    let has_map = order.is_some_and(|o| o.from.is_some() || o.to.is_some() || o.courier.is_some());
+    let middle = if has_map { ORDER_MAP_HEIGHT } else { ORDER_ROUTE_HEIGHT };
+    PADDING + ORDER_TOP + middle + 12.0 + 28.0 + 14.0 + 30.0 + PADDING
+}
+
+/// Quantos passos do andamento já aconteceram (-1 = nenhum).
+fn order_step(stage: Stage) -> i32 {
+    match stage {
+        Stage::Unknown | Stage::Placed | Stage::Cancelled => -1,
+        Stage::Confirmed => 0,
+        Stage::Preparing | Stage::Driver | Stage::Ready | Stage::Pickup | Stage::Collected => 1,
+        Stage::Shipping | Stage::Arrived => 2,
+        Stage::Delivered => 3,
+    }
+}
+
+/// Linha do andamento: Confirmado → Em preparo → A caminho → Entregue.
+fn draw_order_steps(p: &Painter, left: f32, right: f32, cy: f32, stage: Stage, accent: Color32, a: f32) {
+    let names = ["Confirmado", "Em preparo", "A caminho", "Entregue"];
+    let done = order_step(stage);
+    let (start, end) = (left + 5.0, right - 5.0);
+    let x = |i: usize| start + (end - start) * i as f32 / 3.0;
+    p.line_segment([pos2(start, cy), pos2(end, cy)], Stroke::new(2.0, fade(Color32::WHITE, a * 0.12)));
+    if done > 0 {
+        p.line_segment([pos2(start, cy), pos2(x(done as usize), cy)], Stroke::new(2.0, fade(accent, a)));
+    }
+    for (i, name) in names.iter().enumerate() {
+        let reached = i as i32 <= done;
+        if reached {
+            p.circle_filled(pos2(x(i), cy), 5.0, fade(accent, a));
+        } else {
+            p.circle_filled(pos2(x(i), cy), 4.0, fade(Color32::from_rgb(60, 60, 66), a));
+        }
+        let anchor = match i {
+            0 => Align2::LEFT_CENTER,
+            3 => Align2::RIGHT_CENTER,
+            _ => Align2::CENTER_CENTER,
+        };
+        let label_x = match i {
+            0 => start - 5.0,
+            3 => end + 5.0,
+            _ => x(i),
+        };
+        let color = if reached { TEXT } else { TEXT_DIM };
+        p.text(pos2(label_x, cy + 15.0), anchor, *name, FontId::proportional(10.5), fade(color, a));
+    }
+}
+
+/// Sem os pontos do mapa: desenho loja → você, com o entregador pela etapa.
+fn draw_route(p: &Painter, area: Rect, stage: Stage, accent: Color32, a: f32, time: f32) {
+    p.rect_filled(area, 12.0, fade(Color32::WHITE, a * 0.04));
+    let cy = area.center().y - 7.0;
+    let (start, end) = (area.left() + 36.0, area.right() - 36.0);
+    let progress = match stage {
+        Stage::Collected => 0.1,
+        Stage::Shipping => 0.55,
+        Stage::Arrived | Stage::Delivered => 1.0,
+        _ => 0.0,
+    };
+    p.line_segment([pos2(start, cy), pos2(end, cy)], Stroke::new(2.0, fade(Color32::WHITE, a * 0.14)));
+    let courier = pos2(start + (end - start) * progress, cy);
+    if progress > 0.0 {
+        p.line_segment([pos2(start, cy), courier], Stroke::new(2.0, fade(accent, a)));
+    }
+    draw_store_pin(p, pos2(start, cy), a);
+    draw_home_pin(p, pos2(end, cy), a);
+    // O entregador aparece depois de pegar o pedido (antes disso ele está na loja).
+    if progress > 0.0 && progress < 1.0 {
+        draw_courier_pin(p, courier, accent, a, time);
+    }
+    for (x, label) in [(start, "Loja"), (end, "Você")] {
+        p.text(pos2(x, cy + 20.0), Align2::CENTER_CENTER, label, FontId::proportional(10.5), fade(TEXT_DIM, a));
+    }
+}
+
+/// Marcador da loja: bolinha laranja com uma sacolinha.
+fn draw_store_pin(p: &Painter, c: Pos2, a: f32) {
+    p.circle_filled(c, 9.0, fade(Color32::from_rgb(255, 159, 10), a));
+    p.circle_stroke(c, 9.0, Stroke::new(1.5, fade(Color32::WHITE, a)));
+    let body = Rect::from_center_size(c + vec2(0.0, 1.2), vec2(7.0, 5.5));
+    p.rect_filled(body, 1.2, fade(Color32::WHITE, a));
+    let handle: Vec<Pos2> = (0..=8)
+        .map(|i| {
+            let angle = std::f32::consts::PI * i as f32 / 8.0;
+            pos2(c.x + 1.8 * angle.cos(), body.top() + 0.3 - 2.0 * angle.sin())
+        })
+        .collect();
+    p.add(Shape::line(handle, Stroke::new(1.0, fade(Color32::WHITE, a))));
+}
+
+/// Marcador da sua casa: bolinha branca com uma casinha.
+fn draw_home_pin(p: &Painter, c: Pos2, a: f32) {
+    p.circle_filled(c, 9.0, fade(TEXT, a));
+    let color = fade(ISLAND, a);
+    let roof = vec![c + vec2(-4.5, -0.5), c + vec2(0.0, -4.8), c + vec2(4.5, -0.5)];
+    p.add(Shape::convex_polygon(roof, color, Stroke::NONE));
+    p.rect_filled(Rect::from_min_max(c + vec2(-3.2, -0.8), c + vec2(3.2, 4.0)), 0.5, color);
+}
+
+/// Marcador do entregador: bolinha na cor de destaque, com um brilho pulsando.
+fn draw_courier_pin(p: &Painter, c: Pos2, accent: Color32, a: f32, time: f32) {
+    let pulse = (time * 1.6).fract();
+    p.circle_filled(c, 7.0 + 9.0 * pulse, fade(accent, a * 0.35 * (1.0 - pulse)));
+    p.circle_filled(c, 7.0, fade(accent, a));
+    p.circle_stroke(c, 7.0, Stroke::new(2.0, fade(Color32::WHITE, a)));
 }

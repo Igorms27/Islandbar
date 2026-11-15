@@ -6,6 +6,7 @@ mod anim;
 mod app;
 mod backend;
 mod delivery;
+mod map;
 mod perf;
 mod pet;
 mod platform;

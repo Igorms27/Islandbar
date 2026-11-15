@@ -61,8 +61,9 @@ fone/caixa de som, alarme e o uso do PC. Nos jogos, mostra FPS, CPU, GPU e RAM.
 - **Pedidos do iFood**: com a página do pedido aberta no Chrome ou no Edge (pode ficar numa aba de
   fundo), uma segunda pílula à esquerda da ilha mostra a etapa (em preparo, a caminho, entregador
   chegou…), a previsão de entrega, o código de entrega e quantas mensagens o chat do pedido tem.
-  Ela brilha em vermelho quando algo muda. Precisa de uma extensão pequena, instalada uma vez
-  (veja [Pedidos do iFood](#pedidos-do-ifood)).
+  Ela dá um pulinho quando algo muda. Clicando nela abre a janela do pedido: andamento, entregador
+  e um mapa com a loja, a sua casa e o entregador (quando o site informa onde ele está). Precisa de
+  uma extensão pequena, instalada uma vez (veja [Pedidos do iFood](#pedidos-do-ifood)).
 - **Iniciar com o Windows** (opcional) e **atualização automática**.
 
 <p align="center">
@@ -101,7 +102,7 @@ espera. Um alarme marcado continua contando depois de reiniciar. A versão atual
 | Medir o FPS nos jogos | Na primeira vez, clique em **Ativar** no painel. O Windows pede confirmação de administrador uma vez, e passa a valer depois de sair e entrar na conta. |
 | Fechar a ilha | Abra o painel e clique em **Sair**. Um alarme marcado continua valendo: na hora, o Windows abre a ilha e ele toca. Para desistir dele, cancele na página Alarme antes de sair. |
 | Ligar/desligar o início com o Windows | Abra o `islandbar.exe` de novo: o cartão aparece outra vez. |
-| Acompanhar um pedido do iFood | Deixe a página do pedido aberta no navegador (pode ser uma aba de fundo). A pílula aparece sozinha e some uns minutos depois da entrega ou quando a aba fecha. |
+| Acompanhar um pedido do iFood | Deixe a página do pedido aberta no navegador (pode ser uma aba de fundo). A pílula aparece sozinha e some uns minutos depois da entrega ou quando a aba fecha. Clique nela para ver a janela do pedido, com o mapa; o Ctrl em cima dela também tira as duas pílulas da frente. |
 | Escolher o pet, os números da ilha e a temperatura | Também no cartão inicial (abra o `islandbar.exe` de novo). Cada opção de temperatura mostra o valor de agora; "n/d" quer dizer que o PC não tem aquele sensor. |
 
 ### Pedidos do iFood
@@ -120,7 +121,15 @@ Para instalar (uma vez só), no Chrome ou no Edge:
 5. Recarregue a página do pedido no iFood (F5).
 
 Depois disso, é só abrir a página do pedido (**Pedidos** → **Acompanhar**). As atualizações da ilha
-também atualizam os arquivos da extensão; o navegador passa a usar a versão nova quando é reiniciado.
+também atualizam os arquivos da extensão. Para o navegador usar a versão nova na hora, clique no
+botão de recarregar (↻) da extensão em `chrome://extensions` e aperte F5 na página do pedido.
+
+O mapa da janela do pedido vem do [CARTO](https://carto.com/attributions) (dados do
+[OpenStreetMap](https://www.openstreetmap.org/copyright)) e só é baixado com a janela aberta.
+
+Clicando no ícone da extensão (na barra do navegador) aparece se a ilha está recebendo o pedido e o
+botão **Copiar diagnóstico**. Ele copia só o formato das respostas do site do iFood (nomes dos
+campos, sem nomes, endereços ou números), para ajudar a ajustar a leitura quando o site muda.
 
 ## Leve de verdade
 
@@ -220,6 +229,7 @@ mentira (`src/backend/mock.rs`), útil para mexer na interface.
 | `src/settings.rs` | Escolhas do cartão inicial (números da ilha, sensor da temperatura e pet). |
 | `src/pet.rs` | Os pets (fantasma, robô e as barrinhas): desenho e gestos. |
 | `src/delivery.rs` | Pedidos do iFood: recebe o andamento da extensão e guarda o pedido mostrado. |
+| `src/map.rs` | Mapa da janela do pedido: baixa e posiciona os pedacinhos do mapa. |
 | `extension/` | A extensão do navegador que lê a página do pedido do iFood. Os nomes dos eventos do site vieram do projeto [iFood PiP](https://github.com/luannsr12/ifood-pip) (Apache 2.0). |
 | `src/platform.rs` | Mouse, teclado, janela sem moldura, memória e início com o Windows. |
 | `src/updater.rs` | Atualização automática. |

@@ -16,6 +16,7 @@ publish = false
 eframe = { version = "0.37", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }
 ureq = { version = "3", default-features = false, features = ["native-tls"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [target.'cfg(windows)'.dependencies]
 base64 = "0.23"

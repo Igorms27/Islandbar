@@ -1055,6 +1055,7 @@ dependencies = [
  "base64",
  "chrono",
  "eframe",
+ "image",
  "raw-window-handle",
  "ureq",
  "windows",

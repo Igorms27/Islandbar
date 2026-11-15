@@ -6,8 +6,10 @@
 //! de uma extensão do navegador.
 //!
 //! O que chega é um texto curto, uma informação por linha:
-//! `order=<id>`, `stage=shipping`, `store=Lanchonete`, `eta=20:10-20:25`,
-//! `code=1234`, `chat=2`. Quando a aba fecha, chega `gone=<id>`.
+//! `order=<id>`, `stage=shipping`, `store=Lanchonete`, `number=4242`,
+//! `eta=20:10-20:25`, `code=1234`, `chat=2`, `driver=João S.`, `vehicle=moto`
+//! e os pontos do mapa `from=` (loja), `to=` (sua casa) e `courier=`
+//! (entregador), como `-23.55052,-46.63331`. Quando a aba fecha, chega `gone=<id>`.
 //!
 //! A escuta é uma thread parada esperando conexão: não gasta nada enquanto
 //! não há pedido. A extensão repete o estado a cada 30 s; sem notícias por
@@ -102,6 +104,14 @@ pub struct Order {
     pub code: String,
     /// Quantas mensagens do chat já apareceram.
     pub chats: u32,
+    /// Número do pedido ("4242"), nome curto do entregador e o veículo.
+    pub number: String,
+    pub driver: String,
+    pub vehicle: String,
+    /// Pontos do mapa (latitude, longitude): loja, sua casa e o entregador.
+    pub from: Option<(f64, f64)>,
+    pub to: Option<(f64, f64)>,
+    pub courier: Option<(f64, f64)>,
     /// Última notícia da aba.
     seen: Instant,
     /// Última novidade (etapa, código, mensagem): a pílula chama atenção.
@@ -153,6 +163,12 @@ impl Orders {
             .map(|code| code.chars().filter(char::is_ascii_digit).take(6).collect())
             .unwrap_or_default();
         let chats = fields.get("chat").and_then(|n| n.parse().ok()).unwrap_or(0u32).min(999);
+        let text = |key: &str, max: usize| -> String {
+            fields.get(key).map(|v| v.chars().take(max).collect()).unwrap_or_default()
+        };
+        let number: String = text("number", 12).chars().filter(char::is_ascii_digit).collect();
+        let (driver, vehicle) = (text("driver", 30), text("vehicle", 10));
+        let (from, to, courier) = (spot(&text("from", 40)), spot(&text("to", 40)), spot(&text("courier", 40)));
 
         let Some(order) = self.0.iter_mut().find(|o| &o.id == id) else {
             // Pedido antigo (já entregue quando a aba abriu): não interessa.
@@ -167,6 +183,12 @@ impl Orders {
                 eta,
                 code,
                 chats,
+                number,
+                driver,
+                vehicle,
+                from,
+                to,
+                courier,
                 seen: now,
                 changed: Some(now),
                 new_chat: false,
@@ -201,8 +223,20 @@ impl Orders {
             order.code = code;
         }
         order.chats = order.chats.max(chats);
-        for (field, value) in [(&mut order.store, store), (&mut order.eta, eta)] {
+        for (field, value) in [
+            (&mut order.store, store),
+            (&mut order.eta, eta),
+            (&mut order.number, number),
+            (&mut order.driver, driver),
+            (&mut order.vehicle, vehicle),
+        ] {
             if !value.is_empty() && *field != value {
+                *field = value;
+                changed = true;
+            }
+        }
+        for (field, value) in [(&mut order.from, from), (&mut order.to, to), (&mut order.courier, courier)] {
+            if value.is_some() && *field != value {
                 *field = value;
                 changed = true;
             }
@@ -247,6 +281,13 @@ pub fn next_change(now: Instant) -> Option<Duration> {
 /// Uma linha só, sem caracteres de controle, tamanho limitado.
 fn clean(value: &str) -> String {
     value.chars().filter(|c| !c.is_control()).take(80).collect::<String>().trim().to_string()
+}
+
+/// "-23.55052,-46.63331" -> (latitude, longitude).
+fn spot(text: &str) -> Option<(f64, f64)> {
+    let (lat, lng) = text.split_once(',')?;
+    let (lat, lng) = (lat.trim().parse::<f64>().ok()?, lng.trim().parse::<f64>().ok()?);
+    (lat.abs() <= 85.0 && lng.abs() <= 180.0 && (lat, lng) != (0.0, 0.0)).then_some((lat, lng))
 }
 
 fn short(id: &str) -> &str {
@@ -341,16 +382,37 @@ fn receive(stream: TcpStream) -> Option<String> {
     body
 }
 
+/// Abre a página do pedido no navegador padrão.
+pub fn open_order(id: &str) {
+    // O número vem da extensão: só letras de a-f, números e traços.
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+        return;
+    }
+    let url = format!("https://www.ifood.com.br/pedido/{id}/acompanhar");
+    crate::perf::line(format!("ifood: opening the order page {}", short(id)));
+    #[cfg(windows)]
+    unsafe {
+        use windows::core::{w, HSTRING, PCWSTR};
+        use windows::Win32::UI::Shell::ShellExecuteW;
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        ShellExecuteW(None, w!("open"), &HSTRING::from(url), PCWSTR::null(), PCWSTR::null(), SW_SHOWNORMAL);
+    }
+    #[cfg(not(windows))]
+    let _ = url;
+}
+
 /// Os arquivos da extensão vão junto dentro do .exe. A ilha os coloca numa
 /// pasta do PC para você carregar no Chrome/Edge ("Carregar sem compactação").
 pub mod extension {
     use std::path::PathBuf;
 
-    const FILES: [(&str, &str); 4] = [
+    const FILES: [(&str, &str); 6] = [
         ("manifest.json", include_str!("../extension/manifest.json")),
         ("page.js", include_str!("../extension/page.js")),
         ("bridge.js", include_str!("../extension/bridge.js")),
         ("background.js", include_str!("../extension/background.js")),
+        ("popup.html", include_str!("../extension/popup.html")),
+        ("popup.js", include_str!("../extension/popup.js")),
     ];
 
     /// `%LOCALAPPDATA%\Islandbar\extensao-ifood`.
@@ -463,5 +525,9 @@ mod tests {
             (order.stage, order.eta.as_str(), order.code.as_str(), order.chats),
             (Stage::Unknown, "20:10", "1234", 0)
         );
+        assert!(order.from.is_none());
+        orders.apply("order=x\nfrom=-23.55052,-46.63331\nto=0,0\ncourier=abc", t0);
+        let order = orders.current(t0).unwrap();
+        assert_eq!((order.from, order.to, order.courier), (Some((-23.55052, -46.63331)), None, None));
     }
 }

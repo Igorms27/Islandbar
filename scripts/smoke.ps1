@@ -387,16 +387,40 @@ function PostOrder($body, $origin = "chrome-extension://smoketest") {
   if ($origin) { $curlArgs = @('-H', "Origin: $origin") + $curlArgs }
   & curl.exe @curlArgs
 }
-$order = "order=0a1b2c3d-0000-4000-8000-00000000smoke"
+$order = "order=0a1b2c3d-0000-4000-8000-0000000000aa"
 Log ("order preparing: " + (PostOrder "$order`nstage=preparing`nstore=Lanche Bom`neta=20:10-20:25`ncode=`nchat=0"))
 Start-Sleep 1
 Shot "ifood-1-preparing"
 Start-Sleep 9
 Log ("order shipping: " + (PostOrder "$order`nstage=shipping`nstore=Lanche Bom`neta=20:10-20:25`ncode=4821`nchat=0"))
 Start-Sleep 1
-Log ("new message: " + (PostOrder "$order`nstage=shipping`nstore=Lanche Bom`neta=20:10-20:25`ncode=4821`nchat=1"))
+# Com tudo: entregador, número e os pontos do mapa (Praça da Sé, em São Paulo).
+$full = "$order`nstage=shipping`nstore=Lanche Bom`nnumber=4242`neta=20:10-20:25`ncode=4821`nchat=1`ndriver=João S.`nvehicle=moto`nfrom=-23.55030,-46.63390`nto=-23.56100,-46.65600`ncourier=-23.55500,-46.64300"
+Log ("new message: " + (PostOrder $full))
 Start-Sleep 1
 Shot "ifood-2-shipping-message"
+$r = Styles "ifood"
+$cx = [int](($r.L + $r.R) / 2)
+$pillY = $r.T + 27
+# Ctrl com o mouse em cima da pílula do pedido: as duas pílulas saem da frente.
+Start-Sleep 8
+[W]::SetCursorPos($cx - 205, $pillY) | Out-Null
+Start-Sleep -Milliseconds 700
+[W]::keybd_event(0x11, 0, 0, [UIntPtr]::Zero)
+Start-Sleep -Milliseconds 300
+[W]::keybd_event(0x11, 0, 2, [UIntPtr]::Zero)
+Start-Sleep -Milliseconds 600
+Shot "ifood-2b-ctrl-hidden"
+[W]::SetCursorPos(900, 700) | Out-Null
+Start-Sleep 2
+# Clique na pílula do pedido: abre a janela do pedido, com o mapa.
+Click ($cx - 205) $pillY
+Start-Sleep 5
+Shot "ifood-2c-card"
+Log ("map lines: " + ((Get-Content "$out\ifood-stderr.txt" | Select-String '^map' | Select-Object -First 3) -join " | "))
+[W]::SetCursorPos(900, 700) | Out-Null
+Start-Sleep 2
+Shot "ifood-2d-closed"
 Log ("from a website (expected 403): " + (PostOrder "order=evil`nstage=preparing" "https://example.com"))
 Log ("without origin (expected 403): " + (PostOrder "order=evil`nstage=preparing" ""))
 # Parada com a pílula do pedido: o custo tem que voltar ao de repouso.

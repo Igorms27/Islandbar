@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<style>
+  body { margin: 0; width: 280px; font: 13px system-ui, sans-serif; background: #09090b; color: #f5f5f7; }
+  main { padding: 14px 16px 16px; }
+  h1 { font-size: 14px; margin: 0 0 10px; }
+  p { margin: 6px 0; color: #96969e; }
+  b { color: #f5f5f7; font-weight: 500; }
+  button { margin-top: 10px; width: 100%; padding: 8px; border: 0; border-radius: 16px; background: #2a2a30; color: #f5f5f7; font: inherit; cursor: pointer; }
+  button:hover { background: #3a3a42; }
+  #done { min-height: 1.2em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Islandbar · pedidos do iFood</h1>
+  <p>Ilha: <b id="island">…</b></p>
+  <p>Pedido: <b id="order">…</b></p>
+  <button id="copy">Copiar diagnóstico</button>
+  <p id="done"></p>
+</main>
+<script src="popup.js"></script>
+</body>
+</html>
