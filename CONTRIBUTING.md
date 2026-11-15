@@ -4,6 +4,8 @@ Obrigado pelo interesse! Este guia explica como compilar, testar e enviar mudan�
 
 ## Antes de começar
 
+- Ao participar, siga o nosso [Código de Conduta](CODE_OF_CONDUCT.md): respeito e gentileza com todo mundo.
+
 - Para **problemas** e **ideias**, abra uma [issue](https://github.com/Igorms27/Islandbar/issues/new/choose)
   usando um dos modelos.
 - Para mudanças grandes, abra uma issue antes para conversar sobre a ideia.
