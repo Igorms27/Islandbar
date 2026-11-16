@@ -316,6 +316,7 @@ pub fn start(wake: impl Fn() + Send + 'static) {
         crate::perf::line(format!("ifood: listening on 127.0.0.1:{PORT}"));
         for stream in listener.incoming().flatten() {
             if let Some(body) = receive(stream) {
+                extension::heard();
                 let changed = ORDERS.lock().is_ok_and(|mut orders| orders.apply(&body, Instant::now()));
                 if changed {
                     wake();
@@ -443,6 +444,76 @@ pub mod extension {
         if folder().is_some_and(|dir| dir.exists()) {
             write();
         }
+    }
+
+    /// Valor do registro com a última vez (segundos desde 1970) em que a
+    /// extensão falou com a ilha.
+    const STORE: &str = "Extension";
+    /// Sem notícias da extensão por mais que isso, ela pode ter sido removida.
+    const FORGET_AFTER: u64 = 30 * 24 * 3600;
+
+    fn unix_now() -> u64 {
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())
+    }
+
+    /// A extensão mandou algo: anota no registro (no máximo uma vez por hora).
+    pub(super) fn heard() {
+        use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+        static LAST: AtomicU64 = AtomicU64::new(0);
+        let now = unix_now();
+        if now.saturating_sub(LAST.load(Relaxed)) >= 3600 {
+            LAST.store(now, Relaxed);
+            crate::settings::store::write(STORE, &now.to_string());
+        }
+    }
+
+    /// A extensão já está instalada em algum navegador? Vale se:
+    /// - ela falou com a ilha nos últimos 30 dias, ou
+    /// - as configurações do Chrome, Edge, Brave ou Opera têm a pasta dela
+    ///   carregada ("Carregar sem compactação" guarda o caminho da pasta lá).
+    ///
+    /// Lê alguns arquivos pequenos: chamar só ao abrir o cartão inicial.
+    pub fn installed() -> bool {
+        let recent = crate::settings::store::read(STORE)
+            .and_then(|text| text.trim().parse::<u64>().ok())
+            .is_some_and(|at| unix_now().saturating_sub(at) < FORGET_AFTER);
+        recent || loaded_in_a_browser()
+    }
+
+    fn loaded_in_a_browser() -> bool {
+        let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
+        let roaming = std::env::var_os("APPDATA").map(PathBuf::from);
+        let mut roots: Vec<PathBuf> = Vec::new();
+        if let Some(local) = &local {
+            for browser in ["Google/Chrome", "Microsoft/Edge", "BraveSoftware/Brave-Browser"] {
+                roots.push(local.join(browser).join("User Data"));
+            }
+        }
+        if let Some(roaming) = &roaming {
+            roots.push(roaming.join("Opera Software"));
+        }
+        let Some(name) = folder().and_then(|dir| dir.file_name().map(|n| n.to_string_lossy().into_owned())) else {
+            return false;
+        };
+        for root in roots {
+            // Cada perfil do navegador é uma pasta ("Default", "Profile 1"...).
+            let Ok(profiles) = std::fs::read_dir(&root) else { continue };
+            for profile in profiles.flatten() {
+                for file in ["Secure Preferences", "Preferences"] {
+                    let path = profile.path().join(file);
+                    let small = std::fs::metadata(&path).is_ok_and(|m| m.len() < 20 * 1024 * 1024);
+                    if small && std::fs::read(&path).is_ok_and(|bytes| contains(&bytes, name.as_bytes())) {
+                        crate::perf::line(format!("ifood: extension found in {}", path.display()));
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+        !needle.is_empty() && haystack.windows(needle.len()).any(|w| w == needle)
     }
 
     /// Botão do cartão inicial: prepara a pasta e abre no Explorador.

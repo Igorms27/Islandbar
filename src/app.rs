@@ -151,6 +151,8 @@ pub struct IslandApp {
     order_bumped: Option<Instant>,
     /// O botão da extensão do iFood já foi clicado no cartão inicial.
     extension_opened: bool,
+    /// A extensão do iFood já está instalada (conferido ao abrir o cartão inicial).
+    extension_installed: bool,
     /// Onde a pílula do pedido estava no último quadro (para o mouse e o clique).
     order_rect: Option<Rect>,
     /// Mouse em cima da pílula do pedido.
@@ -270,6 +272,7 @@ impl IslandApp {
             last_order: None,
             order_bumped: None,
             extension_opened: false,
+            extension_installed: mode == Mode::Welcome && delivery::extension::installed(),
             order_rect: None,
             order_hovered: false,
             order_anchor: None,
@@ -2165,12 +2168,21 @@ impl IslandApp {
         let cy = top + 264.0;
         p.text(pos2(left, cy), Align2::LEFT_CENTER, "Pedidos do iFood", FontId::proportional(14.0), fade(TEXT, a));
         let chip = Rect::from_min_max(pos2(right - 150.0, cy - 13.0), pos2(right, cy + 13.0));
-        let label = if self.extension_opened { "Pasta aberta" } else { "Instalar extensão" };
-        if choice_chip(ui, p, ("ifood", 0), chip, label, None, self.extension_opened, accent, a, interactive) {
+        // Já instalada: o botão vira só um aviso (não dá para clicar).
+        let label = match (self.extension_installed, self.extension_opened) {
+            (true, _) => "Instalada",
+            (false, true) => "Pasta aberta",
+            (false, false) => "Instalar extensão",
+        };
+        let marked = self.extension_installed || self.extension_opened;
+        let clickable = interactive && !self.extension_installed;
+        if choice_chip(ui, p, ("ifood", 0), chip, label, None, marked, accent, a, clickable) {
             self.extension_opened = true;
             delivery::extension::open();
         }
-        let hint: &[&str] = if self.extension_opened {
+        let hint: &[&str] = if self.extension_installed {
+            &["Pronto: com a aba do pedido aberta no navegador, a pílula", "do pedido aparece sozinha ao lado da ilha."]
+        } else if self.extension_opened {
             &[
                 "No Chrome/Edge, abra Extensões e ligue o Modo do desenvolvedor.",
                 "Clique em Carregar sem compactação e escolha a pasta aberta.",

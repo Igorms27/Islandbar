@@ -64,6 +64,11 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   }
 });
 
+// Quando o navegador abre (ou a extensão é instalada/atualizada), dá um "oi"
+// para a ilha: assim ela sabe que a extensão está instalada.
+chrome.runtime.onStartup.addListener(() => post("hello=1"));
+chrome.runtime.onInstalled.addListener(() => post("hello=1"));
+
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   const key = `tab${tabId}`;
   const stored = (await chrome.storage.session.get(key))[key] || [];

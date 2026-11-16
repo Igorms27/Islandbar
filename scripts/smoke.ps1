@@ -431,5 +431,11 @@ Start-Sleep 2
 Shot "ifood-3-gone"
 Log ("ifood lines: " + ((Get-Content "$out\ifood-stderr.txt" | Select-String '^ifood' | Select-Object -Last 6) -join " | "))
 StopIsland "ifood" $app
+# A extensão (aqui, o curl fazendo o papel dela) falou com a ilha: fica anotado
+# no registro, e o cartão inicial passa a mostrar "Instalada".
+Log ("extension seen (registry): " + (Get-ItemProperty "HKCU:\Software\Islandbar" -Name Extension -ErrorAction SilentlyContinue).Extension)
+$app = StartIsland "ifood-welcome" $true
+Shot "ifood-4-welcome-installed"
+StopIsland "ifood-welcome" $app
 
 exit 0
