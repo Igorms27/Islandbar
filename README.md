@@ -6,6 +6,7 @@
 
 Fica no topo da tela e se abre num painel com mixer de volume, mídia, troca de
 fone/caixa de som, alarme e o uso do PC. Nos jogos, mostra FPS, CPU, GPU e RAM.
+E acompanha o seu pedido do iFood numa segunda pílula, com mapa.
 
 [![Build](https://github.com/Igorms27/Islandbar/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/Igorms27/Islandbar/actions/workflows/build.yml)
 [![Versão](https://img.shields.io/github/v/release/Igorms27/Islandbar?label=vers%C3%A3o)](https://github.com/Igorms27/Islandbar/releases/latest)
@@ -15,7 +16,7 @@ fone/caixa de som, alarme e o uso do PC. Nos jogos, mostra FPS, CPU, GPU e RAM.
 
 **[⬇ Baixar o islandbar.exe](https://github.com/Igorms27/Islandbar/releases/latest/download/islandbar.exe)**
 
-<img src="docs/images/pilula.png" alt="A pílula no topo da tela com o uso do PC, um alarme marcado e o relógio" width="400">
+<img src="docs/images/pilula.png" alt="A ilha no topo da tela: à esquerda a pílula do pedido do iFood; na principal, o pet fantasma, o uso do PC, um alarme marcado e o relógio" width="560">
 
 </div>
 
@@ -67,9 +68,17 @@ fone/caixa de som, alarme e o uso do PC. Nos jogos, mostra FPS, CPU, GPU e RAM.
 - **Iniciar com o Windows** (opcional) e **atualização automática**.
 
 <p align="center">
+  <img src="docs/images/pets.png" alt="Os três visuais da ilha tocando música: barrinhas, fantasma e robô" width="640">
+  <br><br>
   <img src="docs/images/modo-jogo.png" alt="Modo jogo: a pílula com FPS, CPU e GPU ao lado da ilha" width="480">
-  <br>
+  <br><br>
   <img src="docs/images/alarme-tocando.png" alt="Aviso do alarme tocando, com os botões Soneca e Parar" width="400">
+</p>
+
+<p align="center">
+  <img src="docs/images/pedido-ifood.png" alt="Janela do pedido do iFood: etapa, previsão de entrega, andamento, mapa com a loja, a casa e o entregador, e o código de entrega" width="45%">
+  &nbsp;
+  <img src="docs/images/cartao-inicial.png" alt="Cartão inicial: iniciar com o Windows, números da ilha, pet, sensor da temperatura e a extensão do iFood" width="45%">
 </p>
 
 ## Instalação
@@ -119,6 +128,8 @@ Para instalar (uma vez só), no Chrome ou no Edge:
 3. Ligue o **Modo do desenvolvedor** (no Chrome fica no canto de cima; no Edge, no menu da esquerda).
 4. Clique em **Carregar sem compactação** e escolha a pasta que abriu.
 5. Recarregue a página do pedido no iFood (F5).
+
+Com a extensão instalada, o cartão inicial mostra **Instalada** no lugar do botão.
 
 Depois disso, é só abrir a página do pedido (**Pedidos** → **Acompanhar**). As atualizações da ilha
 também atualizam os arquivos da extensão. Para o navegador usar a versão nova na hora, clique no
