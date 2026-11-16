@@ -121,7 +121,11 @@ Ao começar uma conversa nova, lembrar o dono destas tarefas em aberto:
   diagnóstico (`segundoPlano`): `cookies.acesso/renovar` true, `renovou` > 0
   depois de 2 h, `gravouCookie` true, e se o site continua logado depois.
   Risco: o iFood usa PerimeterX (cabeçalho `x-px-cookies`); se começar a
-  recusar (403), o segundo plano espera 10 min.
+  recusar (403), o segundo plano espera 10 min. Ritmo (extensão 1.5): lista
+  a cada minuto (só sem aba; com aba, a aba procura), e com pedido em
+  andamento o service worker consulta as etapas a cada 15 s e os detalhes a
+  cada 30 s, com ou sem aba (aba de fundo é freada pelo navegador a 1/min).
+  Se o iFood recusar por excesso, aumentar `FAST_MS` em `background.js`.
 - **Depois disso, publicar a extensão na loja**, para instalar com um clique
   e atualizar sozinha (sem "Modo do desenvolvedor"):
   - Loja do Edge (Microsoft Partner Center): gratuita;

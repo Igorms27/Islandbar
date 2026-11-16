@@ -3,7 +3,7 @@
   "name": "Islandbar - pedidos do iFood",
   "short_name": "Islandbar iFood",
   "description": "Mostra na Islandbar o andamento do seu pedido do iFood (mesmo com o site fechado, depois de entrar uma vez).",
-  "version": "1.4",
+  "version": "1.5",
   "minimum_chrome_version": "116",
   "permissions": [
     "storage",

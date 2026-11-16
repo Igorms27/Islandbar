@@ -1,14 +1,18 @@
 // Manda o estado do pedido para a Islandbar, que escuta só no próprio PC
 // (127.0.0.1).
 //
-// Com uma aba do iFood aberta e logada, quem acompanha é a própria aba
-// (page.js). Sem aba, este script continua sozinho, a cada 1 ou 2 minutos:
+// Com uma aba do iFood aberta e logada, quem descobre pedidos novos é a
+// própria aba (page.js). Sem aba, este script faz isso sozinho, a cada minuto:
 // usa o login que o site deixou no navegador (os cookies aAccessToken e
 // aRefreshToken de www.ifood.com.br), pergunta ao iFood quais pedidos estão
 // em andamento e manda o resumo para a ilha. Quando o crachá vence (dura
 // 2 horas), renova do mesmo jeito que o site renova e grava o novo nos mesmos
 // cookies, para o site e a extensão continuarem usando o mesmo login.
 // Se o login acabou de vez (precisa entrar de novo), avisa a ilha.
+//
+// Com um pedido em andamento (com ou sem aba), este script consulta as
+// etapas e as mensagens a cada 15 s e a posição do entregador a cada 30 s: o
+// navegador "freia" abas de fundo (uma consulta por minuto), mas não ele.
 //
 // O login só é usado para falar com o iFood e nunca sai do navegador.
 importScripts("reader.js");
@@ -19,10 +23,15 @@ const SITE = "https://www.ifood.com.br/";
 const API = "https://marketplace.ifood.com.br";
 const ONGOING = `${API}/v4/customers/me/orders?status=ONGOING&page=0&size=5`;
 const RENEW = "https://www.ifood.com.br/site-api/v2/access_tokens";
-// Uma aba logada deu notícia há menos que isso: ela cuida de tudo.
+// Uma aba logada deu notícia há menos que isso: ela procura os pedidos novos
+// e renova o login (este script não renova junto, para não atropelar o site).
 const TAB_QUIET_MS = 75000;
-// Sem pedido em andamento, a lista é consultada a cada 2 minutos.
-const IDLE_MS = 115000;
+// A lista de pedidos (para achar pedido novo): a cada minuto.
+const LIST_MS = 55000;
+// Com pedido em andamento: etapas e mensagens a cada 15 s...
+const FAST_MS = 15000;
+// ...e a posição do entregador a cada 30 s.
+const DETAILS_MS = 30000;
 // O iFood recusou (proteção contra robôs): espera antes de tentar de novo.
 const BLOCKED_MS = 10 * 60000;
 
@@ -70,9 +79,13 @@ async function post(body, stage) {
 }
 
 // --- Estado do segundo plano (sobrevive ao "cochilo" do service worker) ---
+// Fica na memória enquanto este script está acordado (todos usam o mesmo
+// objeto) e numa cópia na sessão do navegador, para quando ele acordar de novo.
+let memo = null;
 async function loadState() {
+  if (memo) return memo;
   const { bg } = await chrome.storage.session.get("bg");
-  return {
+  memo = {
     orders: {},
     listAt: 0,
     blockedUntil: 0,
@@ -83,6 +96,7 @@ async function loadState() {
     status: "",
     ...bg,
   };
+  return memo;
 }
 
 async function saveState(bg) {
@@ -160,7 +174,7 @@ async function rewrite(original, name, jwt) {
 }
 
 // O crachá para consultar o iFood. Devolve { token } ou { expired } ou {}.
-async function login(bg, headers, force) {
+async function login(bg, headers, force, mayRenew = true) {
   const now = Date.now() / 1000;
   const [access, refresh] = await Promise.all([cookie("aAccessToken"), cookie("aRefreshToken")]);
   const { copy } = await chrome.storage.session.get("copy");
@@ -173,6 +187,8 @@ async function login(bg, headers, force) {
   let token = jwtIn(access?.value);
   if (copy?.token && expiry(copy.token) > expiry(token)) token = bare(copy.token);
   if (!force && token && expiry(token) > now + 120) return { token };
+  // Com a aba aberta, quem renova é o site: espera o crachá novo dele.
+  if (!mayRenew) return token && expiry(token) > now ? { token } : {};
 
   // Precisa renovar. Só com o cookie de renovação, para gravar o novo no lugar
   // dele: assim o site continua logado com o mesmo login.
@@ -240,9 +256,16 @@ async function events(o, token, headers) {
   try {
     const json = await ask(`${SITE}site-api/v1/customers/me/orders/${o.id}/events`, token, headers, true);
     R.readEvents(o, json);
-  } catch {
+    return true;
+  } catch (error) {
     // Sem as etapas, a lista e os detalhes já bastam.
+    return error.status || false;
   }
+}
+
+// O entregador já está envolvido (a posição dele no mapa interessa).
+function moving(o) {
+  return ["driver", "ready", "pickup", "collected", "shipping", "arrived"].includes(o.stage);
 }
 
 // Detalhes (o entregador no mapa, se o iFood informar).
@@ -276,6 +299,7 @@ async function warn(bg, on) {
 
 // --- Uma rodada do acompanhamento sem aba ---
 let running = false;
+let quick = 0;
 async function poll() {
   if (running) return;
   running = true;
@@ -285,30 +309,42 @@ async function poll() {
   } finally {
     running = false;
     await saveState(bg);
+    // Pedido em andamento: a próxima consulta já em 15 s (o alarme de 30 s fica de reserva).
+    clearTimeout(quick);
+    if (active(bg)) quick = setTimeout(poll, FAST_MS);
   }
+}
+
+function active(bg) {
+  return Object.values(bg.orders).some((o) => o.listed && !R.FINAL.has(o.stage));
 }
 
 async function round(bg) {
   const now = Date.now();
-  if (now - bg.tabAt < TAB_QUIET_MS) {
-    bg.status = "aba do iFood aberta: ela acompanha";
+  const tab = now - bg.tabAt < TAB_QUIET_MS;
+  if (now < bg.blockedUntil) return;
+  // A lista (pedido novo) só sem aba: com aba, a própria aba procura.
+  const listDue = !tab && now - bg.listAt >= LIST_MS;
+  if (!active(bg) && !listDue) {
+    if (tab) bg.status = "aba do iFood aberta: ela procura os pedidos";
     return;
   }
-  if (now < bg.blockedUntil) return;
-  const active = Object.values(bg.orders).some((o) => o.listed && !R.FINAL.has(o.stage));
-  if (!active && !bg.warned && now - bg.listAt < IDLE_MS) return;
+  // O alarme de reserva e o relógio de 15 s caíram juntos: uma consulta basta.
+  if (!listDue && now - (bg.quickAt || 0) < FAST_MS - 3000) return;
+  bg.quickAt = now;
 
   const { headers } = await chrome.storage.local.get("headers");
   if (!Array.isArray(headers)) {
     bg.status = "abra o site do iFood uma vez, logado";
     return;
   }
-  let auth = await login(bg, headers, false);
-  if (auth.expired) return warn(bg, true);
+  let auth = await login(bg, headers, false, !tab);
+  if (auth.expired && !tab) return warn(bg, true);
   if (!auth.token) {
     bg.status = bg.cookies?.renovar ? "não deu para renovar o login agora" : "sem login do iFood no navegador";
     return;
   }
+  if (!listDue) return followQuick(bg, auth.token, headers, tab);
 
   let json;
   try {
@@ -349,9 +385,9 @@ async function round(bg) {
     o.listed = true;
     bg.orders[id] = o;
     await events(o, auth.token, headers);
-    // Com o entregador a caminho, os detalhes a cada rodada (posição no mapa).
-    const moving = ["driver", "ready", "pickup", "collected", "shipping", "arrived"].includes(o.stage);
-    if (moving || Date.now() - (o.detailsAt || 0) > 5 * 60000) await details(o, auth.token, headers);
+    // Com o entregador a caminho, os detalhes (posição no mapa); antes, de vez em quando.
+    const wait = moving(o) ? DETAILS_MS : 5 * 60000;
+    if (Date.now() - (o.detailsAt || 0) >= wait - 2000) await details(o, auth.token, headers);
     await publish(o);
   }
   // Saiu da lista sem a gente ver o fim: confere uma última vez.
@@ -364,7 +400,27 @@ async function round(bg) {
   }
   // Esquece os que já acabaram.
   for (const [id, o] of Object.entries(bg.orders)) if (!o.listed) delete bg.orders[id];
-  bg.status = ongoing.size ? `acompanhando ${ongoing.size} pedido(s) sem aba` : "sem pedido em andamento";
+  bg.status = ongoing.size ? `acompanhando ${ongoing.size} pedido(s) a cada 15 s` : "sem pedido em andamento";
+}
+
+// Entre uma lista e outra: só as etapas e mensagens (e o entregador no mapa)
+// dos pedidos em andamento.
+async function followQuick(bg, token, headers, tab) {
+  let failed = false;
+  for (const o of Object.values(bg.orders)) {
+    if (!o.listed || R.FINAL.has(o.stage)) continue;
+    const ok = await events(o, token, headers);
+    if (ok !== true) failed = true;
+    if (ok === 403 || ok === 429) bg.blockedUntil = Date.now() + BLOCKED_MS;
+    if (moving(o) && Date.now() - (o.detailsAt || 0) >= DETAILS_MS - 2000) await details(o, token, headers);
+    await publish(o);
+    // Chegou ao fim pelas etapas: a lista confirma na próxima rodada.
+    if (R.FINAL.has(o.stage)) o.listed = false;
+  }
+  // As etapas não vieram: a lista (que também traz a etapa) vai na próxima rodada.
+  if (failed && !tab) bg.listAt = 0;
+  const count = Object.values(bg.orders).filter((o) => o.listed && !R.FINAL.has(o.stage)).length;
+  bg.status = count ? `acompanhando ${count} pedido(s) a cada 15 s` : "sem pedido em andamento";
 }
 
 // Uma aba fechou (ou saiu do iFood) com pedidos: se der para seguir sem ela, o
@@ -395,6 +451,19 @@ async function remember(tabId, orderId) {
   }
 }
 
+// Um pedido que a aba achou: o segundo plano passa a seguir as etapas dele a
+// cada 15 s (a aba de fundo, freada pelo navegador, só consegue a cada minuto).
+async function follow(id, stage) {
+  if (!R.ID.test(id)) return;
+  const bg = await loadState();
+  bg.tabAt = Date.now();
+  if (R.FINAL.has(stage) || bg.orders[id]) return;
+  bg.orders[id] = { ...R.blank(id), listed: true };
+  R.advance(bg.orders[id], stage);
+  await saveState(bg);
+  if (!running) setTimeout(poll, 1000);
+}
+
 async function tabAlive() {
   const bg = await loadState();
   bg.tabAt = Date.now();
@@ -403,8 +472,10 @@ async function tabAlive() {
 
 chrome.runtime.onMessage.addListener((message, sender) => {
   if (message?.type === "order" && message.order) {
-    remember(sender.tab?.id, clean(message.order.id, 60));
+    const id = clean(message.order.id, 60);
+    remember(sender.tab?.id, id);
     post(toText(message.order), clean(message.order.stage, 20));
+    follow(id, clean(message.order.stage, 20));
   } else if (message?.type === "gone") {
     tabGone([clean(message.id, 60)]);
   } else if (message?.type === "tab") {
@@ -431,7 +502,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
 // A cada minuto (o navegador acorda este script só para isso).
 function schedule() {
   chrome.alarms.get("pedidos", (alarm) => {
-    if (!alarm) chrome.alarms.create("pedidos", { periodInMinutes: 1 });
+    if (!alarm || alarm.periodInMinutes !== 0.5) chrome.alarms.create("pedidos", { periodInMinutes: 0.5 });
   });
 }
 chrome.alarms.onAlarm.addListener((alarm) => {

@@ -112,7 +112,7 @@ espera. Um alarme marcado continua contando depois de reiniciar. A versão atual
 | Medir o FPS nos jogos | Na primeira vez, clique em **Ativar** no painel. O Windows pede confirmação de administrador uma vez, e passa a valer depois de sair e entrar na conta. |
 | Fechar a ilha | Abra o painel e clique em **Sair**. Um alarme marcado continua valendo: na hora, o Windows abre a ilha e ele toca. Para desistir dele, cancele na página Alarme antes de sair. |
 | Ligar/desligar o início com o Windows | Abra o `islandbar.exe` de novo: o cartão aparece outra vez. |
-| Acompanhar um pedido do iFood | Entre uma vez no site do iFood, no Chrome ou no Edge. Depois, com o navegador aberto (pode ser só na bandeja, sem janela), a pílula aparece sozinha em até 2 minutos, até para pedidos feitos pelo celular, e some uns minutos depois da entrega. Se aparecer "Entre no iFood de novo", clique nela e entre no site. Clique nela para ver a janela do pedido, com o mapa; o Ctrl em cima dela também tira as duas pílulas da frente. |
+| Acompanhar um pedido do iFood | Entre uma vez no site do iFood, no Chrome ou no Edge. Depois, com o navegador aberto (pode ser só na bandeja, sem janela), a pílula aparece sozinha em até 1 minuto, até para pedidos feitos pelo celular, e some uns minutos depois da entrega. Se aparecer "Entre no iFood de novo", clique nela e entre no site. Clique nela para ver a janela do pedido, com o mapa; o Ctrl em cima dela também tira as duas pílulas da frente. |
 | Escolher o pet, os números da ilha e a temperatura | Também no cartão inicial (abra o `islandbar.exe` de novo). Cada opção de temperatura mostra o valor de agora; "n/d" quer dizer que o PC não tem aquele sensor. |
 
 ### Pedidos do iFood
@@ -121,8 +121,9 @@ A ilha não lê o navegador sozinha: quem lê o iFood é uma extensão pequena, 
 ilha. Ela só funciona em `www.ifood.com.br`, só manda para a ilha no seu próprio PC (`127.0.0.1`)
 e não guarda nem envia seu login.
 
-A extensão pergunta ao iFood, a cada minuto ou dois, se há pedido em andamento, do mesmo jeito
-que o próprio site pergunta. Não precisa abrir o pedido nem deixar o site aberto, e vale também
+A extensão pergunta ao iFood, a cada minuto, se há pedido em andamento, do mesmo jeito que o
+próprio site pergunta. Com um pedido em andamento, ela confere as etapas e as mensagens a cada
+15 segundos, e a posição do entregador a cada 30: a pílula muda logo depois do app. Não precisa abrir o pedido nem deixar o site aberto, e vale também
 para pedidos feitos pelo celular na mesma conta. Ela usa o login que o site deixou no navegador
 quando você entrou: o mesmo login, só para falar com o iFood.
 
@@ -225,7 +226,7 @@ O sensor escolhido não existe nesse PC (ou não dá para ler sem instalar um dr
 - Entre no site do iFood pelo menos uma vez com a extensão já instalada (é aí que ela aprende como
   falar com o iFood).
 - Clique no ícone da extensão: a linha **Sem aba** diz o que está acontecendo.
-- A pílula pode levar até 2 minutos para aparecer depois do pedido.
+- A pílula pode levar até 1 minuto para aparecer depois do pedido.
 - Se mesmo assim não aparecer, abra a página do pedido (**Pedidos** → **Acompanhar**): ela sempre
   funciona.
 - Firefox não é suportado.
