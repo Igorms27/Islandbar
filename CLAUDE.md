@@ -89,15 +89,20 @@ O ambiente do Claude é Linux; a ilha é para Windows.
 
 Ao começar uma conversa nova, lembrar o dono destas tarefas em aberto:
 
-- **Pedidos do iFood: testar num pedido de verdade** (versão 93 ou mais nova).
-  Ele vai conferir a pílula nova, o Ctrl em cima dela e a janela do pedido com
-  o mapa. Antes, recarregar a extensão (↻ em `chrome://extensions`) e dar F5
-  na página do pedido.
+- **Pedidos do iFood: testar num pedido de verdade** (versão 96 ou mais nova,
+  extensão 1.2). Ele vai conferir a pílula nova, o Ctrl em cima dela e a janela
+  do pedido com o mapa, e se ela aparece só com a página inicial do iFood
+  aberta (sem abrir o pedido). Antes, recarregar a extensão (↻ em
+  `chrome://extensions`) e dar F5 na aba do iFood.
 - **Pedir o diagnóstico da extensão** (ícone da extensão → "Copiar
   diagnóstico", com a aba do pedido na frente). Com ele, ajustar `page.js` ao
   site real: se o site informa a posição do entregador (mapa), se a previsão
   de entrega é lida e se o contador de mensagens separa as da loja das dele.
-  Até agora só foi testado com uma página falsa do iFood.
+  No diagnóstico da página inicial: `login` e `emAndamento.deuCerto` dizem se a
+  consulta de pedidos em andamento (`marketplace.ifood.com.br/v4/customers/me/
+  orders?status=ONGOING`, com os cabeçalhos copiados das consultas do site)
+  funcionou; `respostas` mostra o formato da lista. Até agora só foi testado
+  com páginas falsas do iFood.
 - **Depois disso, publicar a extensão na loja**, para instalar com um clique
   e atualizar sozinha (sem "Modo do desenvolvedor"):
   - Loja do Edge (Microsoft Partner Center): gratuita;

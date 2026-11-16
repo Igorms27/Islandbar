@@ -1,7 +1,7 @@
 //! Pedidos do iFood: a segunda pílula da ilha.
 //!
-//! Uma extensão do navegador (pasta `extension/`) lê o andamento do pedido na
-//! aba do iFood e manda para a ilha por `http://127.0.0.1:47615/ifood`. A
+//! Uma extensão do navegador (pasta `extension/`) lê o andamento do pedido
+//! numa aba do iFood (qualquer página do site, logado) e manda para a ilha por `http://127.0.0.1:47615/ifood`. A
 //! ilha só escuta no próprio PC (nada vem da internet) e só aceita o que vem
 //! de uma extensão do navegador.
 //!

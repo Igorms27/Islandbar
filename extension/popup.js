@@ -41,13 +41,13 @@ async function diagnostic() {
     const seconds = Math.round((Date.now() - status.at) / 1000);
     island.textContent = status.ok ? `recebendo (há ${seconds} s)` : "não respondeu (ela está aberta?)";
   }
-  order.textContent = status?.stage ? STAGES[status.stage] || status.stage : "abra a página do pedido";
+  order.textContent = status?.stage ? STAGES[status.stage] || status.stage : "nenhum pedido em andamento (deixe uma aba do iFood aberta)";
 
   document.getElementById("copy").addEventListener("click", async () => {
     const done = document.getElementById("done");
     const diag = await diagnostic();
     if (!diag) {
-      done.textContent = "Abra esta janelinha com a aba do pedido do iFood na frente.";
+      done.textContent = "Abra esta janelinha com uma aba do iFood na frente.";
       return;
     }
     const text = JSON.stringify({ extensao: chrome.runtime.getManifest().version, ilha: status || null, ...diag }, null, 1);

@@ -19,6 +19,11 @@
       diagnostic = event.data.diag;
       return;
     }
+    if (event.data.islandbar === "ifood-gone") {
+      const id = String(event.data.id || "");
+      if (latest.delete(id)) send({ type: "gone", id });
+      return;
+    }
     if (event.data.islandbar !== "ifood") return;
     const order = event.data.order;
     if (!order || typeof order.id !== "string") return;

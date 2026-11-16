@@ -2181,14 +2181,17 @@ impl IslandApp {
             delivery::extension::open();
         }
         let hint: &[&str] = if self.extension_installed {
-            &["Pronto: com a aba do pedido aberta no navegador, a pílula", "do pedido aparece sozinha ao lado da ilha."]
+            &[
+                "Pronto: com o site do iFood aberto no navegador (qualquer",
+                "página), a pílula do pedido aparece sozinha ao lado da ilha.",
+            ]
         } else if self.extension_opened {
             &[
                 "No Chrome/Edge, abra Extensões e ligue o Modo do desenvolvedor.",
                 "Clique em Carregar sem compactação e escolha a pasta aberta.",
             ]
         } else {
-            &["Com a aba do pedido aberta no navegador, uma pílula ao lado", "da ilha mostra o andamento."]
+            &["Com o site do iFood aberto no navegador, uma pílula ao lado", "da ilha mostra o andamento do pedido."]
         };
         for (i, line) in hint.iter().enumerate() {
             let y = top + 289.0 + i as f32 * 15.0;

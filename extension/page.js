@@ -1,6 +1,12 @@
-// Lê o andamento do pedido na própria página do iFood.
+// Lê o andamento do pedido no próprio site do iFood.
 //
-// O site busca as etapas do pedido em
+// Basta qualquer página do iFood aberta (até a inicial, numa aba de fundo):
+// o script pergunta ao iFood, do mesmo jeito que o site pergunta, quais
+// pedidos estão em andamento, e passa a acompanhar cada um. Para isso ele
+// reaproveita os cabeçalhos que o próprio site usa nas consultas dele (o
+// "crachá" de login), só dentro desta aba e só para falar com o iFood.
+//
+// Na página do pedido, o site busca as etapas em
 //   /site-api/v1/customers/me/orders/<id>/events
 // (uma lista de eventos como CONFIRMED, DISPATCHED...). Este script observa
 // essas respostas quando o site as recebe e, se a aba ficar em segundo plano
@@ -10,10 +16,12 @@
 // entrega e o número do pedido.
 //
 // O resumo vai para bridge.js por window.postMessage. Nenhum dado de login é
-// guardado nem enviado: a consulta repetida usa o próprio fetch da página.
+// guardado nem enviado para fora: ele fica só na memória desta aba e só
+// acompanha consultas ao próprio iFood.
 //
 // Os nomes dos eventos e os endereços vieram do projeto iFood PiP
-// (github.com/luannsr12/ifood-pip, licença Apache 2.0).
+// (github.com/luannsr12/ifood-pip, licença Apache 2.0); a lista de pedidos
+// em andamento, do projeto ifood-mcp (github.com/davidmosiah/ifood-mcp).
 (() => {
   if (window.__islandbarIfood) return;
   window.__islandbarIfood = true;
@@ -22,7 +30,15 @@
   // Qualquer resposta do site sobre um pedido (detalhes, rastreio...).
   const ABOUT_ORDER = /\/orders?\/([a-f\d-]{30,50})(?:\/|$)/i;
   const PAGE = /^\/pedido\/([a-f\d-]{30,50})(?:\/|$)/i;
+  // A lista de pedidos do cliente (com ?status=ONGOING: só os em andamento).
+  const ORDER_LIST = /\/customers\/me\/orders\/?$/i;
+  const ID = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i;
+  const API = "https://marketplace.ifood.com.br";
+  const API_HOST = /(^|\.)marketplace\.ifood\.com\.br$/i;
+  const ONGOING = `${API}/v4/customers/me/orders?status=ONGOING&page=0&size=5`;
   const REFRESH_MS = 60000;
+  // Sem pedido em andamento, pergunta com menos frequência.
+  const IDLE_MS = 120000;
   const MAX_FAILURES = 4;
 
   // Etapas, da primeira à última. A ilha só avança (eventos atrasados não voltam a etapa).
@@ -71,6 +87,10 @@
 
   // Pedidos vistos nesta aba: id -> estado.
   const orders = new Map();
+  // Cabeçalhos que o site usa para falar com o iFood (login incluso). Só em memória.
+  let auth = null;
+  // Como foi a última pergunta "quais pedidos estão em andamento?".
+  const list = { at: 0, ok: null, found: 0, busy: false };
   // Diagnóstico: o formato (só os nomes dos campos) das respostas do site.
   const shapes = {};
   const nativeFetch = window.fetch;
@@ -96,6 +116,12 @@
         lastPage: 0,
         failures: 0,
         replay: null,
+        // A consulta foi montada por este script (não copiada do site).
+        built: false,
+        // Visto na lista de pedidos em andamento.
+        listed: false,
+        detailsAt: 0,
+        busy: false,
         sent: "",
       };
       orders.set(id, o);
@@ -103,13 +129,45 @@
     return o;
   }
 
+  // Só endereços do próprio iFood: o site e a API dele.
   function parse(input) {
     try {
       const url = new URL(input instanceof Request ? input.url : String(input), location.href);
-      return url.origin === location.origin ? url : null;
+      return url.origin === location.origin || (url.protocol === "https:" && API_HOST.test(url.hostname)) ? url : null;
     } catch {
       return null;
     }
+  }
+
+  // Guarda os cabeçalhos de uma consulta do site que leva o login.
+  function learn(headers, credentials) {
+    const kept = [];
+    let logged = false;
+    for (const [name, value] of headers) {
+      const key = name.toLowerCase();
+      if (key === "content-type" || key === "content-length") continue;
+      if (key === "authorization" && /\S{20,}/.test(value)) logged = true;
+      kept.push([key, value]);
+    }
+    if (!logged) return;
+    const first = !auth;
+    auth = { headers: kept, credentials: credentials === "include" ? "include" : "omit" };
+    if (first) setTimeout(findOrders, 1500);
+  }
+
+  // Consulta ao iFood com o login do site (sem ele, nem tenta).
+  function ask(url, sameSite) {
+    if (!auth) return Promise.reject(new Error("sem login"));
+    return nativeFetch(url, {
+      method: "GET",
+      cache: "no-store",
+      credentials: sameSite ? "include" : auth.credentials,
+      headers: new Headers(auth.headers),
+    }).then((response) => {
+      // O login venceu: espera o site renovar (ele manda o novo numa consulta dele).
+      if (!sameSite && (response.status === 401 || response.status === 403)) auth = null;
+      return response.ok ? response.json() : Promise.reject(response.status);
+    });
   }
 
   function advance(o, stage) {
@@ -216,6 +274,115 @@
     return true;
   }
 
+  // A etapa escrita num campo do pedido (lastStatus, status...).
+  function readStatus(o, data) {
+    if (!data || typeof data !== "object") return;
+    for (const key of ["lastStatus", "status", "orderStatus", "currentStatus", "deliveryStatus", "state"]) {
+      let v = data[key];
+      if (v && typeof v === "object") v = v.code ?? v.value ?? v.status ?? v.name;
+      const known = typeof v === "string" ? STAGES[v.toUpperCase()] : null;
+      if (known) advance(o, known[1]);
+    }
+  }
+
+  // Detalhes de um pedido (do site ou da API): loja, mapa, entregador, etapa.
+  function readDetails(o, json) {
+    scan(o, json);
+    const data = json?.data?.order || json?.order || json?.data || json;
+    readStatus(o, data);
+    const merchant = data?.merchant || data?.restaurant;
+    if (typeof merchant?.name === "string" && merchant.name.length <= 80) o.store = merchant.name.trim();
+  }
+
+  // Os pedidos dentro de uma resposta da lista (onde quer que estejam).
+  function listItems(json) {
+    const found = [];
+    (function walk(v, depth) {
+      if (!v || typeof v !== "object" || depth > 3) return;
+      if (Array.isArray(v)) {
+        for (const item of v) {
+          const id = String(item?.id ?? item?.orderId ?? "").toLowerCase();
+          if (ID.test(id)) found.push([id, item]);
+        }
+        if (found.length) return;
+      }
+      for (const child of Object.values(v)) {
+        walk(child, depth + 1);
+        if (found.length) return;
+      }
+    })(json, 0);
+    return found;
+  }
+
+  // Resposta da lista de pedidos em andamento.
+  function readList(url, json) {
+    if (url.searchParams.get("status") !== "ONGOING") return;
+    const items = listItems(json);
+    const ongoing = new Set();
+    for (const [id, item] of items) {
+      const o = order(id);
+      readDetails(o, item);
+      if (FINAL.has(o.stage)) continue;
+      ongoing.add(id);
+      o.listed = true;
+      if (!o.replay) {
+        // Ninguém abriu a página do pedido: monta a consulta das etapas.
+        o.built = true;
+        o.replay = () => ask(`/site-api/v1/customers/me/orders/${id}/events`, true);
+        refresh(o);
+      }
+      if (Date.now() - o.detailsAt > REFRESH_MS - 5000) details(o);
+      publish(o);
+    }
+    list.at = Date.now();
+    list.ok = true;
+    list.found = ongoing.size;
+    // Saiu da lista sem a gente ver o fim: confere os detalhes uma última vez.
+    for (const o of orders.values()) {
+      if (!o.listed || ongoing.has(o.id) || FINAL.has(o.stage)) continue;
+      o.listed = false;
+      details(o).finally(() => {
+        if (!FINAL.has(o.stage) && !o.lastPage) forget(o);
+      });
+    }
+  }
+
+  // Detalhes do pedido na API do iFood (mapa, entregador, etapa).
+  function details(o) {
+    o.detailsAt = Date.now();
+    return ask(`${API}/v3/customers/me/orders/${o.id}`)
+      .then((json) => {
+        remember(new URL(`${API}/v3/customers/me/orders/${o.id}`), json);
+        readDetails(o, json);
+        publish(o);
+      })
+      .catch(() => {});
+  }
+
+  // A ilha esquece o pedido (some a pílula).
+  function forget(o) {
+    orders.delete(o.id);
+    window.postMessage({ islandbar: "ifood-gone", id: o.id }, location.origin);
+  }
+
+  // Pergunta ao iFood quais pedidos estão em andamento.
+  function findOrders() {
+    if (!auth || list.busy) return;
+    list.busy = true;
+    ask(ONGOING)
+      .then((json) => {
+        remember(new URL(ONGOING), json);
+        readList(new URL(ONGOING), json);
+      })
+      .catch(() => {
+        list.at = Date.now();
+        list.ok = false;
+      })
+      .finally(() => {
+        list.busy = false;
+      });
+  }
+
   // --- Diagnóstico: só o formato, nunca os valores ---
   function skeleton(v, depth = 0) {
     if (v === null || v === undefined) return null;
@@ -234,7 +401,8 @@
   }
 
   function remember(url, json) {
-    const pattern = url.pathname.replace(/[a-f\d-]{30,50}|\d{4,}/gi, ":id");
+    const host = url.origin === location.origin ? "" : "api";
+    const pattern = host + url.pathname.replace(/[a-f\d-]{30,50}|\d{4,}/gi, ":id");
     if (Array.isArray(json) && json.some((item) => typeof item?.value === "string")) {
       const values = {};
       for (const item of json) {
@@ -264,6 +432,7 @@
       }
       const summary = [...orders.values()].map((o) => ({
         etapa: o.stage,
+        achadoPor: o.built ? "lista" : "pagina",
         loja: !!o.store,
         numero: !!o.number,
         previsao: !!(o.eta || o.etaFromEvents),
@@ -275,6 +444,10 @@
       }));
       const diag = {
         pagina: location.pathname.replace(/[a-f\d-]{30,50}/gi, ":id"),
+        // Só "sim/não": o login em si nunca entra no diagnóstico.
+        login: !!auth,
+        cabecalhos: auth ? auth.headers.map(([name]) => name) : [],
+        emAndamento: { perguntou: !!list.at, deuCerto: list.ok, pedidos: list.found },
         canvas: document.querySelectorAll("canvas").length,
         mapas: [...hosts],
         pedidos: summary,
@@ -371,29 +544,42 @@
     remember(url, json);
     const eventsId = EVENTS.exec(url.pathname)?.[1]?.toLowerCase();
     if (eventsId) return gotEvents(eventsId, json, fromPage);
+    if (ORDER_LIST.test(url.pathname)) return readList(url, json);
     const id = ABOUT_ORDER.exec(url.pathname)?.[1]?.toLowerCase();
     if (id) {
       const o = order(id);
-      scan(o, json);
+      readDetails(o, json);
       publish(o);
     }
   }
 
   function interesting(url) {
-    return !!url && (EVENTS.test(url.pathname) || ABOUT_ORDER.test(url.pathname));
+    return !!url && (EVENTS.test(url.pathname) || ABOUT_ORDER.test(url.pathname) || ORDER_LIST.test(url.pathname));
   }
 
   // --- Observa o que o próprio site busca ---
   window.fetch = function (input, init) {
     const response = Reflect.apply(nativeFetch, this, arguments);
     const url = parse(input);
+    if (url) {
+      try {
+        // Só lê os cabeçalhos; o corpo da consulta do site fica intocado.
+        const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+        learn(headers, init?.credentials ?? (input instanceof Request ? input.credentials : "same-origin"));
+      } catch {
+        // Cabeçalhos estranhos: só não aprende.
+      }
+    }
     if (interesting(url)) {
       const eventsId = EVENTS.exec(url.pathname)?.[1]?.toLowerCase();
       if (eventsId) {
         try {
           const request = new Request(input, init);
           if (request.method === "GET") {
-            order(eventsId).replay = () => nativeFetch(new Request(request, { cache: "no-store" }));
+            const o = order(eventsId);
+            o.built = false;
+            o.failures = 0;
+            o.replay = () => nativeFetch(new Request(request, { cache: "no-store" }));
           }
         } catch {
           // Sem cópia da consulta: só não dá para repetir.
@@ -413,8 +599,10 @@
   const xhrSend = XMLHttpRequest.prototype.send;
   const xhrInfo = new WeakMap();
   XMLHttpRequest.prototype.open = function (method, url) {
-    const parsed = String(method).toUpperCase() === "GET" ? parse(url) : null;
-    xhrInfo.set(this, interesting(parsed) ? { url: parsed, headers: [] } : null);
+    const parsed = parse(url);
+    const get = String(method).toUpperCase() === "GET";
+    // Toda consulta ao iFood: para aprender o login; as de pedido: para ler a resposta.
+    xhrInfo.set(this, parsed ? { url: parsed, read: get && interesting(parsed), headers: [] } : null);
     return Reflect.apply(xhrOpen, this, arguments);
   };
   XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
@@ -423,13 +611,17 @@
   };
   XMLHttpRequest.prototype.send = function () {
     const info = xhrInfo.get(this);
-    if (info) {
+    if (info) learn(info.headers, this.withCredentials ? "include" : "same-origin");
+    if (info?.read) {
       const xhr = this;
       const eventsId = EVENTS.exec(info.url.pathname)?.[1]?.toLowerCase();
       if (eventsId) {
         const credentials = xhr.withCredentials ? "include" : "same-origin";
         const headers = info.headers.slice();
-        order(eventsId).replay = () =>
+        const o = order(eventsId);
+        o.built = false;
+        o.failures = 0;
+        o.replay = () =>
           nativeFetch(info.url.href, { method: "GET", cache: "no-store", credentials, headers: new Headers(headers) });
       }
       xhr.addEventListener(
@@ -448,18 +640,36 @@
     return Reflect.apply(xhrSend, this, arguments);
   };
 
-  // --- Aba em segundo plano: repete a consulta do site a cada minuto ---
+  // Busca as etapas do pedido de novo (consulta copiada do site ou montada aqui).
+  function refresh(o) {
+    if (!o.replay || FINAL.has(o.stage) || o.failures >= MAX_FAILURES || o.busy) return;
+    o.busy = true;
+    o.replay()
+      .then((response) => {
+        if (response instanceof Response) return response.ok ? response.json() : Promise.reject(response.status);
+        return response;
+      })
+      .then((json) => {
+        if (o.built) remember(new URL(`/site-api/v1/customers/me/orders/${o.id}/events`, location.href), json);
+        gotEvents(o.id, json, false);
+      })
+      .catch(() => {
+        o.failures += 1;
+      })
+      .finally(() => {
+        o.busy = false;
+      });
+  }
+
+  // --- Aba em segundo plano: repete as consultas a cada minuto ---
   setInterval(() => {
     for (const o of orders.values()) {
-      if (!o.replay || FINAL.has(o.stage) || o.failures >= MAX_FAILURES) continue;
       if (Date.now() - o.lastPage < REFRESH_MS - 5000) continue;
-      o.replay()
-        .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
-        .then((json) => gotEvents(o.id, json, false))
-        .catch(() => {
-          o.failures += 1;
-        });
+      refresh(o);
     }
+    // A lista de pedidos em andamento: a cada minuto com pedido, a cada 2 sem.
+    const active = [...orders.values()].some((o) => !FINAL.has(o.stage));
+    if (Date.now() - list.at >= (active ? REFRESH_MS : IDLE_MS) - 5000) findOrders();
   }, REFRESH_MS);
 
   // --- Lê a tela quando ela muda (com calma: no máximo a cada 2 s) ---
