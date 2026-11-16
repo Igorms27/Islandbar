@@ -89,7 +89,7 @@ O ambiente do Claude é Linux; a ilha é para Windows.
 
 Ao começar uma conversa nova, lembrar o dono destas tarefas em aberto:
 
-- **Pedidos do iFood: testar num pedido de verdade** (versão 96 ou mais nova,
+- **Pedidos do iFood: testar num pedido de verdade** (versão 97 ou mais nova,
   extensão 1.2). Ele vai conferir a pílula nova, o Ctrl em cima dela e a janela
   do pedido com o mapa, e se ela aparece só com a página inicial do iFood
   aberta (sem abrir o pedido). Antes, recarregar a extensão (↻ em
