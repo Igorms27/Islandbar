@@ -147,6 +147,9 @@ O mapa da janela do pedido vem do [OpenStreetMap](https://www.openstreetmap.org/
 Clicando no ícone da extensão (na barra do navegador) aparece se a ilha está recebendo o pedido e o
 botão **Copiar diagnóstico**. Ele copia só o formato das respostas do site do iFood (nomes dos
 campos, sem nomes, endereços ou números), para ajudar a ajustar a leitura quando o site muda.
+Também diz onde o site guarda o login e como o renova, só pelos nomes e tempos, nunca o login em
+si, e testa se a extensão consegue consultar a lista de pedidos sozinha. Esse teste é só de
+leitura e não guarda nada.
 
 ## Leve de verdade
 

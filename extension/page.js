@@ -152,6 +152,7 @@
     if (!logged) return;
     const first = !auth;
     auth = { headers: kept, credentials: credentials === "include" ? "include" : "omit" };
+    tokenSeen(kept.find(([key]) => key === "authorization")[1]);
     if (first) setTimeout(findOrders, 1500);
   }
 
@@ -383,6 +384,174 @@
       });
   }
 
+  // --- Diagnóstico do login: onde o site guarda e como renova ---
+  // Só nomes, tempos e "sim/não". O login em si nunca sai desta aba.
+  const AUTHISH = /token|refresh|auth|identity|session|login|oauth|otp/i;
+  const JWT = /eyJ[\w-]{5,}\.[\w-]{5,}\.[\w-]*/;
+  // Consultas do site a qualquer endereço do iFood: "GET host/caminho" -> resumo.
+  const calls = new Map();
+  let lastAuthCall = "";
+  const token = { value: "", count: 0, at: 0, renewals: [] };
+
+  function mask(text) {
+    return String(text)
+      .replace(/[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}/gi, ":id")
+      .replace(/[^\s@/]+@[^\s@/]+/g, ":email")
+      .replace(/\d{4,}/g, ":n")
+      .slice(0, 80);
+  }
+
+  function ifoodUrl(input) {
+    try {
+      const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+      return /(^|\.)ifood\.com\.br$/i.test(url.hostname) ? url : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Nomes dos campos de um corpo de consulta (JSON ou formulário), sem valores.
+  function bodyKeys(body) {
+    try {
+      if (typeof body === "string") {
+        try {
+          const json = JSON.parse(body);
+          if (json && typeof json === "object") return Object.keys(json).slice(0, 20);
+        } catch {
+          return [...new URLSearchParams(body).keys()].slice(0, 20);
+        }
+      }
+      if (body instanceof URLSearchParams || body instanceof FormData) return [...body.keys()].slice(0, 20);
+    } catch {
+      // ignora
+    }
+    return [];
+  }
+
+  // Anota uma consulta do site. As de login ganham também o formato da resposta.
+  function noteCall(method, url, body, response) {
+    const name = `${String(method || "GET").toUpperCase()} ${url.hostname}${mask(url.pathname)}`;
+    let entry = calls.get(name);
+    if (!entry) {
+      if (calls.size >= 80) return;
+      entry = { vezes: 0 };
+      calls.set(name, entry);
+    }
+    entry.vezes += 1;
+    const authish = AUTHISH.test(url.pathname);
+    if (authish) {
+      lastAuthCall = name;
+      const keys = bodyKeys(body);
+      if (keys.length) entry.envia = keys;
+    }
+    Promise.resolve(response)
+      .then((res) => {
+        if (!res) return;
+        entry.status = res.status;
+        if (authish && res.ok && typeof res.clone === "function") {
+          res
+            .clone()
+            .json()
+            .then((json) => {
+              entry.recebe = skeleton(json);
+            }, () => {});
+        }
+      })
+      .catch(() => {
+        entry.status = "falhou";
+      });
+  }
+
+  function tokenSeen(value) {
+    if (!value || value === token.value) return;
+    const now = Date.now();
+    if (token.value) {
+      token.renewals.push({ minutosDepois: Math.round((now - token.at) / 60000), depoisDe: lastAuthCall || "?" });
+      if (token.renewals.length > 10) token.renewals.shift();
+    }
+    token.value = value;
+    token.at = now;
+    token.count += 1;
+  }
+
+  // O que dá para saber do crachá sem mostrá-lo: validade e nomes dos campos.
+  function tokenInfo() {
+    const raw = token.value.replace(/^Bearer\s+/i, "");
+    const info = { visto: token.count, renovacoes: token.renewals };
+    const part = raw.split(".")[1];
+    if (!part) return { ...info, tipo: raw ? "nao-jwt" : "nenhum" };
+    try {
+      const b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+      const payload = JSON.parse(atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4)));
+      const now = Date.now() / 1000;
+      return {
+        ...info,
+        tipo: "jwt",
+        campos: Object.keys(payload).slice(0, 30),
+        duraMinutos: payload.exp && payload.iat ? Math.round((payload.exp - payload.iat) / 60) : null,
+        venceEmMinutos: payload.exp ? Math.round((payload.exp - now) / 60) : null,
+      };
+    } catch {
+      return { ...info, tipo: "jwt-ilegivel" };
+    }
+  }
+
+  // Onde o site guarda o login: nomes das chaves, nunca o conteúdo.
+  function storageInfo() {
+    const raw = token.value.replace(/^Bearer\s+/i, "");
+    const found = [];
+    const look = (where, key, value) => {
+      if (found.length >= 40 || typeof value !== "string") return;
+      const sameToken = raw.length > 20 && value.includes(raw);
+      const jwt = JWT.test(value);
+      let inner = [];
+      if (value.startsWith("{")) {
+        try {
+          const json = JSON.parse(value);
+          inner = Object.keys(json).filter((k) => /token|expir|refresh|auth|session/i.test(k));
+        } catch {
+          // ignora
+        }
+      }
+      if (sameToken || jwt || inner.length || AUTHISH.test(key)) {
+        found.push({ onde: where, chave: mask(key), oCrachaAtual: sameToken, temJwt: jwt, campos: inner.slice(0, 10) });
+      }
+    };
+    for (const [where, store] of [
+      ["localStorage", window.localStorage],
+      ["sessionStorage", window.sessionStorage],
+    ]) {
+      try {
+        for (let i = 0; i < store.length; i += 1) {
+          const key = store.key(i);
+          look(where, key, store.getItem(key));
+        }
+      } catch {
+        // ignora
+      }
+    }
+    for (const pair of document.cookie.split(/;\s*/)) {
+      const at = pair.indexOf("=");
+      if (at <= 0) continue;
+      let value = pair.slice(at + 1);
+      try {
+        value = decodeURIComponent(value);
+      } catch {
+        // fica como veio
+      }
+      look("cookie", pair.slice(0, at), value);
+    }
+    return found;
+  }
+
+  function loginDiagnostic() {
+    return {
+      cracha: tokenInfo(),
+      guardado: storageInfo(),
+      consultas: Object.fromEntries(calls),
+    };
+  }
+
   // --- Diagnóstico: só o formato, nunca os valores ---
   function skeleton(v, depth = 0) {
     if (v === null || v === undefined) return null;
@@ -421,41 +590,57 @@
     if (diagTimer) return;
     diagTimer = setTimeout(() => {
       diagTimer = 0;
-      const hosts = new Set();
-      for (const el of document.querySelectorAll("iframe[src], script[src], img[src]")) {
-        try {
-          const host = new URL(el.src).host;
-          if (/map|tile|here\.com|waze/i.test(host)) hosts.add(host);
-        } catch {
-          // ignora
-        }
-      }
-      const summary = [...orders.values()].map((o) => ({
-        etapa: o.stage,
-        achadoPor: o.built ? "lista" : "pagina",
-        loja: !!o.store,
-        numero: !!o.number,
-        previsao: !!(o.eta || o.etaFromEvents),
-        codigo: !!o.code,
-        mensagens: o.chats,
-        entregador: !!o.driver,
-        veiculo: o.vehicle,
-        mapa: { loja: !!o.from, casa: !!o.to, entregador: !!o.courier },
-      }));
-      const diag = {
-        pagina: location.pathname.replace(/[a-f\d-]{30,50}/gi, ":id"),
-        // Só "sim/não": o login em si nunca entra no diagnóstico.
-        login: !!auth,
-        cabecalhos: auth ? auth.headers.map(([name]) => name) : [],
-        emAndamento: { perguntou: !!list.at, deuCerto: list.ok, pedidos: list.found },
-        canvas: document.querySelectorAll("canvas").length,
-        mapas: [...hosts],
-        pedidos: summary,
-        respostas: shapes,
-      };
-      window.postMessage({ islandbar: "ifood-diag", diag }, location.origin);
+      postDiagnostic();
     }, 1500);
   }
+
+  function postDiagnostic() {
+    const hosts = new Set();
+    for (const el of document.querySelectorAll("iframe[src], script[src], img[src]")) {
+      try {
+        const host = new URL(el.src).host;
+        if (/map|tile|here\.com|waze/i.test(host)) hosts.add(host);
+      } catch {
+        // ignora
+      }
+    }
+    const summary = [...orders.values()].map((o) => ({
+      etapa: o.stage,
+      achadoPor: o.built ? "lista" : "pagina",
+      loja: !!o.store,
+      numero: !!o.number,
+      previsao: !!(o.eta || o.etaFromEvents),
+      codigo: !!o.code,
+      mensagens: o.chats,
+      entregador: !!o.driver,
+      veiculo: o.vehicle,
+      mapa: { loja: !!o.from, casa: !!o.to, entregador: !!o.courier },
+    }));
+    const diag = {
+      pagina: location.pathname.replace(/[a-f\d-]{30,50}/gi, ":id"),
+      // Só "sim/não": o login em si nunca entra no diagnóstico.
+      login: !!auth,
+      cabecalhos: auth ? auth.headers.map(([name]) => name) : [],
+      emAndamento: { perguntou: !!list.at, deuCerto: list.ok, pedidos: list.found },
+      canvas: document.querySelectorAll("canvas").length,
+      mapas: [...hosts],
+      pedidos: summary,
+      respostas: shapes,
+      loginDoSite: loginDiagnostic(),
+    };
+    window.postMessage({ islandbar: "ifood-diag", diag }, location.origin);
+  }
+
+  // A extensão pede: o diagnóstico de agora, ou os cabeçalhos do site para
+  // testar se ela mesma conseguiria consultar o iFood (o teste roda no
+  // navegador e fala só com o iFood; nada é guardado).
+  window.addEventListener("message", (event) => {
+    if (event.source !== window || !event.data) return;
+    if (event.data.islandbar === "ifood-diag-request") postDiagnostic();
+    if (event.data.islandbar === "ifood-auth-request") {
+      window.postMessage({ islandbar: "ifood-auth", headers: auth ? auth.headers : null }, location.origin);
+    }
+  });
 
   // Complementa com o que está escrito na tela (só na página do pedido).
   function readScreen() {
@@ -560,6 +745,14 @@
   // --- Observa o que o próprio site busca ---
   window.fetch = function (input, init) {
     const response = Reflect.apply(nativeFetch, this, arguments);
+    const any = ifoodUrl(input);
+    if (any) {
+      try {
+        noteCall(init?.method ?? (input instanceof Request ? input.method : "GET"), any, init?.body, response);
+      } catch {
+        // Só o diagnóstico perde esta.
+      }
+    }
     const url = parse(input);
     if (url) {
       try {
@@ -598,7 +791,10 @@
   const xhrHeader = XMLHttpRequest.prototype.setRequestHeader;
   const xhrSend = XMLHttpRequest.prototype.send;
   const xhrInfo = new WeakMap();
+  const xhrCall = new WeakMap();
   XMLHttpRequest.prototype.open = function (method, url) {
+    const any = ifoodUrl(url);
+    xhrCall.set(this, any ? { method, url: any } : null);
     const parsed = parse(url);
     const get = String(method).toUpperCase() === "GET";
     // Toda consulta ao iFood: para aprender o login; as de pedido: para ler a resposta.
@@ -609,7 +805,33 @@
     xhrInfo.get(this)?.headers.push([String(name), String(value)]);
     return Reflect.apply(xhrHeader, this, arguments);
   };
-  XMLHttpRequest.prototype.send = function () {
+  XMLHttpRequest.prototype.send = function (body) {
+    const call = xhrCall.get(this);
+    if (call) {
+      const xhr = this;
+      const done = new Promise((resolve) => {
+        xhr.addEventListener(
+          "loadend",
+          () => {
+            // A resposta só é lida se for de login (noteCall decide).
+            const json = () => {
+              try {
+                return Promise.resolve(xhr.responseType === "json" ? xhr.response : JSON.parse(xhr.responseText));
+              } catch {
+                return Promise.reject(new Error("sem json"));
+              }
+            };
+            resolve({ status: xhr.status, ok: xhr.status >= 200 && xhr.status < 300, clone: () => ({ json }) });
+          },
+          { once: true },
+        );
+      });
+      try {
+        noteCall(call.method, call.url, body, done);
+      } catch {
+        // Só o diagnóstico perde esta.
+      }
+    }
     const info = xhrInfo.get(this);
     if (info) learn(info.headers, this.withCredentials ? "include" : "same-origin");
     if (info?.read) {

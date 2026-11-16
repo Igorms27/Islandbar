@@ -103,6 +103,18 @@ Ao começar uma conversa nova, lembrar o dono destas tarefas em aberto:
   orders?status=ONGOING`, com os cabeçalhos copiados das consultas do site)
   funcionou; `respostas` mostra o formato da lista. Até agora só foi testado
   com páginas falsas do iFood.
+- **Acompanhar sem aba aberta** (pedido dele): a extensão consultaria os
+  pedidos em segundo plano e a ilha avisaria "Entre no iFood de novo" quando o
+  login vencer. A versão 1.3 da extensão só coleta dados para decidir como.
+  No diagnóstico, `loginDoSite.cracha` mostra a duração e as renovações do
+  crachá (~50 min segundo o ifood-mcp) e qual consulta veio antes de cada
+  renovação; `guardado` e `cookies` mostram onde o site guarda o login;
+  `consultas` lista o que o site chama (com o formato das de login); e
+  `extensaoSozinha` diz se a extensão consegue a lista `ONGOING` só com cookies
+  (caminho 1, o melhor: nada a guardar) ou com o crachá copiado (caminho 2:
+  guardar o login e renovar como o site). O caminho 3, login próprio com
+  código por e-mail, fica por último. Pedir o diagnóstico com a aba aberta há
+  mais de 1 hora, para ver uma renovação.
 - **Depois disso, publicar a extensão na loja**, para instalar com um clique
   e atualizar sozinha (sem "Modo do desenvolvedor"):
   - Loja do Edge (Microsoft Partner Center): gratuita;
