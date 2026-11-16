@@ -426,7 +426,7 @@ Log ("without origin (expected 403): " + (PostOrder "order=evil`nstage=preparing
 # Parada com a pílula do pedido: o custo tem que voltar ao de repouso.
 Start-Sleep 20
 Log ("perf idle with order:`n" + (Get-Content "$out\ifood-stderr.txt" | Select-String '^perf' | Select-Object -Last 2 | Out-String))
-Log ("tab closed: " + (PostOrder "gone=0a1b2c3d-0000-4000-8000-00000000smoke"))
+Log ("tab closed: " + (PostOrder "gone=0a1b2c3d-0000-4000-8000-0000000000aa"))
 Start-Sleep 2
 Shot "ifood-3-gone"
 Log ("ifood lines: " + ((Get-Content "$out\ifood-stderr.txt" | Select-String '^ifood' | Select-Object -Last 6) -join " | "))

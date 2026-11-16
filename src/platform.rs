@@ -54,6 +54,9 @@ static GHOST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new
 
 pub fn set_ghost(ghost: bool) {
     GHOST.store(ghost, std::sync::atomic::Ordering::Relaxed);
+    // Um toque do Ctrl que já fez a ilha sair não vale de novo quando ela volta
+    // (senão ela sumiria sozinha na próxima vez que o mouse chegasse).
+    CTRL_TAPPED.store(false, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// O vigia do mouse viu o Ctrl ser apertado com o mouse em cima da ilha.
@@ -89,7 +92,8 @@ pub fn watch_cursor(wake: impl Fn() + Send + 'static) {
                 // Só olha o teclado com o mouse em cima: no resto do tempo nem pergunta.
                 let ctrl = over && ctrl_held();
                 let ghost = GHOST.load(std::sync::atomic::Ordering::Relaxed);
-                if ctrl && !was_ctrl {
+                // (Se a ilha já saiu da frente com este Ctrl, não anota de novo.)
+                if ctrl && !was_ctrl && !ghost {
                     CTRL_TAPPED.store(true, std::sync::atomic::Ordering::Relaxed);
                 }
                 if (over && !was_over) || (ctrl && !was_ctrl) || (ghost && was_over && !over) || quit_requested() {
