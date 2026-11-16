@@ -429,6 +429,13 @@ Log ("perf idle with order:`n" + (Get-Content "$out\ifood-stderr.txt" | Select-S
 Log ("tab closed: " + (PostOrder "gone=0a1b2c3d-0000-4000-8000-0000000000aa"))
 Start-Sleep 2
 Shot "ifood-3-gone"
+# Login do iFood vencido (a extensão manda a cada minuto): a pílula vira o aviso.
+Log ("login expired: " + (PostOrder "login=expired"))
+Start-Sleep 2
+Shot "ifood-3b-login"
+Log ("login ok: " + (PostOrder "login=ok"))
+Start-Sleep 2
+Shot "ifood-3c-login-ok"
 Log ("ifood lines: " + ((Get-Content "$out\ifood-stderr.txt" | Select-String '^ifood' | Select-Object -Last 6) -join " | "))
 StopIsland "ifood" $app
 # A extensão (aqui, o curl fazendo o papel dela) falou com a ilha: fica anotado

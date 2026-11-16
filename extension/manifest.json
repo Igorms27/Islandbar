@@ -2,12 +2,13 @@
   "manifest_version": 3,
   "name": "Islandbar - pedidos do iFood",
   "short_name": "Islandbar iFood",
-  "description": "Mostra na Islandbar o andamento do seu pedido do iFood (com qualquer página do iFood aberta).",
-  "version": "1.3",
+  "description": "Mostra na Islandbar o andamento do seu pedido do iFood (mesmo com o site fechado, depois de entrar uma vez).",
+  "version": "1.4",
   "minimum_chrome_version": "116",
   "permissions": [
     "storage",
-    "cookies"
+    "cookies",
+    "alarms"
   ],
   "host_permissions": [
     "http://127.0.0.1/*",
@@ -22,6 +23,7 @@
         "https://www.ifood.com.br/*"
       ],
       "js": [
+        "reader.js",
         "page.js"
       ],
       "run_at": "document_start",

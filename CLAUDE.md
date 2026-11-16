@@ -84,16 +84,22 @@ O ambiente do Claude é Linux; a ilha é para Windows.
   a cadeia inteira aqui no Linux: ilha sob Xvfb + Playwright/Chromium com
   `--load-extension` e uma página falsa do iFood via `context.route` (servir o
   HTML com `charset=utf-8`, senão "Previsão" vira lixo e não é lida).
+  Com `context.route` a API `chrome.cookies` da extensão não vê os cookies;
+  para testar o segundo plano (cookies, renovação), usar um servidor HTTPS
+  local de verdade na porta 443 e o Chromium com `--host-resolver-rules=MAP
+  www.ifood.com.br 127.0.0.1,MAP marketplace.ifood.com.br 127.0.0.1`,
+  `--no-proxy-server` e `--ignore-certificate-errors`; o `poll()` do
+  service worker pode ser chamado direto com `sw.evaluate`.
 
 ## Pendências (lembrar o dono)
 
 Ao começar uma conversa nova, lembrar o dono destas tarefas em aberto:
 
-- **Pedidos do iFood: testar num pedido de verdade** (versão 97 ou mais nova,
-  extensão 1.2). Ele vai conferir a pílula nova, o Ctrl em cima dela e a janela
-  do pedido com o mapa, e se ela aparece só com a página inicial do iFood
-  aberta (sem abrir o pedido). Antes, recarregar a extensão (↻ em
-  `chrome://extensions`) e dar F5 na aba do iFood.
+- **Pedidos do iFood: testar num pedido de verdade** (extensão 1.4 ou mais
+  nova). Ele vai conferir a pílula nova, o Ctrl em cima dela, a janela do
+  pedido com o mapa e se ela aparece **sem nenhuma aba do iFood aberta**
+  (só o navegador rodando). Antes, recarregar a extensão (↻ em
+  `chrome://extensions`) e entrar uma vez no site do iFood.
 - **Pedir o diagnóstico da extensão** (ícone da extensão → "Copiar
   diagnóstico", com a aba do pedido na frente). Com ele, ajustar `page.js` ao
   site real: se o site informa a posição do entregador (mapa), se a previsão
@@ -103,18 +109,19 @@ Ao começar uma conversa nova, lembrar o dono destas tarefas em aberto:
   orders?status=ONGOING`, com os cabeçalhos copiados das consultas do site)
   funcionou; `respostas` mostra o formato da lista. Até agora só foi testado
   com páginas falsas do iFood.
-- **Acompanhar sem aba aberta** (pedido dele): a extensão consultaria os
-  pedidos em segundo plano e a ilha avisaria "Entre no iFood de novo" quando o
-  login vencer. A versão 1.3 da extensão só coleta dados para decidir como.
-  No diagnóstico, `loginDoSite.cracha` mostra a duração e as renovações do
-  crachá (~50 min segundo o ifood-mcp) e qual consulta veio antes de cada
-  renovação; `guardado` e `cookies` mostram onde o site guarda o login;
-  `consultas` lista o que o site chama (com o formato das de login); e
-  `extensaoSozinha` diz se a extensão consegue a lista `ONGOING` só com cookies
-  (caminho 1, o melhor: nada a guardar) ou com o crachá copiado (caminho 2:
-  guardar o login e renovar como o site). O caminho 3, login próprio com
-  código por e-mail, fica por último. Pedir o diagnóstico com a aba aberta há
-  mais de 1 hora, para ver uma renovação.
+- **Acompanhar sem aba aberta: feito na extensão 1.4, conferir no uso real.**
+  O que o diagnóstico real (extensão 1.3) mostrou: o crachá é um JWT de 2 h no
+  cookie `aAccessToken` (www.ifood.com.br, sem HttpOnly); a renovação fica no
+  cookie `aRefreshToken` e vai por `POST /site-api/v2/access_tokens` com
+  `{refresh_token}`, que devolve `{access_token, refresh_token}`. Só cookies
+  não bastam (401), mas a extensão com o crachá consegue a lista (200). A
+  lista `ONGOING` ignora o filtro e traz os últimos pedidos (com `lastStatus`,
+  previsão, código, entregador e coordenadas). O `background.js` lê os
+  cookies, renova e grava de volta (o site continua logado). Conferir no
+  diagnóstico (`segundoPlano`): `cookies.acesso/renovar` true, `renovou` > 0
+  depois de 2 h, `gravouCookie` true, e se o site continua logado depois.
+  Risco: o iFood usa PerimeterX (cabeçalho `x-px-cookies`); se começar a
+  recusar (403), o segundo plano espera 10 min.
 - **Depois disso, publicar a extensão na loja**, para instalar com um clique
   e atualizar sozinha (sem "Modo do desenvolvedor"):
   - Loja do Edge (Microsoft Partner Center): gratuita;

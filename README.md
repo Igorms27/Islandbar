@@ -59,12 +59,13 @@ E acompanha o seu pedido do iFood numa segunda pílula, com mapa.
   aparecem na ilha fechada e no modo jogo.
 - **Modo jogo**: com um jogo em tela cheia, uma pílula ao lado da ilha mostra FPS, CPU, GPU e RAM.
   Navegadores e players de vídeo em tela cheia não contam como jogo.
-- **Pedidos do iFood**: com o site do iFood aberto no Chrome ou no Edge (qualquer página, até a
-  inicial, numa aba de fundo), uma segunda pílula à esquerda da ilha mostra a etapa (em preparo, a caminho, entregador
-  chegou…), a previsão de entrega, o código de entrega e quantas mensagens o chat do pedido tem.
+- **Pedidos do iFood**: depois de entrar uma vez no site do iFood pelo Chrome ou pelo Edge, com o
+  navegador aberto (não precisa de aba do iFood), uma segunda pílula à esquerda da ilha mostra a
+  etapa (em preparo, a caminho, entregador chegou…), a previsão de entrega, o código de entrega e quantas mensagens o chat do pedido tem.
   Ela dá um pulinho quando algo muda. Clicando nela abre a janela do pedido: andamento, entregador
   e um mapa com a loja, a sua casa e o entregador (quando o site informa onde ele está). Precisa de
-  uma extensão pequena, instalada uma vez (veja [Pedidos do iFood](#pedidos-do-ifood)).
+  uma extensão pequena, instalada uma vez (veja [Pedidos do iFood](#pedidos-do-ifood)). Se o login
+  do iFood acabar, a pílula avisa "Entre no iFood de novo".
 - **Iniciar com o Windows** (opcional) e **atualização automática**.
 
 <p align="center">
@@ -111,7 +112,7 @@ espera. Um alarme marcado continua contando depois de reiniciar. A versão atual
 | Medir o FPS nos jogos | Na primeira vez, clique em **Ativar** no painel. O Windows pede confirmação de administrador uma vez, e passa a valer depois de sair e entrar na conta. |
 | Fechar a ilha | Abra o painel e clique em **Sair**. Um alarme marcado continua valendo: na hora, o Windows abre a ilha e ele toca. Para desistir dele, cancele na página Alarme antes de sair. |
 | Ligar/desligar o início com o Windows | Abra o `islandbar.exe` de novo: o cartão aparece outra vez. |
-| Acompanhar um pedido do iFood | Deixe uma aba do iFood aberta no navegador, logado (qualquer página, pode ser de fundo). Não precisa abrir o pedido: vale até para pedidos feitos pelo celular. A pílula aparece sozinha e some uns minutos depois da entrega ou quando a aba fecha. Clique nela para ver a janela do pedido, com o mapa; o Ctrl em cima dela também tira as duas pílulas da frente. |
+| Acompanhar um pedido do iFood | Entre uma vez no site do iFood, no Chrome ou no Edge. Depois, com o navegador aberto (pode ser só na bandeja, sem janela), a pílula aparece sozinha em até 2 minutos, até para pedidos feitos pelo celular, e some uns minutos depois da entrega. Se aparecer "Entre no iFood de novo", clique nela e entre no site. Clique nela para ver a janela do pedido, com o mapa; o Ctrl em cima dela também tira as duas pílulas da frente. |
 | Escolher o pet, os números da ilha e a temperatura | Também no cartão inicial (abra o `islandbar.exe` de novo). Cada opção de temperatura mostra o valor de agora; "n/d" quer dizer que o PC não tem aquele sensor. |
 
 ### Pedidos do iFood
@@ -120,10 +121,24 @@ A ilha não lê o navegador sozinha: quem lê o iFood é uma extensão pequena, 
 ilha. Ela só funciona em `www.ifood.com.br`, só manda para a ilha no seu próprio PC (`127.0.0.1`)
 e não guarda nem envia seu login.
 
-Com qualquer página do iFood aberta e você logado, a extensão pergunta ao iFood, a cada minuto
-ou dois, se há pedido em andamento, do mesmo jeito que o próprio site pergunta. Para isso ela
-usa o login que o site já está usando naquela aba, só para falar com o iFood. Não precisa abrir o
-pedido, e vale também para pedidos feitos pelo celular na mesma conta.
+A extensão pergunta ao iFood, a cada minuto ou dois, se há pedido em andamento, do mesmo jeito
+que o próprio site pergunta. Não precisa abrir o pedido nem deixar o site aberto, e vale também
+para pedidos feitos pelo celular na mesma conta. Ela usa o login que o site deixou no navegador
+quando você entrou: o mesmo login, só para falar com o iFood.
+
+- **Sem aba do iFood aberta:** a extensão consulta sozinha, enquanto o navegador estiver rodando.
+  O crachá do login do iFood vence a cada 2 horas; ela renova do mesmo jeito que o site renova e
+  deixa o novo no navegador, para o site continuar logado também.
+- **Com uma aba do iFood aberta:** quem acompanha é a própria aba, e a extensão descansa.
+- **Se o login acabar de vez** (você saiu da conta, trocou a senha, ou o iFood pediu para entrar
+  de novo), a pílula vira o aviso **Entre no iFood de novo**. Clique nela: abre o site para você
+  entrar, e o aviso some.
+
+Para a extensão funcionar com o navegador fechado (sem nenhuma janela), deixe ele rodando em
+segundo plano: no Chrome, Configurações → Sistema → "Continuar executando apps em segundo plano
+quando o Google Chrome estiver fechado"; no Edge, Configurações → Sistema e desempenho →
+"Continuar executando extensões e aplicativos em segundo plano quando o Microsoft Edge estiver
+fechado".
 
 Para instalar (uma vez só), no Chrome ou no Edge:
 
@@ -132,20 +147,19 @@ Para instalar (uma vez só), no Chrome ou no Edge:
 2. No navegador, abra `chrome://extensions` (no Edge, `edge://extensions`).
 3. Ligue o **Modo do desenvolvedor** (no Chrome fica no canto de cima; no Edge, no menu da esquerda).
 4. Clique em **Carregar sem compactação** e escolha a pasta que abriu.
-5. Recarregue a aba do iFood (F5).
+5. Entre no site do iFood (ou recarregue a aba dele com F5), logado.
 
 Com a extensão instalada, o cartão inicial mostra **Instalada** no lugar do botão.
 
-Depois disso, é só deixar uma aba do iFood aberta. Dica: clique com o botão direito na aba e
-escolha **Fixar** para ela ficar pequenininha no canto. As atualizações da ilha também atualizam
-os arquivos da extensão. Para o navegador usar a versão nova na hora, clique no botão de
+Depois disso, pode fechar o site. As atualizações da ilha também atualizam os arquivos da
+extensão. Para o navegador usar a versão nova na hora, clique no botão de
 recarregar (↻) da extensão em `chrome://extensions` e aperte F5 na aba do iFood.
 
 O mapa da janela do pedido vem do [OpenStreetMap](https://www.openstreetmap.org/copyright)
 (escurecido pela ilha) e só é baixado com a janela aberta.
 
-Clicando no ícone da extensão (na barra do navegador) aparece se a ilha está recebendo o pedido e o
-botão **Copiar diagnóstico**. Ele copia só o formato das respostas do site do iFood (nomes dos
+Clicando no ícone da extensão (na barra do navegador) aparece se a ilha está recebendo o pedido,
+como está o acompanhamento sem aba e o botão **Copiar diagnóstico**. Ele copia só o formato das respostas do site do iFood (nomes dos
 campos, sem nomes, endereços ou números), para ajudar a ajustar a leitura quando o site muda.
 Também diz onde o site guarda o login e como o renova, só pelos nomes e tempos, nunca o login em
 si, e testa se a extensão consegue consultar a lista de pedidos sozinha. Esse teste é só de
@@ -208,12 +222,12 @@ O sensor escolhido não existe nesse PC (ou não dá para ler sem instalar um dr
 
 - Confira se a extensão "Islandbar - pedidos do iFood" está ligada em `chrome://extensions` (ou
   `edge://extensions`) e recarregue a aba do iFood (F5).
-- Confira se você está logado no site. Se mesmo assim não aparecer, abra a página do pedido
-  (**Pedidos** → **Acompanhar**): ela sempre funciona.
-- Depois de abrir a aba, a pílula pode levar até 2 minutos para aparecer.
-- Se ela some depois de um tempo com a aba de fundo, a "Economia de memória" do navegador pode ter
-  colocado a aba para dormir. Em Configurações → Desempenho, adicione `www.ifood.com.br` em
-  "Sempre manter estes sites ativos".
+- Entre no site do iFood pelo menos uma vez com a extensão já instalada (é aí que ela aprende como
+  falar com o iFood).
+- Clique no ícone da extensão: a linha **Sem aba** diz o que está acontecendo.
+- A pílula pode levar até 2 minutos para aparecer depois do pedido.
+- Se mesmo assim não aparecer, abra a página do pedido (**Pedidos** → **Acompanhar**): ela sempre
+  funciona.
 - Firefox não é suportado.
 
 </details>
@@ -251,7 +265,7 @@ mentira (`src/backend/mock.rs`), útil para mexer na interface.
 | `src/pet.rs` | Os pets (fantasma, robô e as barrinhas): desenho e gestos. |
 | `src/delivery.rs` | Pedidos do iFood: recebe o andamento da extensão e guarda o pedido mostrado. |
 | `src/map.rs` | Mapa da janela do pedido: baixa e posiciona os pedacinhos do mapa. |
-| `extension/` | A extensão do navegador que acompanha os pedidos do iFood. Os nomes dos eventos do site vieram do projeto [iFood PiP](https://github.com/luannsr12/ifood-pip) (Apache 2.0); a consulta de pedidos em andamento, do [ifood-mcp](https://github.com/davidmosiah/ifood-mcp). |
+| `extension/` | A extensão do navegador que acompanha os pedidos do iFood (`reader.js` entende as respostas do site; `page.js` acompanha com a aba aberta; `background.js`, sem aba). Os nomes dos eventos do site vieram do projeto [iFood PiP](https://github.com/luannsr12/ifood-pip) (Apache 2.0); a consulta de pedidos em andamento, do [ifood-mcp](https://github.com/davidmosiah/ifood-mcp). |
 | `src/platform.rs` | Mouse, teclado, janela sem moldura, memória e início com o Windows. |
 | `src/updater.rs` | Atualização automática. |
 | `src/perf.rs` | Medidor interno de quadros, CPU e memória (diagnóstico). |

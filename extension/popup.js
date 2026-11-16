@@ -71,7 +71,21 @@ async function diagnostic() {
     attempt({ credentials: "include" }),
     headers ? attempt({ credentials: "omit", headers: new Headers(headers) }) : null,
   ]);
-  return { ...diag, cookies: jar, extensaoSozinha: { soCookies, comCracha } };
+  const { bg } = await chrome.storage.session.get("bg");
+  // Do segundo plano, só o resumo (sem os pedidos).
+  const segundoPlano = bg
+    ? {
+        status: bg.status,
+        cookies: bg.cookies,
+        renovou: bg.renewals,
+        ultimaRenovacao: bg.lastRenew ?? null,
+        gravouCookie: bg.wrote ?? null,
+        ultimaLista: bg.lastList ?? null,
+        avisouLogin: bg.warned,
+        pedidos: Object.keys(bg.orders || {}).length,
+      }
+    : null;
+  return { ...diag, cookies: jar, extensaoSozinha: { soCookies, comCracha }, segundoPlano };
 }
 
 (async () => {
@@ -84,7 +98,9 @@ async function diagnostic() {
     const seconds = Math.round((Date.now() - status.at) / 1000);
     island.textContent = status.ok ? `recebendo (há ${seconds} s)` : "não respondeu (ela está aberta?)";
   }
-  order.textContent = status?.stage ? STAGES[status.stage] || status.stage : "nenhum pedido em andamento (deixe uma aba do iFood aberta)";
+  order.textContent = status?.stage ? STAGES[status.stage] || status.stage : "nenhum pedido em andamento";
+  const { bg } = await chrome.storage.session.get("bg");
+  document.getElementById("background").textContent = bg?.status || "esperando o primeiro minuto";
 
   document.getElementById("copy").addEventListener("click", async () => {
     const done = document.getElementById("done");

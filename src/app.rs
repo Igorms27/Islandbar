@@ -596,9 +596,14 @@ impl eframe::App for IslandApp {
             let click = ui.interact(area, ui.scope_id().with("order"), Sense::click());
             self.order_hovered = click.hovered();
             if click.clicked() {
-                self.mode = Mode::Order;
-                self.order_anchor = Some(area.left());
-                self.leave_timer = 0.0;
+                if self.last_order.as_ref().is_some_and(Order::is_login) {
+                    // O aviso de login vencido: abre o site do iFood para entrar.
+                    delivery::open_order(delivery::LOGIN);
+                } else {
+                    self.mode = Mode::Order;
+                    self.order_anchor = Some(area.left());
+                    self.leave_timer = 0.0;
+                }
             }
             if click.hovered() {
                 ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -1655,7 +1660,8 @@ impl IslandApp {
         let Some(order) = self.last_order.clone() else { return false };
         // A novidade aparece na cor de destaque da ilha por alguns segundos.
         let highlight = if visible { order.highlight(now) } else { 0.0 };
-        let stage_color = TEXT.lerp_to_gamma(accent, highlight);
+        let stage_color =
+            if order.is_login() { LATE.lerp_to_gamma(TEXT, 0.25) } else { TEXT.lerp_to_gamma(accent, highlight) };
 
         // Trechos depois do logo: (texto, tamanho, cor, é o balão de mensagens).
         let stage = (order.stage.text().to_string(), 12.5, stage_color, false);
@@ -2182,8 +2188,8 @@ impl IslandApp {
         }
         let hint: &[&str] = if self.extension_installed {
             &[
-                "Pronto: com o site do iFood aberto no navegador (qualquer",
-                "página), a pílula do pedido aparece sozinha ao lado da ilha.",
+                "Pronto: entre uma vez no site do iFood. Depois, com o navegador",
+                "aberto, a pílula do pedido aparece sozinha (até sem a aba).",
             ]
         } else if self.extension_opened {
             &[
@@ -2191,7 +2197,7 @@ impl IslandApp {
                 "Clique em Carregar sem compactação e escolha a pasta aberta.",
             ]
         } else {
-            &["Com o site do iFood aberto no navegador, uma pílula ao lado", "da ilha mostra o andamento do pedido."]
+            &["Com a extensão no navegador, uma pílula ao lado da ilha", "mostra o andamento do seu pedido do iFood."]
         };
         for (i, line) in hint.iter().enumerate() {
             let y = top + 289.0 + i as f32 * 15.0;
@@ -2705,7 +2711,7 @@ fn order_panel_height(order: Option<&Order>) -> f32 {
 /// Quantos passos do andamento já aconteceram (-1 = nenhum).
 fn order_step(stage: Stage) -> i32 {
     match stage {
-        Stage::Unknown | Stage::Placed | Stage::Cancelled => -1,
+        Stage::Unknown | Stage::Placed | Stage::Cancelled | Stage::Login => -1,
         Stage::Confirmed => 0,
         Stage::Preparing | Stage::Driver | Stage::Ready | Stage::Pickup | Stage::Collected => 1,
         Stage::Shipping | Stage::Arrived => 2,

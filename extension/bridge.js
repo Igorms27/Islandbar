@@ -4,6 +4,8 @@
 (() => {
   const latest = new Map();
   let diagnostic = null;
+  // O site está logado nesta aba (então ela mesma acompanha os pedidos).
+  let logged = false;
   // Respostas que a janelinha da extensão está esperando.
   const waiting = { diag: [], auth: [] };
 
@@ -20,6 +22,13 @@
     if (event.data.islandbar === "ifood-diag") {
       diagnostic = event.data.diag;
       waiting.diag.splice(0).forEach((reply) => reply(diagnostic));
+      return;
+    }
+    if (event.data.islandbar === "ifood-login") {
+      if (typeof event.data.token === "string" && Array.isArray(event.data.headers)) {
+        logged = true;
+        send({ type: "login", token: event.data.token, headers: event.data.headers });
+      }
       return;
     }
     if (event.data.islandbar === "ifood-auth") {
@@ -63,7 +72,11 @@
 
   // De tempos em tempos repete o último estado: assim a ilha sabe que a aba
   // continua aberta (e recebe o pedido se ela abriu depois).
-  setInterval(() => latest.forEach((order) => send({ type: "order", order })), 30000);
+  // E avisa que há uma aba logada: enquanto houver, o segundo plano descansa.
+  setInterval(() => {
+    latest.forEach((order) => send({ type: "order", order }));
+    if (logged) send({ type: "tab" });
+  }, 30000);
 
   window.addEventListener("pagehide", () => latest.forEach((order) => send({ type: "gone", id: order.id })));
   window.addEventListener("pageshow", (event) => {

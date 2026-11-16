@@ -9,7 +9,10 @@
 //! `order=<id>`, `stage=shipping`, `store=Lanchonete`, `number=4242`,
 //! `eta=20:10-20:25`, `code=1234`, `chat=2`, `driver=João S.`, `vehicle=moto`
 //! e os pontos do mapa `from=` (loja), `to=` (sua casa) e `courier=`
-//! (entregador), como `-23.55052,-46.63331`. Quando a aba fecha, chega `gone=<id>`.
+//! (entregador), como `-23.55052,-46.63331`. Quando o pedido sai de vista
+//! (aba fechada e sem como seguir sem ela), chega `gone=<id>`. Se o login do
+//! iFood acabou (precisa entrar de novo), chega `login=expired` a cada minuto,
+//! e `login=ok` quando volta: a pílula vira o aviso "Entre no iFood de novo".
 //!
 //! A escuta é uma thread parada esperando conexão: não gasta nada enquanto
 //! não há pedido. A extensão repete o estado a cada 30 s; sem notícias por
@@ -45,6 +48,8 @@ pub enum Stage {
     Arrived,
     Delivered,
     Cancelled,
+    /// Não é pedido: o aviso de que o login do iFood acabou.
+    Login,
 }
 
 impl Stage {
@@ -80,6 +85,7 @@ impl Stage {
             Stage::Arrived => "Entregador chegou!",
             Stage::Delivered => "Entregue",
             Stage::Cancelled => "Cancelado",
+            Stage::Login => "Entre no iFood de novo",
         }
     }
 
@@ -121,7 +127,15 @@ pub struct Order {
     final_since: Option<Instant>,
 }
 
+/// O "pedido" que na verdade é o aviso de login vencido.
+pub const LOGIN: &str = "login";
+
 impl Order {
+    /// É o aviso de login (não um pedido de verdade)?
+    pub fn is_login(&self) -> bool {
+        self.stage == Stage::Login
+    }
+
     fn alive(&self, now: Instant) -> bool {
         now.duration_since(self.seen) < SILENT_LIMIT
             && self.final_since.is_none_or(|since| now.duration_since(since) < FINAL_SHOW)
@@ -146,12 +160,47 @@ impl Orders {
                 fields.insert(key.trim(), clean(value));
             }
         }
+        if let Some(state) = fields.get("login") {
+            if state != "expired" {
+                let before = self.0.len();
+                self.0.retain(|o| o.stage != Stage::Login);
+                return self.0.len() != before;
+            }
+            if let Some(warning) = self.0.iter_mut().find(|o| o.stage == Stage::Login) {
+                let came_back = !warning.alive(now);
+                warning.seen = now;
+                if came_back {
+                    warning.changed = Some(now);
+                }
+                return came_back;
+            }
+            crate::perf::line("ifood: login expired".to_string());
+            self.0.push(Order {
+                id: LOGIN.to_string(),
+                stage: Stage::Login,
+                store: String::new(),
+                eta: String::new(),
+                code: String::new(),
+                chats: 0,
+                number: String::new(),
+                driver: String::new(),
+                vehicle: String::new(),
+                from: None,
+                to: None,
+                courier: None,
+                seen: now,
+                changed: Some(now),
+                new_chat: false,
+                final_since: None,
+            });
+            return true;
+        }
         if let Some(id) = fields.get("gone") {
             let before = self.0.len();
             self.0.retain(|o| &o.id != id);
             return self.0.len() != before;
         }
-        let Some(id) = fields.get("order").filter(|id| !id.is_empty()) else { return false };
+        let Some(id) = fields.get("order").filter(|id| !id.is_empty() && id.as_str() != LOGIN) else { return false };
         let stage = Stage::parse(fields.get("stage").map_or("", String::as_str));
         let store = fields.get("store").cloned().unwrap_or_default();
         let eta: String = fields
@@ -244,9 +293,10 @@ impl Orders {
         changed
     }
 
-    /// O pedido que aparece: o mais recente que ainda não terminou.
+    /// O pedido que aparece: o mais recente que ainda não terminou. O aviso de
+    /// login só aparece quando não há pedido para mostrar.
     fn current(&self, now: Instant) -> Option<Order> {
-        self.0.iter().filter(|o| o.alive(now)).max_by_key(|o| (!o.stage.is_final(), o.changed)).cloned()
+        self.0.iter().filter(|o| o.alive(now)).max_by_key(|o| (!o.is_login(), !o.stage.is_final(), o.changed)).cloned()
     }
 
     /// Quando a ilha precisa acordar para algo mudar sozinho (o pedido sumir,
@@ -383,13 +433,17 @@ fn receive(stream: TcpStream) -> Option<String> {
     body
 }
 
-/// Abre a página do pedido no navegador padrão.
+/// Abre a página do pedido no navegador padrão (ou o site, para o aviso de login).
 pub fn open_order(id: &str) {
-    // O número vem da extensão: só letras de a-f, números e traços.
-    if id.is_empty() || !id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
-        return;
-    }
-    let url = format!("https://www.ifood.com.br/pedido/{id}/acompanhar");
+    let url = if id == LOGIN {
+        "https://www.ifood.com.br/".to_string()
+    } else {
+        // O número vem da extensão: só letras de a-f, números e traços.
+        if id.is_empty() || !id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+            return;
+        }
+        format!("https://www.ifood.com.br/pedido/{id}/acompanhar")
+    };
     crate::perf::line(format!("ifood: opening the order page {}", short(id)));
     #[cfg(windows)]
     unsafe {
@@ -407,8 +461,9 @@ pub fn open_order(id: &str) {
 pub mod extension {
     use std::path::PathBuf;
 
-    const FILES: [(&str, &str); 6] = [
+    const FILES: [(&str, &str); 7] = [
         ("manifest.json", include_str!("../extension/manifest.json")),
+        ("reader.js", include_str!("../extension/reader.js")),
         ("page.js", include_str!("../extension/page.js")),
         ("bridge.js", include_str!("../extension/bridge.js")),
         ("background.js", include_str!("../extension/background.js")),
@@ -584,6 +639,25 @@ mod tests {
         assert_eq!(orders.current(t0).unwrap().id, "abc123");
         // Pedido que já chega entregue (página de um pedido antigo): ignorado.
         assert!(!orders.apply(&text("delivered", 0).replace("abc123", "old"), t0));
+    }
+
+    #[test]
+    fn aviso_de_login() {
+        let mut orders = Orders::default();
+        let t0 = Instant::now();
+        assert!(orders.apply("login=expired", t0));
+        assert!(orders.current(t0).unwrap().is_login());
+        // Repetido, não "muda" nada; um pedido de verdade passa na frente.
+        assert!(!orders.apply("login=expired", t0));
+        assert!(orders.apply(&text("preparing", 0), t0));
+        assert!(!orders.current(t0).unwrap().is_login());
+        // Ninguém finge ser o aviso.
+        assert!(!orders.apply("order=login\nstage=preparing", t0));
+        assert!(orders.apply("login=ok", t0));
+        assert!(orders.0.iter().all(|o| !o.is_login()));
+        // Navegador fechado: sem repetição, o aviso some sozinho.
+        orders.apply("login=expired", t0);
+        assert!(orders.current(t0 + SILENT_LIMIT).is_none_or(|o| !o.is_login()));
     }
 
     #[test]
