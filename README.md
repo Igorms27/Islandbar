@@ -124,8 +124,8 @@ Depois disso, é só abrir a página do pedido (**Pedidos** → **Acompanhar**).
 também atualizam os arquivos da extensão. Para o navegador usar a versão nova na hora, clique no
 botão de recarregar (↻) da extensão em `chrome://extensions` e aperte F5 na página do pedido.
 
-O mapa da janela do pedido vem do [CARTO](https://carto.com/attributions) (dados do
-[OpenStreetMap](https://www.openstreetmap.org/copyright)) e só é baixado com a janela aberta.
+O mapa da janela do pedido vem do [OpenStreetMap](https://www.openstreetmap.org/copyright)
+(escurecido pela ilha) e só é baixado com a janela aberta.
 
 Clicando no ícone da extensão (na barra do navegador) aparece se a ilha está recebendo o pedido e o
 botão **Copiar diagnóstico**. Ele copia só o formato das respostas do site do iFood (nomes dos

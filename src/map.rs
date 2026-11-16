@@ -1,8 +1,9 @@
 //! Mapa do pedido do iFood (na janela que abre ao clicar na pílula).
 //!
-//! O mapa é feito de "azulejos" de 256×256 px do CARTO (estilo escuro, dados
-//! do OpenStreetMap). Eles só são baixados com a janela do pedido aberta, e
-//! ficam guardados enquanto o pedido existir. Cada azulejo é baixado numa
+//! O mapa é feito de "azulejos" de 256×256 px do OpenStreetMap (gratuito,
+//! sem chave). Eles só são baixados com a janela do pedido aberta, e ficam
+//! guardados enquanto o pedido existir. O mapa de lá é claro; aqui ele é
+//! escurecido para combinar com a ilha. Cada azulejo é baixado numa
 //! thread curta; quando chega, a interface é acordada para desenhá-lo.
 
 use std::collections::HashMap;
@@ -17,8 +18,8 @@ pub const TILE: f64 = 256.0;
 /// Zoom máximo (ruas bem de perto) e mínimo (a cidade inteira).
 const MAX_ZOOM: u8 = 17;
 const MIN_ZOOM: u8 = 3;
-/// Créditos que o CARTO e o OpenStreetMap pedem para aparecer no mapa.
-pub const CREDITS: &str = "© OpenStreetMap © CARTO";
+/// Crédito que o OpenStreetMap pede para aparecer no mapa.
+pub const CREDITS: &str = "© OpenStreetMap";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Tile {
@@ -114,18 +115,31 @@ fn agent() -> &'static ureq::Agent {
 
 fn download(tile: Tile) -> Option<ColorImage> {
     // Para testes: ISLANDBAR_DEBUG_TILES=http://127.0.0.1:8000/{z}/{x}/{y}.png
-    let template = std::env::var("ISLANDBAR_DEBUG_TILES").unwrap_or_else(|_| {
-        let server = ["a", "b", "c", "d"][((tile.x + tile.y) % 4) as usize];
-        format!("https://{server}.basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}.png")
-    });
+    let template = std::env::var("ISLANDBAR_DEBUG_TILES")
+        .unwrap_or_else(|_| "https://tile.openstreetmap.org/{z}/{x}/{y}.png".to_string());
     let url = template
         .replace("{z}", &tile.z.to_string())
         .replace("{x}", &tile.x.to_string())
         .replace("{y}", &tile.y.to_string());
     let bytes = agent().get(&url).call().ok()?.body_mut().with_config().limit(2 * 1024 * 1024).read_to_vec().ok()?;
-    let image = image::load_from_memory_with_format(&bytes, image::ImageFormat::Png).ok()?.to_rgba8();
+    let mut image = image::load_from_memory_with_format(&bytes, image::ImageFormat::Png).ok()?.to_rgba8();
+    for pixel in image.pixels_mut() {
+        let [r, g, b] = darken([pixel[0], pixel[1], pixel[2]]);
+        pixel.0 = [r, g, b, pixel[3]];
+    }
     let size = [image.width() as usize, image.height() as usize];
     Some(ColorImage::from_rgba_unmultiplied(size, image.as_raw()))
+}
+
+/// "Modo escuro" do mapa: inverte o claro e o escuro mas mantém as cores
+/// (água continua azulada, parques esverdeados). É o mesmo truque dos sites
+/// com mapa escuro: inverter e girar o matiz em 180°.
+fn darken([r, g, b]: [u8; 3]) -> [u8; 3] {
+    let [r, g, b] = [255.0 - r as f32, 255.0 - g as f32, 255.0 - b as f32];
+    let rotated =
+        [-0.574 * r + 1.430 * g + 0.144 * b, 0.426 * r + 0.430 * g + 0.144 * b, 0.426 * r + 1.430 * g - 0.856 * b];
+    // Um pouco menos de contraste, puxado para o cinza escuro da ilha.
+    rotated.map(|c| (c.clamp(0.0, 255.0) * 0.82 + 14.0).min(255.0) as u8)
 }
 
 /// Posição no "mundo" do zoom `z`, em pixels (projeção de Mercator, a dos mapas da web).
@@ -163,6 +177,15 @@ pub fn frame(points: &[(f64, f64)], width: f64, height: f64) -> Option<(u8, (f64
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mapa_escurecido() {
+        // Terreno claro do OpenStreetMap fica escuro; água continua azulada.
+        let land = darken([242, 239, 233]);
+        assert!(land.iter().all(|c| *c < 45), "{land:?}");
+        let water = darken([170, 211, 223]);
+        assert!(water[2] > water[0] && water.iter().all(|c| *c < 120), "{water:?}");
+    }
 
     #[test]
     fn projecao_e_enquadramento() {
