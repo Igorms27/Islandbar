@@ -2626,8 +2626,15 @@ fn draw_weather_page(
         FontId::proportional(12.0),
         fade(TEXT_DIM, a),
     );
+    // A coluna da direita cabe o "Máx · Mín" e a cidade (com o alfinete), até 130 pontos.
+    let city_width = if now.city.is_empty() {
+        0.0
+    } else {
+        p.layout_no_wrap(now.city.clone(), FontId::proportional(12.0), TEXT_DIM).size().x.min(116.0)
+    };
+    let column_left = max_min.left().min(side_right - city_width - 14.0);
     let text_x = temp.right() + 12.0;
-    let text_room = max_min.left() - 10.0 - text_x;
+    let text_room = column_left - 10.0 - text_x;
     text_fit(p, pos2(text_x, cy - 8.0), Align2::LEFT_CENTER, now.description(), 13.5, fade(TEXT, a), text_room);
     text_fit(
         p,
@@ -2639,10 +2646,15 @@ fn draw_weather_page(
         text_room,
     );
     if !now.city.is_empty() {
-        let width = (side_right - max_min.left()).max(90.0);
-        let city = p.layout_no_wrap(now.city.clone(), FontId::proportional(12.0), fade(TEXT_DIM, a));
-        let city_width = city.size().x.min(width - 14.0);
-        text_fit(p, pos2(side_right, cy - 8.0), Align2::RIGHT_CENTER, &now.city, 12.0, fade(TEXT_DIM, a), width - 14.0);
+        text_fit(
+            p,
+            pos2(side_right, cy - 8.0),
+            Align2::RIGHT_CENTER,
+            &now.city,
+            12.0,
+            fade(TEXT_DIM, a),
+            city_width + 0.5,
+        );
         weather::draw_pin(p, pos2(side_right - city_width - 7.0, cy - 8.0), 11.0, fade(TEXT_DIM, a), ISLAND);
     }
 

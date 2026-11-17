@@ -416,13 +416,39 @@ fn read_place(json: &serde_json::Value) -> Option<Place> {
     if lat.abs() > 90.0 || lon.abs() > 180.0 || (lat, lon) == (0.0, 0.0) {
         return None;
     }
-    let city = ["city", "locality", "principalSubdivision"]
-        .iter()
-        .filter_map(|key| json[*key].as_str())
-        .map(|name| name.chars().filter(|c| !c.is_control()).take(40).collect::<String>().trim().to_string())
-        .find(|name| !name.is_empty())
-        .unwrap_or_default();
-    Some(Place { lat: round(lat), lon: round(lon), city, source: Source::Internet })
+    Some(Place { lat: round(lat), lon: round(lon), city: city_name(json), source: Source::Internet })
+}
+
+/// O nome da cidade. No Brasil o serviço às vezes chama a cidade de "Região
+/// Geográfica Imediata de Campinas": aí vale o município (nível 8 da lista de
+/// divisões) ou o nome sem esse começo.
+fn city_name(json: &serde_json::Value) -> String {
+    const REGIONS: [&str; 3] =
+        ["Região Geográfica Imediata de ", "Região Geográfica Intermediária de ", "Região Metropolitana de "];
+    let clean = |name: &str| -> String {
+        let name = name.trim();
+        let name = REGIONS.iter().find_map(|prefix| name.strip_prefix(prefix)).unwrap_or(name);
+        name.chars().filter(|c| !c.is_control()).take(40).collect::<String>().trim().to_string()
+    };
+    let is_region = |name: &&str| REGIONS.iter().any(|prefix| name.trim().starts_with(prefix.trim()));
+    let text = |key: &str| json[key].as_str().filter(|name| !name.trim().is_empty());
+
+    // 1. A cidade, se não for uma "região".
+    if let Some(city) = text("city").filter(|name| !is_region(name)) {
+        return clean(city);
+    }
+    // 2. O município na lista de divisões.
+    let municipality = json["localityInfo"]["administrative"].as_array().and_then(|list| {
+        list.iter()
+            .filter(|item| item["adminLevel"].as_u64() == Some(8))
+            .filter_map(|item| item["name"].as_str())
+            .find(|name| !name.trim().is_empty() && !is_region(name))
+    });
+    if let Some(name) = municipality {
+        return clean(name);
+    }
+    // 3. O que tiver, sem o "Região ... de".
+    ["city", "locality", "principalSubdivision"].iter().find_map(|key| text(key)).map(clean).unwrap_or_default()
 }
 
 /// A localização do Windows, se estiver ligada e permitida para a ilha.
@@ -835,6 +861,18 @@ mod tests {
         let json = serde_json::json!({"latitude": -22.9, "longitude": -47.0, "city": "", "locality": "Barão Geraldo"});
         assert_eq!(read_place(&json).unwrap().city, "Barão Geraldo");
         assert!(read_place(&serde_json::json!({"latitude": 0.0, "longitude": 0.0})).is_none());
+        // No Brasil: "Região Geográfica Imediata de ..." vira o município.
+        let json = serde_json::json!({"latitude": -22.9, "longitude": -47.0, "city": "",
+            "locality": "Região Geográfica Imediata de Campinas",
+            "localityInfo": {"administrative": [
+                {"name": "Brasil", "adminLevel": 2},
+                {"name": "São Paulo", "adminLevel": 4},
+                {"name": "Região Geográfica Imediata de Campinas", "adminLevel": 7},
+                {"name": "Valinhos", "adminLevel": 8}]}});
+        assert_eq!(read_place(&json).unwrap().city, "Valinhos");
+        let json = serde_json::json!({"latitude": -22.9, "longitude": -47.0,
+            "city": "Região Geográfica Imediata de Campinas", "locality": ""});
+        assert_eq!(read_place(&json).unwrap().city, "Campinas");
         assert!(read_forecast(&serde_json::json!({}), &place).is_none());
     }
 
