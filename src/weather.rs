@@ -15,7 +15,7 @@
 
 use std::error::Error;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, SystemTime};
 
 use eframe::egui::{vec2, Color32, Painter, Pos2, Rect, Shape, Stroke};
@@ -131,12 +131,27 @@ fn publish(weather: Weather) {
     STATE.store(2, Ordering::Relaxed);
 }
 
+/// Acorda a interface (algo novo para desenhar).
+static WAKE: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
+
+fn wake() {
+    if let Some(wake) = WAKE.get() {
+        wake();
+    }
+}
+
+/// Pedido para procurar a localização de novo agora (você permitiu pelo botão).
+static RELOCATE: (Mutex<bool>, Condvar) = (Mutex::new(false), Condvar::new());
+
 /// Começa a buscar o clima. `wake` acorda a interface quando chega uma previsão.
-pub fn start(wake: impl Fn() + Send + 'static) {
-    // Para testes: uma previsão fixa, sem internet.
-    if std::env::var("ISLANDBAR_DEBUG_WEATHER").as_deref() == Ok("fake") {
-        publish(sample());
-        return;
+pub fn start(wake: impl Fn() + Send + Sync + 'static) {
+    let _ = WAKE.set(Box::new(wake));
+    // Para testes: uma previsão fixa, sem internet ("internet" = como se a
+    // cidade viesse pela internet, para ver o botão da localização).
+    match std::env::var("ISLANDBAR_DEBUG_WEATHER").as_deref() {
+        Ok("fake") => return publish(sample()),
+        Ok("internet") => return publish(Weather { source: Source::Internet, ..sample() }),
+        _ => {}
     }
     let spawned = std::thread::Builder::new().name("weather".into()).spawn(move || {
         // Deixa a ilha abrir primeiro.
@@ -169,14 +184,14 @@ pub fn start(wake: impl Fn() + Send + 'static) {
                         weather.source
                     ));
                     publish(weather);
-                    wake();
+                    self::wake();
                     FORECAST_EVERY
                 }
                 Err(err) => {
                     crate::perf::line(format!("weather: failed ({err})"));
                     if current().is_none() {
                         STATE.store(1, Ordering::Relaxed);
-                        wake();
+                        self::wake();
                     }
                     // Sem internet a cidade pode ter mudado (ex.: notebook): procura de novo.
                     place = place.filter(|_| state() == State::Ready);
@@ -185,9 +200,20 @@ pub fn start(wake: impl Fn() + Send + 'static) {
             };
             // Dorme em pedaços de 1 minuto, olhando o relógio de verdade: assim,
             // quando o PC acorda da suspensão, a previsão é atualizada logo.
+            // O botão "Usar localização do Windows" acorda antes.
             let since = SystemTime::now();
             while elapsed(since) < wait {
-                std::thread::sleep(Duration::from_secs(60));
+                let (flag, signal) = &RELOCATE;
+                let Ok(guard) = flag.lock() else { break };
+                let Ok((mut relocate, _)) =
+                    signal.wait_timeout_while(guard, Duration::from_secs(60), |relocate| !*relocate)
+                else {
+                    break;
+                };
+                if std::mem::take(&mut *relocate) {
+                    place = None;
+                    break;
+                }
             }
         }
     });
@@ -248,6 +274,87 @@ fn locate(agent: &ureq::Agent) -> Result<(Place, Duration)> {
     let json = get_json(agent, &format!("{PLACE}?localityLanguage=pt"))?;
     let place = read_place(&json).ok_or("resposta sem localização")?;
     Ok((place, every))
+}
+
+/// O botão "Usar localização do Windows" da página do clima.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Permission {
+    /// Ainda não pediu (ou pode pedir de novo).
+    Idle,
+    /// A janela do Windows está aberta, esperando você.
+    Asking,
+    /// O Windows recusou: falta ligar nas Configurações.
+    Denied,
+}
+
+static PERMISSION: AtomicU8 = AtomicU8::new(0);
+/// Você aceitou pela janela do Windows (vale até fechar a ilha).
+static PERMITTED: AtomicBool = AtomicBool::new(false);
+
+pub fn permission() -> Permission {
+    match PERMISSION.load(Ordering::Relaxed) {
+        1 => Permission::Asking,
+        2 => Permission::Denied,
+        _ => Permission::Idle,
+    }
+}
+
+/// Pede a localização ao Windows. Só quando você clica no botão: se ela
+/// estiver desligada, o Windows abre uma janela perguntando se pode ligar.
+pub fn request_permission() {
+    if PERMISSION.swap(1, Ordering::SeqCst) == 1 {
+        return;
+    }
+    wake();
+    let spawned = std::thread::Builder::new().name("weather-permission".into()).spawn(|| {
+        let allowed = ask_permission();
+        crate::perf::line(format!("weather: permission asked, allowed={allowed}"));
+        PERMITTED.store(allowed, Ordering::Relaxed);
+        PERMISSION.store(if allowed { 0 } else { 2 }, Ordering::SeqCst);
+        if allowed {
+            let (flag, signal) = &RELOCATE;
+            if let Ok(mut relocate) = flag.lock() {
+                *relocate = true;
+            }
+            signal.notify_all();
+        }
+        wake();
+    });
+    if spawned.is_err() {
+        PERMISSION.store(0, Ordering::SeqCst);
+    }
+}
+
+#[cfg(windows)]
+fn ask_permission() -> bool {
+    use windows::Devices::Geolocation::{GeolocationAccessStatus, Geolocator};
+    use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
+
+    let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
+    Geolocator::RequestAccessAsync().and_then(|op| op.join()) == Ok(GeolocationAccessStatus::Allowed)
+}
+
+#[cfg(not(windows))]
+fn ask_permission() -> bool {
+    false
+}
+
+/// Abre as configurações de localização do Windows.
+pub fn open_settings() {
+    #[cfg(windows)]
+    unsafe {
+        use windows::core::{w, PCWSTR};
+        use windows::Win32::UI::Shell::ShellExecuteW;
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        ShellExecuteW(
+            None,
+            w!("open"),
+            w!("ms-settings:privacy-location"),
+            PCWSTR::null(),
+            PCWSTR::null(),
+            SW_SHOWNORMAL,
+        );
+    }
 }
 
 /// Resposta da localização do Windows.
@@ -331,7 +438,7 @@ fn windows_position() -> Option<(f64, f64)> {
     // Desligada, pedir a localização faz o Windows abrir uma janela que
     // escurece a tela e espera resposta (ruim no meio de um jogo). Então só
     // pede se ela já estiver ligada para os programas da área de trabalho.
-    if !windows_location_on() {
+    if !PERMITTED.load(Ordering::Relaxed) && !windows_location_on() {
         crate::perf::line("weather: windows location is off, using the internet".to_string());
         return None;
     }

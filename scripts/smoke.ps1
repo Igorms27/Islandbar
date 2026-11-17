@@ -452,4 +452,30 @@ $app = StartIsland "ifood-welcome" $true
 Shot "ifood-4-welcome-installed"
 StopIsland "ifood-welcome" $app
 
+# ---- Rodada 7: clima, botão "Usar localização do Windows" ------------------
+# Na máquina do GitHub a localização está desligada: a cidade vem pela internet
+# e a página do clima tem o botão. Clicar nele abre a janela do Windows
+# perguntando (só assim ela aparece). Esc fecha a janela sem permitir.
+$app = StartIsland "location"
+$r = Styles "location"
+$cx = [int](($r.L + $r.R) / 2)
+Start-Sleep 20                  # espera a previsão chegar
+Click $cx ($r.T + 27)
+Start-Sleep 2
+Drag ($cx + 120) ($r.T + 110) ($cx - 120)
+Start-Sleep 1
+Drag ($cx + 175) ($r.T + 144) ($cx - 65)
+Start-Sleep 1
+Shot "location-1-button"
+Click $cx ($r.T + 308)          # Usar localização do Windows
+Start-Sleep 3
+Shot "location-2-asked"
+[System.Windows.Forms.SendKeys]::SendWait("{ESC}")
+Start-Sleep 3
+[W]::SetCursorPos($cx, ($r.T + 200)) | Out-Null
+Start-Sleep 1
+Shot "location-3-answered"
+Log ("location lines: " + ((Get-Content "$out\location-stderr.txt" | Select-String '^weather') -join " | "))
+StopIsland "location" $app
+
 exit 0

@@ -118,7 +118,7 @@ espera. Um alarme marcado continua contando depois de reiniciar. A versão atual
 | Fechar a ilha | Abra o painel e clique em **Sair**. Um alarme marcado continua valendo: na hora, o Windows abre a ilha e ele toca. Para desistir dele, cancele na página Alarme antes de sair. |
 | Ligar/desligar o início com o Windows | Abra o `islandbar.exe` de novo: o cartão aparece outra vez. |
 | Acompanhar um pedido do iFood | Entre uma vez no site do iFood, no Chrome ou no Edge. Depois, com o navegador aberto (pode ser só na bandeja, sem janela), a pílula aparece sozinha em até 1 minuto, até para pedidos feitos pelo celular, e some uns minutos depois da entrega. Se aparecer "Entre no iFood de novo", clique nela e entre no site. Clique nela para ver a janela do pedido, com o mapa; o Ctrl em cima dela também tira as duas pílulas da frente. |
-| Ver o clima | Página Clima (a 3ª bolinha). Para tirar o clima da ilha fechada, desligue **Clima** em "Mostrar na ilha" no cartão inicial. |
+| Ver o clima | Página Clima (a 3ª bolinha). Se a cidade estiver errada, clique em **Usar localização do Windows** nela. Para tirar o clima da ilha fechada, desligue **Clima** em "Mostrar na ilha" no cartão inicial. |
 | Escolher o pet, os números da ilha e a temperatura | Também no cartão inicial (abra o `islandbar.exe` de novo). Cada opção de temperatura mostra o valor de agora; "n/d" quer dizer que o PC não tem aquele sensor. |
 
 ### Clima
@@ -128,10 +128,10 @@ A previsão vem do [Open-Meteo](https://open-meteo.com/) e o nome da cidade do
 
 1. **Localização do Windows** (usa o Wi-Fi, é a mais precisa). Precisa estar ligada em
    **Configurações → Privacidade e segurança → Localização**, com "Permitir que aplicativos da área de
-   trabalho acessem sua localização" ligado. A ilha não abre a pergunta do Windows sobre
-   localização (ela escurece a tela e atrapalharia um jogo): se estiver desligada, usa a opção 2.
-   Quando a ilha consulta, o Windows pode mostrar o ícone de localização na barra de tarefas por
-   um instante.
+   trabalho acessem sua localização" ligado. Mais fácil: na página Clima, clique em **Usar
+   localização do Windows** e responda **Sim** na janela do Windows. Essa janela só aparece quando
+   você clica no botão (ela escurece a tela e atrapalharia um jogo se abrisse sozinha). Quando a
+   ilha consulta, o Windows pode mostrar o ícone de localização na barra de tarefas por um instante.
 2. **Sem ela**, a cidade aproximada pelo endereço da internet. Às vezes erra (mostra a capital do
    estado, por exemplo); o nome da cidade aparece no painel e no cartão inicial para você conferir.
 

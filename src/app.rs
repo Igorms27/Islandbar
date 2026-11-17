@@ -52,6 +52,8 @@ const PANEL_MAX_HEIGHT: f32 = WINDOW_SIZE[1] - TOP_MARGIN - 16.0;
 const ALARM_PAGE_HEIGHT: f32 = 178.0;
 /// Altura da página do clima.
 const WEATHER_PAGE_HEIGHT: f32 = 200.0;
+/// Linha do botão "Usar localização do Windows" (só com a cidade pela internet).
+const WEATHER_BUTTON_HEIGHT: f32 = 34.0;
 /// Última página do painel (0 = Som, 1 = Alarme, 2 = Clima).
 const LAST_PAGE: f32 = 2.0;
 /// Espaço do clima na pílula (ícone + temperatura).
@@ -385,7 +387,7 @@ impl IslandApp {
 
     /// Altura da parte do painel que desliza, conforme a página aparecendo.
     fn middle_height(&self, snap: &Snapshot) -> f32 {
-        let heights = [sound_page_height(snap), ALARM_PAGE_HEIGHT, WEATHER_PAGE_HEIGHT];
+        let heights = [sound_page_height(snap), ALARM_PAGE_HEIGHT, weather_page_height()];
         let t = self.page.value.clamp(0.0, LAST_PAGE);
         let from = (t.floor() as usize).min(heights.len() - 2);
         let k = t - from as f32;
@@ -1182,7 +1184,8 @@ impl IslandApp {
             let weather_dx = (2.0 - self.page.value) * shift;
             let p = &p.with_clip_rect(clip);
             let a = smoothstep(open * 1.9 - 0.25 - 0.09);
-            draw_weather_page(p, left + weather_dx, right + weather_dx, page_top, a);
+            let interactive = interactive && still && self.page.target == 2.0;
+            draw_weather_page(ui, p, left + weather_dx, right + weather_dx, page_top, accent, a, interactive);
         }
         let y = middle_bottom;
 
@@ -2572,8 +2575,29 @@ fn text_button(
     resp.is_some_and(|r| r.clicked())
 }
 
+/// A cidade veio pela internet: a página do clima mostra o botão para usar
+/// a localização do Windows (mais precisa).
+fn weather_uses_internet() -> bool {
+    weather::current().is_some_and(|now| now.source == weather::Source::Internet)
+}
+
+/// Altura da página do clima (com o botão da localização, quando ele aparece).
+fn weather_page_height() -> f32 {
+    WEATHER_PAGE_HEIGHT + if weather_uses_internet() { WEATHER_BUTTON_HEIGHT } else { 0.0 }
+}
+
 /// Página do clima: agora, os detalhes e as próximas horas.
-fn draw_weather_page(p: &Painter, left: f32, right: f32, top: f32, a: f32) {
+#[allow(clippy::too_many_arguments)]
+fn draw_weather_page(
+    ui: &mut Ui,
+    p: &Painter,
+    left: f32,
+    right: f32,
+    top: f32,
+    accent: Color32,
+    a: f32,
+    interactive: bool,
+) {
     let Some(now) = weather::current() else {
         let text = match weather::state() {
             weather::State::Offline => "Sem internet para buscar o clima",
@@ -2690,6 +2714,25 @@ fn draw_weather_page(p: &Painter, left: f32, right: f32, top: f32, a: f32) {
             FontId::proportional(12.5),
             fade(TEXT, a),
         );
+    }
+
+    // ---- Cidade pela internet: botão para usar a localização do Windows ----
+    // A janela do Windows perguntando só abre quando você clica aqui.
+    if now.source == weather::Source::Internet {
+        let permission = weather::permission();
+        let label = match permission {
+            weather::Permission::Idle => "Usar localização do Windows",
+            weather::Permission::Asking => "Responda à janela do Windows…",
+            weather::Permission::Denied => "Ligar a localização nas Configurações",
+        };
+        let rect = Rect::from_center_size(pos2((left + right) / 2.0, top + 214.0), vec2(240.0, 26.0));
+        let clickable = interactive && permission != weather::Permission::Asking;
+        if text_button(ui, p, "weather-location", rect, label, false, accent, a, clickable) {
+            match permission {
+                weather::Permission::Denied => weather::open_settings(),
+                _ => weather::request_permission(),
+            }
+        }
     }
 }
 
