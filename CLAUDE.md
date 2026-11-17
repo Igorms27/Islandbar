@@ -94,6 +94,14 @@ O ambiente do Claude é Linux; a ilha é para Windows.
   `--no-proxy-server` e `--ignore-certificate-errors`; o `poll()` do
   service worker pode ser chamado direto com `sw.evaluate`.
 
+- Clima (`src/weather.rs`): pedir a localização do Windows
+  (`Geolocator::RequestAccessAsync`) com ela desligada abre uma janela do
+  sistema que escurece a tela inteira e trava os cliques até alguém responder.
+  Por isso a ilha só usa a localização se ela já estiver ligada (lê o
+  `ConsentStore\location` no registro) e só pede pelo botão "Usar localização
+  do Windows" da página Clima. Sem ela, a cidade vem pela internet (no GitHub
+  aparece uma cidade dos EUA, é a máquina deles).
+
 ## Pendências (lembrar o dono)
 
 Ao começar uma conversa nova, lembrar o dono destas tarefas em aberto:
