@@ -14,7 +14,7 @@
 //! que passa quase todo o tempo dormindo.
 
 use std::error::Error;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
@@ -139,26 +139,21 @@ pub fn start(wake: impl Fn() + Send + 'static) {
         return;
     }
     let spawned = std::thread::Builder::new().name("weather".into()).spawn(move || {
-        #[cfg(windows)]
-        unsafe {
-            // A localização do Windows precisa disso na linha de execução.
-            let _ =
-                windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_MULTITHREADED);
-        }
         // Deixa a ilha abrir primeiro.
         std::thread::sleep(Duration::from_secs(3));
         let agent = http();
-        let mut place: Option<(Place, SystemTime)> = None;
+        // A localização, quando foi encontrada e quando procurar de novo.
+        let mut place: Option<(Place, SystemTime, Duration)> = None;
         loop {
-            let stale = place.as_ref().is_none_or(|(_, at)| elapsed(*at) >= PLACE_EVERY);
+            let stale = place.as_ref().is_none_or(|(_, at, every)| elapsed(*at) >= *every);
             if stale {
                 match locate(&agent) {
-                    Ok(found) => place = Some((found, SystemTime::now())),
+                    Ok((found, every)) => place = Some((found, SystemTime::now(), every)),
                     Err(err) => crate::perf::line(format!("weather: no location ({err})")),
                 }
             }
             let result = match &place {
-                Some((place, _)) => forecast(&agent, place),
+                Some((place, _, _)) => forecast(&agent, place),
                 None => Err("sem localização".into()),
             };
             // A conexão segura carrega bibliotecas na memória; devolve logo.
@@ -229,9 +224,17 @@ struct Place {
     source: Source,
 }
 
-/// Onde o PC está: Windows primeiro, internet se não der.
-fn locate(agent: &ureq::Agent) -> Result<Place> {
-    if let Some((lat, lon)) = windows_position() {
+/// Onde o PC está: Windows primeiro, internet se não der. Devolve também
+/// quando procurar de novo.
+fn locate(agent: &ureq::Agent) -> Result<(Place, Duration)> {
+    let (windows, every) = match ask_windows() {
+        Asked::Found(lat, lon) => (Some((lat, lon)), PLACE_EVERY),
+        Asked::Unavailable => (None, PLACE_EVERY),
+        // O Windows está perguntando se pode (uma janela, na primeira vez):
+        // por enquanto vale a internet, e daqui a pouco confere a resposta.
+        Asked::Waiting => (None, ASK_AGAIN),
+    };
+    if let Some((lat, lon)) = windows {
         let (lat, lon) = (round(lat), round(lon));
         // Só o nome da cidade; se falhar, a previsão sai do mesmo jeito.
         let city = get_json(agent, &format!("{PLACE}?latitude={lat}&longitude={lon}&localityLanguage=pt"))
@@ -239,11 +242,61 @@ fn locate(agent: &ureq::Agent) -> Result<Place> {
             .and_then(|json| read_place(&json))
             .map(|place| place.city)
             .unwrap_or_default();
-        return Ok(Place { lat, lon, city, source: Source::Windows });
+        return Ok((Place { lat, lon, city, source: Source::Windows }, every));
     }
     // Sem coordenadas, o serviço usa o endereço da internet.
     let json = get_json(agent, &format!("{PLACE}?localityLanguage=pt"))?;
-    read_place(&json).ok_or_else(|| "resposta sem localização".into())
+    let place = read_place(&json).ok_or("resposta sem localização")?;
+    Ok((place, every))
+}
+
+/// Resposta da localização do Windows.
+enum Asked {
+    Found(f64, f64),
+    /// Desligada, negada ou deu erro.
+    Unavailable,
+    /// Ainda sem resposta (a janela do Windows perguntando está aberta).
+    Waiting,
+}
+
+/// Quanto esperar pela localização do Windows antes de usar a internet.
+const ASK_WAIT: Duration = Duration::from_secs(20);
+/// Sem resposta do Windows: quando conferir de novo.
+const ASK_AGAIN: Duration = Duration::from_secs(5 * 60);
+
+static ASKING: AtomicBool = AtomicBool::new(false);
+static ANSWER: Mutex<Option<Option<(f64, f64)>>> = Mutex::new(None);
+
+/// Pergunta ao Windows numa linha de execução à parte: na primeira vez ele
+/// pode abrir uma janela pedindo permissão, e a resposta fica esperando você.
+/// Enquanto isso o clima não para; quando você responder, a próxima consulta
+/// usa a resposta (sem abrir outra janela).
+fn ask_windows() -> Asked {
+    if !ASKING.swap(true, Ordering::SeqCst) {
+        if let Ok(mut answer) = ANSWER.lock() {
+            *answer = None;
+        }
+        let spawned = std::thread::Builder::new().name("weather-location".into()).spawn(|| {
+            let found = windows_position();
+            if let Ok(mut answer) = ANSWER.lock() {
+                *answer = Some(found);
+            }
+            ASKING.store(false, Ordering::SeqCst);
+        });
+        if spawned.is_err() {
+            ASKING.store(false, Ordering::SeqCst);
+            return Asked::Unavailable;
+        }
+    }
+    let since = SystemTime::now();
+    while elapsed(since) < ASK_WAIT {
+        if let Some(found) = ANSWER.lock().ok().and_then(|mut answer| answer.take()) {
+            return found.map_or(Asked::Unavailable, |(lat, lon)| Asked::Found(lat, lon));
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    crate::perf::line("weather: windows location has not answered yet".to_string());
+    Asked::Waiting
 }
 
 /// Duas casas decimais: cerca de 1 km.
@@ -271,6 +324,10 @@ fn read_place(json: &serde_json::Value) -> Option<Place> {
 fn windows_position() -> Option<(f64, f64)> {
     use windows::Devices::Geolocation::{GeolocationAccessStatus, Geolocator};
     use windows::Foundation::TimeSpan;
+    use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
+
+    // A localização do Windows precisa disso na linha de execução.
+    let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
 
     let access = Geolocator::RequestAccessAsync().and_then(|op| op.join());
     if let Ok(status) = &access {
