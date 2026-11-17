@@ -159,6 +159,13 @@ Styles "island expanded" | Out-Null
 Click ($cx + 19) ($r.T + 110)
 Start-Sleep -Milliseconds 300
 Shot "island-4b-device-clicked"
+# Arrasta duas páginas: Som -> Alarme -> Clima (a previsão de verdade, pela internet).
+Drag ($cx + 120) ($r.T + 110) ($cx - 120)
+Start-Sleep 1
+Drag ($cx + 175) ($r.T + 144) ($cx - 65)
+Start-Sleep 1
+Shot "island-4c-weather"
+Log ("weather lines: " + ((Get-Content "$out\island-stderr.txt" | Select-String '^weather') -join " | "))
 
 # Clica fora (o fundo ganha o foco): era aqui que aparecia a barra de título.
 Click 80 600
@@ -348,12 +355,12 @@ $cx = [int](($r.L + $r.R) / 2)
 Shot "welcome-1-card"
 Click ($cx + 90) ($r.T + 222)    # Temperatura: Placa de vídeo
 Start-Sleep -Milliseconds 400
-Click ($cx + 152) ($r.T + 128)   # Mostrar na ilha: Temp
+Click ($cx + 104) ($r.T + 128)   # Mostrar na ilha: Temp
 Start-Sleep -Milliseconds 400
 Click ($cx + 28) ($r.T + 162)    # Pet: Fantasma
 Start-Sleep -Milliseconds 600
 Shot "welcome-2-chosen"
-Click ($cx + 103) ($r.T + 292)   # Pedidos do iFood: Instalar extensão
+Click ($cx + 103) ($r.T + 346)   # Pedidos do iFood: Instalar extensão
 Start-Sleep 2
 $extDir = "$env:LOCALAPPDATA\Islandbar\extensao-ifood"
 Log ("extension folder: " + ((Get-ChildItem $extDir -ErrorAction SilentlyContinue | ForEach-Object Name) -join ", ") + " (expected background.js, bridge.js, manifest.json, page.js)")
@@ -361,11 +368,11 @@ Log ("extension folder: " + ((Get-ChildItem $extDir -ErrorAction SilentlyContinu
 (New-Object -ComObject Shell.Application).Windows() | Where-Object { $_.LocationURL -like '*extensao-ifood*' } | ForEach-Object { $_.Quit() }
 Start-Sleep 1
 Shot "welcome-2b-extension"
-Click ($cx + 126) ($r.T + 364)   # Iniciar
+Click ($cx + 126) ($r.T + 410)   # Iniciar
 Start-Sleep 3
 Shot "welcome-3-pill"
 $saved = (Get-ItemProperty "HKCU:\Software\Islandbar" -Name Stats -ErrorAction SilentlyContinue).Stats
-Log "settings saved: $saved (expected temp=gpu;show=cpu,gpu,ram,temp;pet=ghost)"
+Log "settings saved: $saved (expected temp=gpu;show=cpu,gpu,ram,temp;pet=ghost;weather=on)"
 Log ("welcome lines: " + ((Get-Content "$out\welcome-stderr.txt" | Select-String '^(store|temp sources)' | Select-Object -Last 4) -join " | "))
 StopIsland "welcome" $app
 # Aberta de novo pelo login: a escolha continua valendo.

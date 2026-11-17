@@ -31,6 +31,7 @@ E acompanha o seu pedido do iFood numa segunda pílula, com mapa.
 - [Recursos](#recursos)
 - [Instalação](#instalação)
 - [Como usar](#como-usar)
+- [Clima](#clima)
 - [Pedidos do iFood](#pedidos-do-ifood)
 - [Leve de verdade](#leve-de-verdade)
 - [Solução de problemas](#solução-de-problemas)
@@ -57,6 +58,10 @@ E acompanha o seu pedido do iFood numa segunda pílula, com mapa.
 - **Monitor do sistema**: CPU, GPU, RAM e temperatura, sem instalar driver. No cartão inicial você
   escolhe o sensor da temperatura (placa de vídeo, placa-mãe, disco ou automático) e quais números
   aparecem na ilha fechada e no modo jogo.
+- **Clima**: temperatura e ícone do tempo ao lado do relógio (opcional). No painel, uma página com
+  o tempo agora, sensação térmica, máxima e mínima, umidade, vento, chance de chuva, índice UV e as
+  próximas horas. A cidade vem da localização do Windows (se estiver ligada) ou, sem ela, do
+  endereço da internet. Veja [Clima](#clima).
 - **Modo jogo**: com um jogo em tela cheia, uma pílula ao lado da ilha mostra FPS, CPU, GPU e RAM.
   Navegadores e players de vídeo em tela cheia não contam como jogo.
 - **Pedidos do iFood**: depois de entrar uma vez no site do iFood pelo Chrome ou pelo Edge, com o
@@ -105,7 +110,7 @@ espera. Um alarme marcado continua contando depois de reiniciar. A versão atual
 | Para… | Faça |
 | --- | --- |
 | Abrir o painel | Clique na ilha. Ele fecha sozinho quando o mouse sai. |
-| Mudar de página (Som ↔ Alarme) | Arraste o painel para o lado, use a rodinha lateral ou clique nas bolinhas do rodapé. |
+| Mudar de página (Som ↔ Alarme ↔ Clima) | Arraste o painel para o lado, use a rodinha lateral ou clique nas bolinhas do rodapé. |
 | Trocar fone / TV / microfone | Página Som: clique no botão do dispositivo. |
 | Marcar um alarme | Página Alarme: setinhas, atalhos (+5 min, +15 min…) ou clique no número e digite. **Enter** inicia. |
 | Tirar a ilha da frente | Com o mouse em cima dela, aperte **Ctrl**. Ela some e os cliques passam para o que está atrás (dá para soltar o Ctrl e clicar normalmente). Volta quando o mouse sai. |
@@ -113,7 +118,23 @@ espera. Um alarme marcado continua contando depois de reiniciar. A versão atual
 | Fechar a ilha | Abra o painel e clique em **Sair**. Um alarme marcado continua valendo: na hora, o Windows abre a ilha e ele toca. Para desistir dele, cancele na página Alarme antes de sair. |
 | Ligar/desligar o início com o Windows | Abra o `islandbar.exe` de novo: o cartão aparece outra vez. |
 | Acompanhar um pedido do iFood | Entre uma vez no site do iFood, no Chrome ou no Edge. Depois, com o navegador aberto (pode ser só na bandeja, sem janela), a pílula aparece sozinha em até 1 minuto, até para pedidos feitos pelo celular, e some uns minutos depois da entrega. Se aparecer "Entre no iFood de novo", clique nela e entre no site. Clique nela para ver a janela do pedido, com o mapa; o Ctrl em cima dela também tira as duas pílulas da frente. |
+| Ver o clima | Página Clima (a 3ª bolinha). Para tirar o clima da ilha fechada, desligue **Clima** em "Mostrar na ilha" no cartão inicial. |
 | Escolher o pet, os números da ilha e a temperatura | Também no cartão inicial (abra o `islandbar.exe` de novo). Cada opção de temperatura mostra o valor de agora; "n/d" quer dizer que o PC não tem aquele sensor. |
+
+### Clima
+
+A previsão vem do [Open-Meteo](https://open-meteo.com/) e o nome da cidade do
+[BigDataCloud](https://www.bigdatacloud.com/), os dois gratuitos e sem cadastro. Para saber onde o PC está:
+
+1. **Localização do Windows** (usa o Wi-Fi, é a mais precisa). Precisa estar ligada em
+   **Configurações → Privacidade e segurança → Localização**, com "Permitir que aplicativos da área de
+   trabalho acessem sua localização" ligado. Enquanto a ilha pergunta, o Windows pode mostrar o
+   ícone de localização na barra de tarefas por um instante.
+2. **Sem ela**, a cidade aproximada pelo endereço da internet. Às vezes erra (mostra a capital do
+   estado, por exemplo); o nome da cidade aparece no painel e no cartão inicial para você conferir.
+
+As coordenadas vão arredondadas (cerca de 1 km). A previsão é atualizada a cada 15 minutos e a
+localização de 3 em 3 horas; sem internet, a ilha tenta de novo a cada 2 minutos.
 
 ### Pedidos do iFood
 
@@ -180,6 +201,8 @@ A ilha foi feita para não pesar no PC nem roubar desempenho dos jogos.
   1 vez por segundo.
 - **Só lê o que está na tela**: o volume de cada app, a temperatura e a lista de dispositivos só são
   consultados com o painel aberto.
+- **Clima**: uma consulta pequena à internet a cada 15 minutos, numa linha de execução que passa
+  o resto do tempo dormindo. Nada a mais por quadro.
 - **Memória**: 30 segundos depois do último uso, ela devolve ao Windows a memória que ficou parada.
 
 Para medir no seu PC, abra pelo terminal com `ISLANDBAR_DEBUG_PERF=1` e o stderr indo para um arquivo
@@ -262,8 +285,9 @@ mentira (`src/backend/mock.rs`), útil para mexer na interface.
 | `src/app.rs` | A ilha: estados (pílula, aviso, painel, alarme), animações e desenho. |
 | `src/anim.rs` | A "mola" que dá o efeito elástico. |
 | `src/alarm.rs` | Alarme: contagem e o bip de despertador. |
-| `src/settings.rs` | Escolhas do cartão inicial (números da ilha, sensor da temperatura e pet). |
+| `src/settings.rs` | Escolhas do cartão inicial (números da ilha, clima, sensor da temperatura e pet). |
 | `src/pet.rs` | Os pets (fantasma, robô e as barrinhas): desenho e gestos. |
+| `src/weather.rs` | Clima: localização, previsão e os ícones do tempo. |
 | `src/delivery.rs` | Pedidos do iFood: recebe o andamento da extensão e guarda o pedido mostrado. |
 | `src/map.rs` | Mapa da janela do pedido: baixa e posiciona os pedacinhos do mapa. |
 | `extension/` | A extensão do navegador que acompanha os pedidos do iFood (`reader.js` entende as respostas do site; `page.js` acompanha com a aba aberta; `background.js`, sem aba). Os nomes dos eventos do site vieram do projeto [iFood PiP](https://github.com/luannsr12/ifood-pip) (Apache 2.0); a consulta de pedidos em andamento, do [ifood-mcp](https://github.com/davidmosiah/ifood-mcp). |

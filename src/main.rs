@@ -12,6 +12,7 @@ mod pet;
 mod platform;
 mod settings;
 mod updater;
+mod weather;
 
 use eframe::egui;
 

@@ -57,7 +57,10 @@ O ambiente do Claude é Linux; a ilha é para Windows.
   funciona aqui).
 - Variáveis de diagnóstico: `ISLANDBAR_DEBUG_PERF`, `ISLANDBAR_DEBUG_UI`,
   `ISLANDBAR_DEBUG_GAME`, `ISLANDBAR_DEBUG_SYSMON`, `ISLANDBAR_DEBUG_SILENT`
-  (só no backend de mentira), `ISLANDBAR_DEBUG_FPS_DENIED`.
+  (só no backend de mentira), `ISLANDBAR_DEBUG_FPS_DENIED`,
+  `ISLANDBAR_DEBUG_WEATHER=fake` (previsão fixa, sem internet: a rede do
+  ambiente do Claude bloqueia o Open-Meteo e o BigDataCloud; o teste no
+  Windows do GitHub usa a previsão de verdade).
 
 ## Coisas já aprendidas
 

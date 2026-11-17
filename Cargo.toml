@@ -17,6 +17,7 @@ eframe = { version = "0.37", default-features = false, features = ["glow", "defa
 ureq = { version = "3", default-features = false, features = ["native-tls"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
+serde_json = "1"
 
 [target.'cfg(windows)'.dependencies]
 base64 = "0.23"
@@ -24,6 +25,7 @@ raw-window-handle = "0.6"
 # Para declarar a interface do Windows que troca o dispositivo de som (IPolicyConfig).
 windows-core = "0.62"
 windows = { version = "0.62", features = [
+    "Devices_Geolocation",
     "Foundation",
     "Media_Control",
     "Win32_Devices_FunctionDiscovery",

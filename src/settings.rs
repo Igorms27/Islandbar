@@ -3,7 +3,7 @@
 //!
 //! Ficam guardadas no registro do Windows, na conta do usuário
 //! (`HKEY_CURRENT_USER\Software\Islandbar`, valor `Stats`), num texto curto
-//! como `temp=gpu;show=cpu,gpu,ram,temp;pet=ghost`. Assim continuam valendo quando a
+//! como `temp=gpu;show=cpu,gpu,ram,temp;pet=ghost;weather=on`. Assim continuam valendo quando a
 //! ilha abre sozinha com o Windows ou depois de uma atualização.
 
 /// De qual sensor a ilha mostra a temperatura.
@@ -62,12 +62,22 @@ pub struct Settings {
     pub gpu: bool,
     pub ram: bool,
     pub show_temp: bool,
+    /// Clima ao lado do relógio (o painel aberto sempre tem a página do clima).
+    pub weather: bool,
 }
 
 impl Default for Settings {
     /// O mesmo que a ilha mostrava antes desta opção existir.
     fn default() -> Self {
-        Self { temp: TempChoice::Auto, pet: Pet::Bars, cpu: true, gpu: true, ram: true, show_temp: false }
+        Self {
+            temp: TempChoice::Auto,
+            pet: Pet::Bars,
+            cpu: true,
+            gpu: true,
+            ram: true,
+            show_temp: false,
+            weather: true,
+        }
     }
 }
 
@@ -85,7 +95,8 @@ impl Settings {
             .into_iter()
             .filter_map(|(on, name)| on.then_some(name))
             .collect();
-        format!("temp={};show={};pet={}", self.temp.key(), shown.join(","), self.pet.key())
+        let weather = if self.weather { "on" } else { "off" };
+        format!("temp={};show={};pet={};weather={weather}", self.temp.key(), shown.join(","), self.pet.key())
     }
 
     /// Lê o texto guardado. O que não for entendido fica no padrão.
@@ -103,6 +114,8 @@ impl Settings {
                         settings.pet = pet;
                     }
                 }
+                // Escolhas guardadas antes do clima existir não têm esta parte: fica ligado.
+                Some(("weather", value)) => settings.weather = value.trim() != "off",
                 Some(("show", value)) => {
                     let names: Vec<&str> = value.split(',').map(str::trim).collect();
                     settings.cpu = names.contains(&"cpu");
@@ -193,10 +206,19 @@ mod tests {
 
     #[test]
     fn guarda_e_le_de_volta() {
-        let settings =
-            Settings { temp: TempChoice::Gpu, pet: Pet::Robot, cpu: true, gpu: false, ram: true, show_temp: true };
-        assert_eq!(settings.to_text(), "temp=gpu;show=cpu,ram,temp;pet=robot");
+        let settings = Settings {
+            temp: TempChoice::Gpu,
+            pet: Pet::Robot,
+            cpu: true,
+            gpu: false,
+            ram: true,
+            show_temp: true,
+            weather: false,
+        };
+        assert_eq!(settings.to_text(), "temp=gpu;show=cpu,ram,temp;pet=robot;weather=off");
         assert_eq!(Settings::parse(&settings.to_text()), settings);
+        // Guardado antes do clima existir: o clima aparece.
+        assert!(Settings::parse("temp=gpu;show=cpu;pet=bars").weather);
     }
 
     #[test]

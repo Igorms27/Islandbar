@@ -17,6 +17,7 @@ use crate::pet;
 use crate::platform;
 use crate::settings::{Pet, Settings, TempChoice};
 use crate::updater;
+use crate::weather::{self, Detail, Weather};
 
 /// Tamanho da janela invisível que contém a ilha.
 pub const WINDOW_SIZE: [f32; 2] = [940.0, 640.0];
@@ -38,7 +39,7 @@ const FPS_ROW_HEIGHT: f32 = 36.0;
 /// Pílula do modo jogo: um pouco menor que a principal.
 const GAME_PILL_HEIGHT: f32 = 30.0;
 const GAME_PILL_GAP: f32 = 8.0;
-const WELCOME_SIZE: Vec2 = vec2(400.0, 388.0);
+const WELCOME_SIZE: Vec2 = vec2(400.0, 434.0);
 const MAX_APPS: usize = 7;
 /// Fileira de botões para escolher a saída de som ou o microfone.
 const DEVICE_ROW_HEIGHT: f32 = 32.0;
@@ -49,6 +50,12 @@ const MAX_DEVICES: usize = 2 * DEVICES_PER_ROW;
 const PANEL_MAX_HEIGHT: f32 = WINDOW_SIZE[1] - TOP_MARGIN - 16.0;
 /// Página do alarme no carrossel do painel.
 const ALARM_PAGE_HEIGHT: f32 = 178.0;
+/// Altura da página do clima.
+const WEATHER_PAGE_HEIGHT: f32 = 200.0;
+/// Última página do painel (0 = Som, 1 = Alarme, 2 = Clima).
+const LAST_PAGE: f32 = 2.0;
+/// Espaço do clima na pílula (ícone + temperatura).
+const PILL_WEATHER_WIDTH: f32 = 54.0;
 /// Cartão que aparece quando o alarme toca.
 const RINGING_SIZE: Vec2 = vec2(360.0, 76.0);
 /// Janela do pedido do iFood (abre ao clicar na pílula do pedido).
@@ -181,7 +188,7 @@ pub struct IslandApp {
     /// Enquanto arrasta um slider, mostramos o valor do mouse (sem atraso).
     dragging: Option<(String, f32)>,
     alarm: Alarm,
-    /// Página do painel: 0 = Som, 1 = Alarme (valores no meio = deslizando).
+    /// Página do painel: 0 = Som, 1 = Alarme, 2 = Clima (valores no meio = deslizando).
     page: Spring,
     /// Arrastando as páginas: onde o arrasto começou.
     page_drag: Option<f32>,
@@ -251,6 +258,7 @@ impl IslandApp {
         let wake = |ctx: egui::Context| move || ctx.request_repaint_after(Duration::from_millis(1));
         platform::watch_cursor(wake(cc.egui_ctx.clone()));
         delivery::start(wake(cc.egui_ctx.clone()));
+        weather::start(wake(cc.egui_ctx.clone()));
         Self {
             backend: Backend::spawn(wake(cc.egui_ctx.clone())),
             mode,
@@ -363,6 +371,9 @@ impl IslandApp {
                 if self.alarm.counting() {
                     width += 56.0; // sininho + tempo restante
                 }
+                if self.pill_weather().is_some() {
+                    width += PILL_WEATHER_WIDTH;
+                }
                 vec2(width, PILL_HEIGHT) + vec2(14.0, 4.0) * self.hover.target
             }
             Mode::Hud => HUD_SIZE,
@@ -374,8 +385,16 @@ impl IslandApp {
 
     /// Altura da parte do painel que desliza, conforme a página aparecendo.
     fn middle_height(&self, snap: &Snapshot) -> f32 {
-        let t = self.page.value.clamp(0.0, 1.0);
-        sound_page_height(snap) * (1.0 - t) + ALARM_PAGE_HEIGHT * t
+        let heights = [sound_page_height(snap), ALARM_PAGE_HEIGHT, WEATHER_PAGE_HEIGHT];
+        let t = self.page.value.clamp(0.0, LAST_PAGE);
+        let from = (t.floor() as usize).min(heights.len() - 2);
+        let k = t - from as f32;
+        heights[from] * (1.0 - k) + heights[from + 1] * k
+    }
+
+    /// O clima da pílula, se foi escolhido e já chegou.
+    fn pill_weather(&self) -> Option<std::sync::Arc<Weather>> {
+        self.settings.weather.then(weather::current).flatten()
     }
 
     /// `level` é o som que a ilha deve acompanhar agora (0 = ficar quieta).
@@ -832,6 +851,19 @@ impl IslandApp {
             draw_bell(p, pos2(text.left() - 10.0, cy), 6.5, 0.0, fade(accent, alpha));
             clock_rect.min.x = text.left() - 18.0;
         }
+        // Clima: ícone e temperatura, antes do relógio.
+        if let Some(now) = self.pill_weather() {
+            let text = p.text(
+                pos2(clock_rect.left() - 12.0, cy),
+                Align2::RIGHT_CENTER,
+                format!("{:.0}°", now.temp),
+                FontId::proportional(12.5),
+                fade(TEXT, alpha),
+            );
+            let icon = pos2(text.left() - 11.0, cy);
+            weather::draw_icon(p, icon, 17.0, now.sky(), now.day, ISLAND, alpha);
+            clock_rect.min.x = icon.x - 10.0;
+        }
 
         if self.notice_timer > 0.0 {
             let x = left + 32.0;
@@ -1137,12 +1169,20 @@ impl IslandApp {
         }
 
         // ---- Página Alarme ----
-        if self.page.value > 0.001 {
+        if (self.page.value - 1.0).abs() < 0.999 {
             let alarm_dx = (1.0 - self.page.value) * shift;
             let p = &p.with_clip_rect(clip);
             let a = smoothstep(open * 1.9 - 0.25 - 0.09);
             let interactive = interactive && still && self.page.target == 1.0;
             self.draw_alarm_page(ui, p, left + alarm_dx, right + alarm_dx, page_top, accent, a, interactive);
+        }
+
+        // ---- Página Clima ----
+        if self.page.value > 1.001 {
+            let weather_dx = (2.0 - self.page.value) * shift;
+            let p = &p.with_clip_rect(clip);
+            let a = smoothstep(open * 1.9 - 0.25 - 0.09);
+            draw_weather_page(p, left + weather_dx, right + weather_dx, page_top, a);
         }
         let y = middle_bottom;
 
@@ -1167,8 +1207,8 @@ impl IslandApp {
         p.text(pos2(left, footer_y), Align2::LEFT_CENTER, clock, FontId::proportional(12.0), fade(TEXT_DIM, a));
 
         // Bolinhas das páginas (clique leva direto à página).
-        for (index, page) in [0.0f32, 1.0].into_iter().enumerate() {
-            let center = pos2(island.center().x - 8.0 + index as f32 * 16.0, footer_y);
+        for (index, page) in [0.0f32, 1.0, 2.0].into_iter().enumerate() {
+            let center = pos2(island.center().x - 16.0 + index as f32 * 16.0, footer_y);
             let closeness = 1.0 - (self.page.value - page).abs().min(1.0);
             let color = fade(Color32::WHITE, 0.25).lerp_to_gamma(accent, closeness);
             p.circle_filled(center, 3.0 + closeness, fade(color, a));
@@ -1213,8 +1253,8 @@ impl IslandApp {
             if resp.dragged() {
                 // A página acompanha o mouse; além das pontas, resiste.
                 let mut value = self.page.value - resp.drag_delta().x / width;
-                if !(0.0..=1.0).contains(&value) {
-                    value = value.clamp(-0.12, 1.12);
+                if !(0.0..=LAST_PAGE).contains(&value) {
+                    value = value.clamp(-0.12, LAST_PAGE + 0.12);
                 }
                 self.page.value = value;
                 self.page.target = value;
@@ -1223,14 +1263,15 @@ impl IslandApp {
                 self.page_drag = None;
                 let moved = self.page.value - start;
                 let speed = ui.ctx().input(|i| i.pointer.velocity().x);
+                let start = start.round();
                 let target = if moved > 0.25 || speed < -400.0 {
-                    1.0
+                    (start + 1.0).max(self.page.value.round())
                 } else if moved < -0.25 || speed > 400.0 {
-                    0.0
+                    (start - 1.0).min(self.page.value.round())
                 } else {
-                    start.round()
+                    start
                 };
-                self.page.target = target.clamp(0.0, 1.0);
+                self.page.target = target.clamp(0.0, LAST_PAGE);
             }
         }
 
@@ -1239,7 +1280,8 @@ impl IslandApp {
             let scroll = ui.ctx().input(|i| i.smooth_scroll_delta.x);
             self.wheel = if scroll == 0.0 { self.wheel * 0.9 } else { self.wheel + scroll };
             if self.wheel.abs() > 60.0 {
-                self.page.target = if self.wheel < 0.0 { 1.0 } else { 0.0 };
+                let step = if self.wheel < 0.0 { 1.0 } else { -1.0 };
+                self.page.target = (self.page.target.round() + step).clamp(0.0, LAST_PAGE);
                 self.wheel = 0.0;
             }
         }
@@ -2101,16 +2143,18 @@ impl IslandApp {
         // O que aparece na ilha fechada e no modo jogo: cada botão liga/desliga.
         let cy = top + 100.0;
         p.text(pos2(left, cy), Align2::LEFT_CENTER, "Mostrar na ilha", FontId::proportional(14.0), fade(TEXT, a));
-        let (chip_width, chip_gap) = (52.0, 6.0);
+        let (chip_width, chip_gap) = (46.0, 5.0);
         let shows = [
             ("CPU", self.settings.cpu),
             ("GPU", self.settings.gpu),
             ("RAM", self.settings.ram),
             ("Temp", self.settings.show_temp),
+            ("Clima", self.settings.weather),
         ];
+        let count = shows.len();
         let mut toggled = None;
         for (i, (label, on)) in shows.into_iter().enumerate() {
-            let x = right - (4 - i) as f32 * chip_width - (3 - i) as f32 * chip_gap;
+            let x = right - (count - i) as f32 * chip_width - (count - 1 - i) as f32 * chip_gap;
             let chip = Rect::from_min_size(pos2(x, cy - 13.0), vec2(chip_width, 26.0));
             if choice_chip(ui, p, ("show", i), chip, label, None, on, accent, a, interactive) {
                 toggled = Some(i);
@@ -2121,6 +2165,7 @@ impl IslandApp {
             Some(1) => self.settings.gpu = !self.settings.gpu,
             Some(2) => self.settings.ram = !self.settings.ram,
             Some(3) => self.settings.show_temp = !self.settings.show_temp,
+            Some(4) => self.settings.weather = !self.settings.weather,
             _ => {}
         }
 
@@ -2170,8 +2215,36 @@ impl IslandApp {
             }
         }
 
-        // Pedidos do iFood: prepara a extensão do navegador e abre a pasta dela.
+        // Clima: a cidade encontrada e de onde veio (só um aviso, não dá para clicar).
         let cy = top + 264.0;
+        p.text(pos2(left, cy), Align2::LEFT_CENTER, "Clima", FontId::proportional(14.0), fade(TEXT, a));
+        let chip = Rect::from_min_max(pos2(right - 230.0, cy - 13.0), pos2(right, cy + 13.0));
+        let found = weather::current();
+        let (city, from) = match (&found, weather::state()) {
+            (Some(now), _) => (
+                if now.city.is_empty() { "Sua região" } else { now.city.as_str() },
+                match now.source {
+                    weather::Source::Windows => "pelo Windows",
+                    weather::Source::Internet => "pela internet",
+                },
+            ),
+            (None, weather::State::Offline) => ("Sem internet agora", ""),
+            (None, _) => ("Procurando sua cidade…", ""),
+        };
+        let value = (!from.is_empty()).then_some(from);
+        choice_chip(ui, p, ("weather", 0), chip, city, value, found.is_some(), accent, a, false);
+        text_fit(
+            p,
+            pos2(left, top + 289.0),
+            Align2::LEFT_CENTER,
+            "Pela localização do Windows ou, se ela estiver desligada, pela internet.",
+            11.0,
+            fade(TEXT_DIM, a),
+            right - left,
+        );
+
+        // Pedidos do iFood: prepara a extensão do navegador e abre a pasta dela.
+        let cy = top + 318.0;
         p.text(pos2(left, cy), Align2::LEFT_CENTER, "Pedidos do iFood", FontId::proportional(14.0), fade(TEXT, a));
         let chip = Rect::from_min_max(pos2(right - 150.0, cy - 13.0), pos2(right, cy + 13.0));
         // Já instalada: o botão vira só um aviso (não dá para clicar).
@@ -2200,7 +2273,7 @@ impl IslandApp {
             &["Com a extensão no navegador, uma pílula ao lado da ilha", "mostra o andamento do seu pedido do iFood."]
         };
         for (i, line) in hint.iter().enumerate() {
-            let y = top + 289.0 + i as f32 * 15.0;
+            let y = top + 343.0 + i as f32 * 15.0;
             text_fit(p, pos2(left, y), Align2::LEFT_CENTER, line, 11.0, fade(TEXT_DIM, a), right - left);
         }
 
@@ -2497,6 +2570,127 @@ fn text_button(
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     resp.is_some_and(|r| r.clicked())
+}
+
+/// Página do clima: agora, os detalhes e as próximas horas.
+fn draw_weather_page(p: &Painter, left: f32, right: f32, top: f32, a: f32) {
+    let Some(now) = weather::current() else {
+        let text = match weather::state() {
+            weather::State::Offline => "Sem internet para buscar o clima",
+            _ => "Procurando o clima da sua cidade…",
+        };
+        let center = pos2((left + right) / 2.0, top + WEATHER_PAGE_HEIGHT / 2.0 - 8.0);
+        p.text(center, Align2::CENTER_CENTER, text, FontId::proportional(13.0), fade(TEXT_DIM, a));
+        return;
+    };
+
+    // ---- Agora: ícone, temperatura, como está o tempo; cidade e máx/mín à direita ----
+    let cy = top + 36.0;
+    weather::draw_icon(p, pos2(left + 26.0, cy), 52.0, now.sky(), now.day, ISLAND, a);
+    let temp = p.text(
+        pos2(left + 60.0, cy + 1.0),
+        Align2::LEFT_CENTER,
+        format!("{:.0}°", now.temp),
+        FontId::proportional(40.0),
+        fade(TEXT, a),
+    );
+    let side_right = right;
+    let max_min = p.text(
+        pos2(side_right, cy + 9.0),
+        Align2::RIGHT_CENTER,
+        format!("Máx {:.0}° · Mín {:.0}°", now.max, now.min),
+        FontId::proportional(12.0),
+        fade(TEXT_DIM, a),
+    );
+    let text_x = temp.right() + 12.0;
+    let text_room = max_min.left() - 10.0 - text_x;
+    text_fit(p, pos2(text_x, cy - 8.0), Align2::LEFT_CENTER, now.description(), 13.5, fade(TEXT, a), text_room);
+    text_fit(
+        p,
+        pos2(text_x, cy + 9.0),
+        Align2::LEFT_CENTER,
+        &format!("Sensação de {:.0}°", now.feels),
+        12.0,
+        fade(TEXT_DIM, a),
+        text_room,
+    );
+    if !now.city.is_empty() {
+        let width = (side_right - max_min.left()).max(90.0);
+        let city = p.layout_no_wrap(now.city.clone(), FontId::proportional(12.0), fade(TEXT_DIM, a));
+        let city_width = city.size().x.min(width - 14.0);
+        text_fit(p, pos2(side_right, cy - 8.0), Align2::RIGHT_CENTER, &now.city, 12.0, fade(TEXT_DIM, a), width - 14.0);
+        weather::draw_pin(p, pos2(side_right - city_width - 7.0, cy - 8.0), 11.0, fade(TEXT_DIM, a), ISLAND);
+    }
+
+    // ---- Quadradinhos: umidade, vento, chuva, índice UV ----
+    let percent = |value: Option<f32>| value.map_or_else(|| "n/d".to_string(), |v| format!("{v:.0}%"));
+    let tiles = [
+        (Detail::Humidity, "Umidade", format!("{:.0}%", now.humidity)),
+        (Detail::Wind, "Vento", format!("{:.0} km/h", now.wind)),
+        (Detail::Rain, "Chuva", percent(now.rain)),
+        (
+            Detail::Uv,
+            "Índice UV",
+            now.uv.map_or_else(|| "n/d".to_string(), |uv| format!("{uv:.0} {}", weather::uv_word(uv))),
+        ),
+    ];
+    let gap = 8.0;
+    let width = (right - left - gap * 3.0) / 4.0;
+    for (i, (detail, label, value)) in tiles.into_iter().enumerate() {
+        let rect = Rect::from_min_size(pos2(left + i as f32 * (width + gap), top + 76.0), vec2(width, 44.0));
+        p.rect_filled(rect, 12.0, fade(Color32::WHITE, a * 0.05));
+        weather::draw_detail(p, pos2(rect.left() + 17.0, rect.center().y), 17.0, detail, a);
+        let x = rect.left() + 31.0;
+        p.text(
+            pos2(x, rect.center().y - 8.0),
+            Align2::LEFT_CENTER,
+            label,
+            FontId::proportional(10.5),
+            fade(TEXT_DIM, a),
+        );
+        text_fit(
+            p,
+            pos2(x, rect.center().y + 8.0),
+            Align2::LEFT_CENTER,
+            &value,
+            12.5,
+            fade(TEXT, a),
+            rect.right() - 4.0 - x,
+        );
+    }
+
+    // ---- Próximas horas: "Agora" e as cinco seguintes ----
+    let columns = 1 + now.hours.len().min(weather::HOURS);
+    let column = (right - left) / (1 + weather::HOURS) as f32;
+    for i in 0..columns {
+        let x = left + column * (i as f32 + 0.5);
+        let (when, sky, day, temp, rain) = match i {
+            0 => ("Agora".to_string(), now.sky(), now.day, now.temp, None),
+            _ => {
+                let hour = &now.hours[i - 1];
+                (format!("{}h", hour.hour), weather::sky(hour.code), hour.day, hour.temp, hour.rain)
+            }
+        };
+        p.text(pos2(x, top + 138.0), Align2::CENTER_CENTER, when, FontId::proportional(11.0), fade(TEXT_DIM, a));
+        weather::draw_icon(p, pos2(x, top + 157.0), 20.0, sky, day, ISLAND, a);
+        // A chance de chuva só aparece quando vale a pena levar guarda-chuva.
+        if let Some(rain) = rain.filter(|r| *r >= 30.0) {
+            p.text(
+                pos2(x, top + 173.0),
+                Align2::CENTER_CENTER,
+                format!("{rain:.0}%"),
+                FontId::proportional(10.0),
+                fade(weather::RAIN, a),
+            );
+        }
+        p.text(
+            pos2(x, top + 188.0),
+            Align2::CENTER_CENTER,
+            format!("{temp:.0}°"),
+            FontId::proportional(12.5),
+            fade(TEXT, a),
+        );
+    }
 }
 
 /// Botão de escolha do cartão inicial: nome à esquerda (centralizado quando

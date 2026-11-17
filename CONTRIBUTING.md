@@ -70,6 +70,7 @@ artefato `smoke` da execução e na branch `ci-results`.
 | `ISLANDBAR_DEBUG_DEVICES=1` | Mostra dispositivos de som de mentira quando não há nenhum. |
 | `ISLANDBAR_DEBUG_ALARM=<s>` | Marca um alarme para daqui a `<s>` segundos ao abrir. |
 | `ISLANDBAR_DEBUG_FPS_DENIED=1` | Finge que falta a permissão de FPS. |
+| `ISLANDBAR_DEBUG_WEATHER=fake` | Usa uma previsão do tempo fixa, sem internet. |
 | `ISLANDBAR_DEBUG_SILENT=1` | Dados de mentira sem som tocando. |
 | `ISLANDBAR_MODE=collapsed\|expanded\|hud` | Abre direto num estado (para screenshots). |
 
