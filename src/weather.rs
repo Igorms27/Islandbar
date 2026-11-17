@@ -230,8 +230,8 @@ fn locate(agent: &ureq::Agent) -> Result<(Place, Duration)> {
     let (windows, every) = match ask_windows() {
         Asked::Found(lat, lon) => (Some((lat, lon)), PLACE_EVERY),
         Asked::Unavailable => (None, PLACE_EVERY),
-        // O Windows está perguntando se pode (uma janela, na primeira vez):
-        // por enquanto vale a internet, e daqui a pouco confere a resposta.
+        // O Windows está demorando: por enquanto vale a internet, e daqui a
+        // pouco confere a resposta.
         Asked::Waiting => (None, ASK_AGAIN),
     };
     if let Some((lat, lon)) = windows {
@@ -255,7 +255,7 @@ enum Asked {
     Found(f64, f64),
     /// Desligada, negada ou deu erro.
     Unavailable,
-    /// Ainda sem resposta (a janela do Windows perguntando está aberta).
+    /// Ainda sem resposta.
     Waiting,
 }
 
@@ -267,10 +267,9 @@ const ASK_AGAIN: Duration = Duration::from_secs(5 * 60);
 static ASKING: AtomicBool = AtomicBool::new(false);
 static ANSWER: Mutex<Option<Option<(f64, f64)>>> = Mutex::new(None);
 
-/// Pergunta ao Windows numa linha de execução à parte: na primeira vez ele
-/// pode abrir uma janela pedindo permissão, e a resposta fica esperando você.
-/// Enquanto isso o clima não para; quando você responder, a próxima consulta
-/// usa a resposta (sem abrir outra janela).
+/// Pergunta ao Windows numa linha de execução à parte, com tempo limite: se
+/// ele demorar (ex.: sem sinal de Wi-Fi), o clima não espera e usa a internet;
+/// a resposta que chegar depois vale na próxima consulta.
 fn ask_windows() -> Asked {
     if !ASKING.swap(true, Ordering::SeqCst) {
         if let Ok(mut answer) = ANSWER.lock() {
@@ -322,19 +321,19 @@ fn read_place(json: &serde_json::Value) -> Option<Place> {
 /// A localização do Windows, se estiver ligada e permitida para a ilha.
 #[cfg(windows)]
 fn windows_position() -> Option<(f64, f64)> {
-    use windows::Devices::Geolocation::{GeolocationAccessStatus, Geolocator};
+    use windows::Devices::Geolocation::Geolocator;
     use windows::Foundation::TimeSpan;
     use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
 
     // A localização do Windows precisa disso na linha de execução.
     let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
 
-    let access = Geolocator::RequestAccessAsync().and_then(|op| op.join());
-    if let Ok(status) = &access {
-        if *status != GeolocationAccessStatus::Allowed {
-            crate::perf::line(format!("weather: windows location not allowed ({status:?})"));
-            return None;
-        }
+    // Desligada, pedir a localização faz o Windows abrir uma janela que
+    // escurece a tela e espera resposta (ruim no meio de um jogo). Então só
+    // pede se ela já estiver ligada para os programas da área de trabalho.
+    if !windows_location_on() {
+        crate::perf::line("weather: windows location is off, using the internet".to_string());
+        return None;
     }
     let locator = Geolocator::new().ok()?;
     // Aceita uma posição de até 30 min atrás; espera no máximo 15 s.
@@ -347,6 +346,40 @@ fn windows_position() -> Option<(f64, f64)> {
     let point = position.Coordinate().ok()?.Point().ok()?.Position().ok()?;
     let (lat, lon) = (point.Latitude, point.Longitude);
     (lat.abs() <= 90.0 && lon.abs() <= 180.0 && (lat, lon) != (0.0, 0.0)).then_some((lat, lon))
+}
+
+/// A localização está ligada em Configurações → Privacidade → Localização:
+/// no PC, para a conta e para os programas da área de trabalho.
+#[cfg(windows)]
+fn windows_location_on() -> bool {
+    use windows::core::HSTRING;
+    use windows::Win32::System::Registry::{RegGetValueW, HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ};
+
+    const STORE: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\location";
+    let read = |root: HKEY, path: &str| -> Option<String> {
+        let mut buffer = [0u16; 32];
+        let mut size = std::mem::size_of_val(&buffer) as u32;
+        unsafe {
+            RegGetValueW(
+                root,
+                &HSTRING::from(path),
+                windows::core::w!("Value"),
+                RRF_RT_REG_SZ,
+                None,
+                Some(buffer.as_mut_ptr() as *mut std::ffi::c_void),
+                Some(&mut size),
+            )
+        }
+        .ok()
+        .ok()?;
+        let len = buffer.iter().position(|&c| c == 0).unwrap_or(buffer.len());
+        Some(String::from_utf16_lossy(&buffer[..len]))
+    };
+    let device = read(HKEY_LOCAL_MACHINE, STORE);
+    let account = read(HKEY_CURRENT_USER, STORE);
+    let desktop = read(HKEY_CURRENT_USER, &format!("{STORE}\\NonPackaged"));
+    crate::perf::line(format!("weather: windows location device={device:?} account={account:?} desktop={desktop:?}"));
+    device.as_deref() == Some("Allow") && account.as_deref() == Some("Allow") && desktop.as_deref() != Some("Deny")
 }
 
 #[cfg(not(windows))]

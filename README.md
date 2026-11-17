@@ -128,8 +128,10 @@ A previsão vem do [Open-Meteo](https://open-meteo.com/) e o nome da cidade do
 
 1. **Localização do Windows** (usa o Wi-Fi, é a mais precisa). Precisa estar ligada em
    **Configurações → Privacidade e segurança → Localização**, com "Permitir que aplicativos da área de
-   trabalho acessem sua localização" ligado. Enquanto a ilha pergunta, o Windows pode mostrar o
-   ícone de localização na barra de tarefas por um instante.
+   trabalho acessem sua localização" ligado. A ilha não abre a pergunta do Windows sobre
+   localização (ela escurece a tela e atrapalharia um jogo): se estiver desligada, usa a opção 2.
+   Quando a ilha consulta, o Windows pode mostrar o ícone de localização na barra de tarefas por
+   um instante.
 2. **Sem ela**, a cidade aproximada pelo endereço da internet. Às vezes erra (mostra a capital do
    estado, por exemplo); o nome da cidade aparece no painel e no cartão inicial para você conferir.
 
