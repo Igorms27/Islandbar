@@ -1,0 +1,54 @@
+MESA: error: ZINK: vkCreateInstance failed (VK_ERROR_INCOMPATIBLE_DRIVER)
+volume keys: hook installed
+ifood: listening on 127.0.0.1:47615
+ui: mode=Welcome hovered=false down=false pointer_known=false
+System { cpu: 0.0, ram_used_gb: 2.7744064, ram_total_gb: 15.994869, gpu: Some(0.0), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Off }
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+disk temp: Err("query failed: Incorrect function. (0x80070001)")
+System { cpu: 1.0, ram_used_gb: 2.7748222, ram_total_gb: 15.994869, gpu: Some(0.0), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: All }
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.310219, ram_used_gb: 2.777176, ram_total_gb: 15.994869, gpu: Some(0.77028173), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: All }
+ui: mode=Welcome hovered=true down=false pointer_known=false
+ui: mode=Welcome hovered=true down=false pointer_known=true
+ui: mode=Welcome hovered=true down=true pointer_known=true
+ui: mode=Welcome hovered=true down=false pointer_known=true
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.31225294, ram_used_gb: 2.7766685, ram_total_gb: 15.994869, gpu: Some(0.80847615), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: All }
+weather: windows location device=Some("Deny") account=None desktop=None
+weather: windows location is off, using the internet
+ui: mode=Welcome hovered=true down=true pointer_known=true
+weather: place names city=Some("Hampton District") locality=Some("Washington") municipality=Some("Washington")
+ui: mode=Welcome hovered=true down=false pointer_known=true
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.2690763, ram_used_gb: 2.7769127, ram_total_gb: 15.994869, gpu: Some(0.7375994), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: All }
+weather: Hampton District 6° code=0 humidity=46% (Internet)
+ui: mode=Welcome hovered=true down=true pointer_known=true
+ui: mode=Welcome hovered=true down=false pointer_known=true
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.33203125, ram_used_gb: 2.7479668, ram_total_gb: 15.994869, gpu: Some(0.77451843), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: All }
+perf: fps=62.1 cpu=114.45% backend=6.22% backend_busy=6.873% ram=16.8MB private=68.3MB | mode=Welcome hovered=true game=false sound=false | backend ms/s: audio=0.62 gpu=63.60 game=0.07 media=2.40 volume=0.00 other=0.01
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.30223882, ram_used_gb: 2.7415237, ram_total_gb: 15.994869, gpu: Some(0.8014815), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: All }
+ui: mode=Welcome hovered=true down=true pointer_known=true
+ui: mode=Welcome hovered=true down=false pointer_known=true
+ifood: extension folder C:\Users\runneradmin\AppData\Local\Islandbar\extensao-ifood
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.39705884, ram_used_gb: 2.7545738, ram_total_gb: 15.994869, gpu: Some(0.6364171), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: All }
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.4384058, ram_used_gb: 2.7602272, ram_total_gb: 15.994869, gpu: Some(0.7401408), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: All }
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.4365672, ram_used_gb: 2.7706337, ram_total_gb: 15.994869, gpu: Some(0.69716877), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: All }
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.4705882, ram_used_gb: 2.7807503, ram_total_gb: 15.994869, gpu: Some(0.73417705), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: All }
+perf: fps=61.9 cpu=88.88% backend=0.31% backend_busy=0.138% ram=18.8MB private=69.2MB | mode=Welcome hovered=true game=false sound=false | backend ms/s: audio=0.11 gpu=0.21 game=0.02 media=0.00 volume=0.00 other=0.05
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.5634328, ram_used_gb: 2.8000755, ram_total_gb: 15.994869, gpu: Some(0.75300914), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: All }
+ui: mode=Welcome hovered=true down=true pointer_known=true
+ui: mode=Welcome hovered=true down=false pointer_known=true
+store: Stats = temp=gpu;show=cpu,gpu,ram,temp;pet=ghost;weather=on
+ui: mode=Collapsed hovered=true down=false pointer_known=true
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.28571427, ram_used_gb: 2.7991333, ram_total_gb: 15.994869, gpu: Some(0.7749218), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }
+ui: mode=Collapsed hovered=false down=false pointer_known=false
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.10144925, ram_used_gb: 2.8001442, ram_total_gb: 15.994869, gpu: Some(0.69626933), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }

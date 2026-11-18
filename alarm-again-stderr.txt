@@ -1,0 +1,8 @@
+MESA: error: ZINK: vkCreateInstance failed (VK_ERROR_INCOMPATIBLE_DRIVER)
+volume keys: hook installed
+alarm: restored 05:44:43 (counting: true)
+ifood: listening on 127.0.0.1:47615
+ui: mode=Collapsed hovered=false down=false pointer_known=false
+System { cpu: 0.0, ram_used_gb: 3.0246735, ram_total_gb: 15.994869, gpu: Some(0.0), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Off }
+System { cpu: 0.0, ram_used_gb: 3.0250893, ram_total_gb: 15.994869, gpu: Some(0.0), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Off }
+System { cpu: 0.24264705, ram_used_gb: 3.0296974, ram_total_gb: 15.994869, gpu: Some(0.56969726), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Off }

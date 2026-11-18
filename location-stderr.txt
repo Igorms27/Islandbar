@@ -1,0 +1,52 @@
+MESA: error: ZINK: vkCreateInstance failed (VK_ERROR_INCOMPATIBLE_DRIVER)
+volume keys: hook installed
+ifood: listening on 127.0.0.1:47615
+ui: mode=Collapsed hovered=false down=false pointer_known=false
+System { cpu: 0.0, ram_used_gb: 2.8326187, ram_total_gb: 15.994869, gpu: Some(0.0), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Off }
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.5, ram_used_gb: 2.83329, ram_total_gb: 15.994869, gpu: Some(0.0), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.09923667, ram_used_gb: 2.839817, ram_total_gb: 15.994869, gpu: Some(0.5926789), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }
+ui: mode=Collapsed hovered=true down=false pointer_known=false
+ui: mode=Collapsed hovered=true down=false pointer_known=true
+ui: mode=Collapsed hovered=true down=true pointer_known=true
+ui: mode=Collapsed hovered=true down=false pointer_known=true
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.12704921, ram_used_gb: 2.8396072, ram_total_gb: 15.994869, gpu: Some(0.40793416), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }
+ui: mode=Expanded hovered=true down=false pointer_known=true
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.25, ram_used_gb: 2.8397446, ram_total_gb: 15.994869, gpu: Some(0.8162376), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.22307694, ram_used_gb: 2.838993, ram_total_gb: 15.994869, gpu: Some(0.84671026), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }
+ui: mode=Expanded hovered=true down=true pointer_known=true
+perf: fps=58.0 cpu=57.49% backend=6.56% backend_busy=6.745% ram=110.9MB private=78.0MB | mode=Expanded hovered=true game=false sound=false | backend ms/s: audio=0.94 gpu=64.02 game=0.02 media=1.29 volume=0.01 other=0.02
+ui: mode=Expanded hovered=true down=false pointer_known=true
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.18846154, ram_used_gb: 2.8376045, ram_total_gb: 15.994869, gpu: Some(0.7489491), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.27651513, ram_used_gb: 2.8381119, ram_total_gb: 15.994869, gpu: Some(0.7785008), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }
+ui: mode=Expanded hovered=true down=true pointer_known=true
+ui: mode=Expanded hovered=true down=false pointer_known=true
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.23863637, ram_used_gb: 2.8378716, ram_total_gb: 15.994869, gpu: Some(0.8111651), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.3346154, ram_used_gb: 2.8372192, ram_total_gb: 15.994869, gpu: Some(0.8202752), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }
+ui: mode=Expanded hovered=true down=true pointer_known=true
+ui: mode=Expanded hovered=true down=false pointer_known=true
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.35606062, ram_used_gb: 2.8578339, ram_total_gb: 15.994869, gpu: Some(0.79294807), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }
+ui: mode=Expanded hovered=true down=false pointer_known=false
+perf: fps=62.8 cpu=103.10% backend=0.00% backend_busy=0.159% ram=111.4MB private=78.1MB | mode=Expanded hovered=true game=false sound=false | backend ms/s: audio=0.61 gpu=0.12 game=0.02 media=0.02 volume=0.05 other=0.02
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.369403, ram_used_gb: 2.8693771, ram_total_gb: 15.994869, gpu: None, temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.34090906, ram_used_gb: 2.8704796, ram_total_gb: 15.994869, gpu: Some(0.64743495), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }
+weather: permission asked, allowed=false
+ui: mode=Expanded hovered=true down=false pointer_known=true
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.41085273, ram_used_gb: 2.8620987, ram_total_gb: 15.994869, gpu: Some(0.73920125), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.36821705, ram_used_gb: 2.8609238, ram_total_gb: 15.994869, gpu: Some(0.8075448), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.3432836, ram_used_gb: 2.8608742, ram_total_gb: 15.994869, gpu: Some(0.7749741), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }
+perf: fps=62.9 cpu=113.27% backend=0.00% backend_busy=0.338% ram=14.9MB private=69.9MB | mode=Expanded hovered=true game=false sound=false | backend ms/s: audio=1.24 gpu=0.14 game=0.01 media=0.00 volume=0.01 other=0.02

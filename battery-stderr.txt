@@ -1,0 +1,25 @@
+MESA: error: ZINK: vkCreateInstance failed (VK_ERROR_INCOMPATIBLE_DRIVER)
+volume keys: hook installed
+ifood: listening on 127.0.0.1:47615
+ui: mode=Collapsed hovered=false down=false pointer_known=false
+System { cpu: 0.0, ram_used_gb: 2.830803, ram_total_gb: 15.994869, gpu: Some(0.0), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Off }
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.5, ram_used_gb: 2.8310966, ram_total_gb: 15.994869, gpu: Some(0.057858523), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }
+ui: mode=Hud hovered=false down=false pointer_known=false
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.07352942, ram_used_gb: 2.8454475, ram_total_gb: 15.994869, gpu: Some(0.59929985), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }
+ui: mode=Hud hovered=true down=false pointer_known=false
+ui: mode=Hud hovered=true down=false pointer_known=true
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.11397064, ram_used_gb: 2.8436852, ram_total_gb: 15.994869, gpu: Some(0.5703895), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }
+ui: mode=Hud hovered=true down=true pointer_known=true
+ui: mode=Hud hovered=true down=false pointer_known=true
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.15625, ram_used_gb: 2.8443031, ram_total_gb: 15.994869, gpu: Some(0.63996506), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }
+ui: mode=Expanded hovered=true down=false pointer_known=true
+weather: windows location device=Some("Deny") account=None desktop=Some("Allow")
+weather: windows location is off, using the internet
+weather: place names city=Some("Hampton District") locality=Some("Washington") municipality=Some("Washington")
+weather: Hampton District 6° code=0 humidity=46% (Internet)
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.2890625, ram_used_gb: 2.816082, ram_total_gb: 15.994869, gpu: Some(0.650933), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }
