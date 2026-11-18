@@ -1,5 +1,10 @@
 # Teste visual no Windows do GitHub Actions: abre a ilha sobre um fundo
 # colorido, simula o mouse e salva screenshots + estilos da janela em smoke/.
+# Aceita -Part 1 ou -Part 2 para dividir as rodadas entre duas máquinas em paralelo.
+param([ValidateSet("all", "1", "2")][string]$Part = "all")
+$run1 = ($Part -eq "all" -or $Part -eq "1")
+$run2 = ($Part -eq "all" -or $Part -eq "2")
+
 $ErrorActionPreference = 'Continue'
 $out = "smoke"
 New-Item -ItemType Directory -Force $out | Out-Null
@@ -7,12 +12,19 @@ $exeDir = Resolve-Path "target\release"
 function Log($text) { $text | Tee-Object -Append "$out\log.txt" }
 
 # A máquina do GitHub não tem placa de vídeo: usa o OpenGL por software (Mesa).
-# (O pacote "mingw" é o que traz o OpenGL de desktop.)
-gh release download --repo pal1000/mesa-dist-win --pattern "mesa3d-*-release-mingw.7z" --dir mesa
-$archive = (Get-ChildItem mesa\*.7z | Select-Object -First 1).FullName
-Log ("mesa: " + (Split-Path $archive -Leaf))
-7z x $archive -omesa\x -y | Out-Null
-Copy-Item mesa\x\x64\*.dll $exeDir
+# (O pacote "mingw" é o que traz o OpenGL de desktop; guarda em mesa-dlls/ para o cache.)
+$mesaCache = "mesa-dlls"
+if (-not (Test-Path "$mesaCache\opengl32.dll")) {
+  New-Item -ItemType Directory -Force $mesaCache | Out-Null
+  gh release download --repo pal1000/mesa-dist-win --pattern "mesa3d-*-release-mingw.7z" --dir mesa
+  $archive = (Get-ChildItem mesa\*.7z | Select-Object -First 1).FullName
+  Log ("mesa: " + (Split-Path $archive -Leaf))
+  7z x $archive -omesa\x -y | Out-Null
+  Copy-Item mesa\x\x64\*.dll $mesaCache
+} else {
+  Log "mesa: cached"
+}
+Copy-Item "$mesaCache\*.dll" $exeDir
 Log ("dlls next to exe: " + ((Get-ChildItem $exeDir\*.dll).Name -join ", "))
 
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
@@ -31,6 +43,26 @@ public static class W {
 }
 "@
 
+function WaitWindow($title, $timeoutMs = 10000) {
+  $sw = [Diagnostics.Stopwatch]::StartNew()
+  while ($sw.ElapsedMilliseconds -lt $timeoutMs) {
+    $h = [W]::FindWindowW([NullString]::Value, $title)
+    if ($h -ne [IntPtr]::Zero) { return $h }
+    Start-Sleep -Milliseconds 100
+  }
+  [IntPtr]::Zero
+}
+function WaitLog($file, $pattern, $count = 1, $skip = 0, $timeoutMs = 15000) {
+  $sw = [Diagnostics.Stopwatch]::StartNew()
+  while ($sw.ElapsedMilliseconds -lt $timeoutMs) {
+    if (Test-Path $file) {
+      $hits = @(Get-Content $file -ErrorAction SilentlyContinue | Select-Object -Skip $skip | Select-String $pattern)
+      if ($hits.Count -ge $count) { return $true }
+    }
+    Start-Sleep -Milliseconds 200
+  }
+  $false
+}
 function Shot($name) {
   $b = [Windows.Forms.Screen]::PrimaryScreen.Bounds
   $bmp = New-Object Drawing.Bitmap $b.Width, $b.Height
@@ -94,25 +126,10 @@ function Click($x, $y) {
 }
 
 Log ("screen: " + [Windows.Forms.Screen]::PrimaryScreen.Bounds)
-
-# Fundo bem colorido, para qualquer véu/retângulo da janela aparecer.
 (New-Object -ComObject Shell.Application).MinimizeAll()
-Start-Sleep 1
-@'
-Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-$f = New-Object Windows.Forms.Form
-$f.BackColor = [Drawing.Color]::FromArgb(255, 170, 40)
-$f.FormBorderStyle = "None"
-$f.WindowState = "Maximized"
-$f.Text = "bg"
-$f.Add_Shown({ $f.Activate() })
-[Windows.Forms.Application]::Run($f)
-'@ | Set-Content "$out\bg.ps1"
-$bg = Start-Process powershell -PassThru -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "$out\bg.ps1"
-Start-Sleep 4
-Shot "0-background"
+Start-Sleep -Milliseconds 600
 
-function StartIsland($tag, $welcome = $false) {
+function StartIsland($tag, $welcome = $false, $settleMs = 1200) {
   [W]::SetCursorPos(900, 700) | Out-Null
   $env:ISLANDBAR_DEBUG_SYSMON = "1"
   $env:ISLANDBAR_DEBUG_GAME = "1"
@@ -124,15 +141,35 @@ function StartIsland($tag, $welcome = $false) {
   $params = @{ FilePath = "$exeDir\islandbar.exe"; PassThru = $true; RedirectStandardError = "$out\$tag-stderr.txt" }
   if (-not $welcome) { $params.ArgumentList = '--autostart' }
   $app = Start-Process @params
-  Start-Sleep 8
+  WaitWindow "Islandbar" 10000 | Out-Null
+  WaitLog "$out\$tag-stderr.txt" '^System \{' 1 0 8000 | Out-Null
+  if ($settleMs -gt 0) { Start-Sleep -Milliseconds $settleMs }
   Log ("$tag app running: " + (-not $app.HasExited) + $(if ($app.HasExited) { " (exit code 0x{0:X8})" -f $app.ExitCode }))
   $app
 }
 function StopIsland($tag, $app) {
   Stop-Process -Id $app.Id -ErrorAction SilentlyContinue
-  Start-Sleep 1
+  $app.WaitForExit(3000) | Out-Null
+  Start-Sleep -Milliseconds 200
   Log ("$tag last readings: " + (Get-Content "$out\$tag-stderr.txt" -ErrorAction SilentlyContinue | Select-String 'System' | Select-Object -Last 8 | Out-String))
 }
+
+if ($run1) {
+# Fundo bem colorido, para qualquer véu/retângulo da janela aparecer.
+@'
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+$f = New-Object Windows.Forms.Form
+$f.BackColor = [Drawing.Color]::FromArgb(255, 170, 40)
+$f.FormBorderStyle = "None"
+$f.WindowState = "Maximized"
+$f.Text = "bg"
+$f.Add_Shown({ $f.Activate() })
+[Windows.Forms.Application]::Run($f)
+'@ | Set-Content "$out\bg.ps1"
+$bg = Start-Process powershell -PassThru -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "$out\bg.ps1"
+WaitWindow "bg" 8000 | Out-Null
+Start-Sleep -Milliseconds 500
+Shot "0-background"
 
 # ---- Rodada 1: pílula, painel, clicar fora --------------------------------
 $app = StartIsland "island"
@@ -223,7 +260,7 @@ $bmp.Dispose()
 Log ("island visible over topmost game: {0} (pixel {1},{2},{3})" -f ($p.B -lt 60), $p.R, $p.G, $p.B)
 # Jogo rodando, ilha quieta: consumo no modo jogo.
 $before = (Get-Content "$out\island-stderr.txt").Count
-Start-Sleep 16
+WaitLog "$out\island-stderr.txt" '^perf:' 2 $before 18000 | Out-Null
 Log ("perf in game:`n" + (Get-Content "$out\island-stderr.txt" | Select-Object -Skip $before | Select-String '^perf' | Out-String))
 # Clica na ilha várias vezes durante o jogo: o painel tem que abrir em todas.
 $opened = 0
@@ -242,7 +279,7 @@ Log "clicks during game that opened the panel: $opened of 4"
 Start-Sleep 2
 Log ("game detection: " + (Get-Content "$out\island-stderr.txt" | Select-String '^game:|^fps:' | Select-Object -Last 4 | Out-String))
 Stop-Process -Id $game.Id -ErrorAction SilentlyContinue
-Start-Sleep 4
+Start-Sleep 3
 Shot "game-3-after"
 StopIsland "island" $app
 Log ("fake game stderr: " + (Get-Content "$out\game-stderr.txt" -ErrorAction SilentlyContinue | Out-String))
@@ -259,14 +296,16 @@ Start-Sleep 2
 Shot "denied-1-panel"
 # Botão "Ativar": à direita, na linha logo abaixo dos mostradores.
 Click ($cx + 156) ($r.T + 262)
-Start-Sleep 5
+Start-Sleep 2
 Shot "denied-2-requested"
 Log ("group after: " + ((Get-LocalGroupMember -SID 'S-1-5-32-559' -ErrorAction SilentlyContinue).Name -join ", "))
 StopIsland "denied" $app
+}
 
+if ($run2) {
 # ---- Rodada 4: alarme ------------------------------------------------------
 # Painel: arrasta para a página do alarme, cancela o alarme de teste, marca
-# outro pelo botão Iniciar. Depois uma ilha nova com um alarme de 3 s: o cartão
+# outro pelo botão Iniciar. Depois uma ilha nova com um alarme curto: o cartão
 # tem que aparecer tocando, e o botão Parar tem que fechá-lo.
 $env:ISLANDBAR_DEBUG_ALARM = "600"
 $app = StartIsland "alarm"
@@ -315,9 +354,11 @@ Shot "alarm-8-restored"
 Log ("alarm restore: " + ((Get-Content "$out\alarm-again-stderr.txt" | Select-String '^alarm') -join " | "))
 StopIsland "alarm-again" $app
 
-$env:ISLANDBAR_DEBUG_ALARM = "3"
-$app = StartIsland "ring"
+$env:ISLANDBAR_DEBUG_ALARM = "1"
+$app = StartIsland "ring" $false 0
 Remove-Item Env:ISLANDBAR_DEBUG_ALARM
+WaitLog "$out\ring-stderr.txt" '^alarm: ringing' 1 0 8000 | Out-Null
+Start-Sleep -Milliseconds 1000
 Shot "alarm-6-ringing"
 Click ($cx + 126) ($r.T + 48)   # Parar
 Start-Sleep 2
@@ -328,20 +369,27 @@ StopIsland "ring" $app
 Log ("alarm saved after ringing: " + (Get-ItemProperty "HKCU:\Software\Islandbar" -Name Alarm -ErrorAction SilentlyContinue).Alarm)
 Log ("wake-up task after ringing: " + $(if (Get-ScheduledTask -TaskName "Islandbar - alarme" -ErrorAction SilentlyContinue) { "still there" } else { "none" }))
 
-# Alarme de 60 s e a ilha fechada logo depois: o Windows tem que abri-la na
+# Alarme curto e a ilha fechada logo depois: o Windows tem que abri-la na
 # hora, já tocando.
-$env:ISLANDBAR_DEBUG_ALARM = "60"
-$app = StartIsland "closed"
+$env:ISLANDBAR_DEBUG_ALARM = "12"
+$app = StartIsland "closed" $false 200
 Remove-Item Env:ISLANDBAR_DEBUG_ALARM
+WaitLog "$out\closed-stderr.txt" '^alarm: wake-up task set' 1 0 6000 | Out-Null
 Log ("closed lines: " + ((Get-Content "$out\closed-stderr.txt" | Select-String '^alarm') -join " | "))
 StopIsland "closed" $app
 Log ("islands running after closing: " + @(Get-Process islandbar -ErrorAction SilentlyContinue).Count)
-Start-Sleep 62
+$wokeSw = [Diagnostics.Stopwatch]::StartNew()
+while ($wokeSw.ElapsedMilliseconds -lt 25000) {
+  if (@(Get-Process islandbar -ErrorAction SilentlyContinue).Count -ge 1) { break }
+  Start-Sleep -Milliseconds 250
+}
+WaitWindow "Islandbar" 8000 | Out-Null
+Start-Sleep -Milliseconds 1500
 $woke = @(Get-Process islandbar -ErrorAction SilentlyContinue)
 Log ("islands running at alarm time: " + $woke.Count + " (expected 1, opened by Windows)")
 Shot "alarm-9-woke-ringing"
 $woke | Stop-Process -ErrorAction SilentlyContinue
-Start-Sleep 1
+Start-Sleep -Milliseconds 500
 Log ("wake-up task after waking: " + $(if (Get-ScheduledTask -TaskName "Islandbar - alarme" -ErrorAction SilentlyContinue) { "still there" } else { "none" }))
 
 # ---- Rodada 5: cartão inicial ----------------------------------------------
@@ -369,7 +417,7 @@ Log ("extension folder: " + ((Get-ChildItem $extDir -ErrorAction SilentlyContinu
 Start-Sleep 1
 Shot "welcome-2b-extension"
 Click ($cx + 126) ($r.T + 410)   # Iniciar
-Start-Sleep 3
+Start-Sleep 2
 Shot "welcome-3-pill"
 $saved = (Get-ItemProperty "HKCU:\Software\Islandbar" -Name Stats -ErrorAction SilentlyContinue).Stats
 Log "settings saved: $saved (expected temp=gpu;show=cpu,gpu,ram,temp;pet=ghost;weather=on)"
@@ -379,7 +427,7 @@ StopIsland "welcome" $app
 $app = StartIsland "welcome2"
 Shot "welcome-4-pet-pill"
 # Parada com o pet: ele faz gestos de tempos em tempos (custo em repouso).
-Start-Sleep 30
+WaitLog "$out\welcome2-stderr.txt" '^perf:' 3 0 20000 | Out-Null
 Log ("after restart: " + ((Get-Content "$out\welcome2-stderr.txt" | Select-String '^temp sources' | Select-Object -Last 1) -join ""))
 Log ("perf idle with pet:`n" + (Get-Content "$out\welcome2-stderr.txt" | Select-String '^perf' | Select-Object -Last 4 | Out-String))
 StopIsland "welcome2" $app
@@ -388,6 +436,7 @@ StopIsland "welcome2" $app
 # Faz o papel da extensão do navegador: manda o andamento do pedido para a
 # ilha (127.0.0.1:47615). A pílula do pedido aparece à esquerda da ilha.
 $app = StartIsland "ifood"
+WaitLog "$out\ifood-stderr.txt" '^ifood: listening' 1 0 5000 | Out-Null
 function PostOrder($body, $origin = "chrome-extension://smoketest") {
   [IO.File]::WriteAllText("$out\order.txt", $body)
   $curlArgs = @('-s', '-o', 'NUL', '-w', '%{http_code}', '--data-binary', "@$out\order.txt", 'http://127.0.0.1:47615/ifood')
@@ -398,7 +447,7 @@ $order = "order=0a1b2c3d-0000-4000-8000-0000000000aa"
 Log ("order preparing: " + (PostOrder "$order`nstage=preparing`nstore=Lanche Bom`neta=20:10-20:25`ncode=`nchat=0"))
 Start-Sleep 1
 Shot "ifood-1-preparing"
-Start-Sleep 9
+Start-Sleep 1
 Log ("order shipping: " + (PostOrder "$order`nstage=shipping`nstore=Lanche Bom`neta=20:10-20:25`ncode=4821`nchat=0"))
 Start-Sleep 1
 # Com tudo: entregador, número e os pontos do mapa (Praça da Sé, em São Paulo).
@@ -410,7 +459,7 @@ $r = Styles "ifood"
 $cx = [int](($r.L + $r.R) / 2)
 $pillY = $r.T + 27
 # Ctrl com o mouse em cima da pílula do pedido: as duas pílulas saem da frente.
-Start-Sleep 8
+Start-Sleep 1
 [W]::SetCursorPos($cx - 205, $pillY) | Out-Null
 Start-Sleep -Milliseconds 700
 [W]::keybd_event(0x11, 0, 0, [UIntPtr]::Zero)
@@ -431,8 +480,9 @@ Shot "ifood-2d-closed"
 Log ("from a website (expected 403): " + (PostOrder "order=evil`nstage=preparing" "https://example.com"))
 Log ("without origin (expected 403): " + (PostOrder "order=evil`nstage=preparing" ""))
 # Parada com a pílula do pedido: o custo tem que voltar ao de repouso.
-Start-Sleep 20
-Log ("perf idle with order:`n" + (Get-Content "$out\ifood-stderr.txt" | Select-String '^perf' | Select-Object -Last 2 | Out-String))
+$beforeOrder = (Get-Content "$out\ifood-stderr.txt").Count
+WaitLog "$out\ifood-stderr.txt" '^perf:' 3 $beforeOrder 18000 | Out-Null
+Log ("perf idle with order:`n" + (Get-Content "$out\ifood-stderr.txt" | Select-Object -Skip $beforeOrder | Select-String '^perf' | Select-Object -Last 2 | Out-String))
 Log ("tab closed: " + (PostOrder "gone=0a1b2c3d-0000-4000-8000-0000000000aa"))
 Start-Sleep 2
 Shot "ifood-3-gone"
@@ -453,13 +503,14 @@ Shot "ifood-4-welcome-installed"
 StopIsland "ifood-welcome" $app
 
 # ---- Rodada 7: clima, botão "Usar localização do Windows" ------------------
-# Na máquina do GitHub a localização está desligada: a cidade vem pela internet
-# e a página do clima tem o botão. Clicar nele abre a janela do Windows
-# perguntando (só assim ela aparece). Esc fecha a janela sem permitir.
+# A previsão real já foi conferida na Rodada 1; aqui usa ISLANDBAR_DEBUG_WEATHER=internet
+# para não depender da cota da API externa após abrir a ilha várias vezes seguidas.
+# Clicar no botão abre a janela do Windows perguntando; Esc fecha sem permitir.
+$env:ISLANDBAR_DEBUG_WEATHER = "internet"
 $app = StartIsland "location"
+Remove-Item Env:ISLANDBAR_DEBUG_WEATHER
 $r = Styles "location"
 $cx = [int](($r.L + $r.R) / 2)
-Start-Sleep 20                  # espera a previsão chegar
 Click $cx ($r.T + 27)
 Start-Sleep 2
 Drag ($cx + 120) ($r.T + 110) ($cx - 120)
@@ -471,11 +522,12 @@ Click $cx ($r.T + 308)          # Usar localização do Windows
 Start-Sleep 3
 Shot "location-2-asked"
 [System.Windows.Forms.SendKeys]::SendWait("{ESC}")
-Start-Sleep 3
+Start-Sleep 2
 [W]::SetCursorPos($cx, ($r.T + 200)) | Out-Null
 Start-Sleep 1
 Shot "location-3-answered"
 Log ("location lines: " + ((Get-Content "$out\location-stderr.txt" | Select-String '^weather') -join " | "))
 StopIsland "location" $app
+}
 
 exit 0

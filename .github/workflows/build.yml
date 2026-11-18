@@ -28,11 +28,32 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
+    outputs:
+      skip_smoke: ${{ steps.check.outputs.skip_smoke }}
+      code_hash: ${{ steps.check.outputs.code_hash }}
     steps:
       - uses: actions/checkout@v7
         with:
           # Histórico completo: as notas da versão listam os commits desde a anterior.
           fetch-depth: 0
+      # Confere se este código exato já passou pelo teste visual numa branch ci/*,
+      # para não repetir tudo ao enviar a mesma mudança para o main.
+      - name: Confere teste visual anterior
+        id: check
+        shell: bash
+        run: |
+          code_hash=$(git ls-tree -r HEAD | grep -vE '\t(.*\.md|docs/|LICENSE|\.editorconfig|\.github/ISSUE_TEMPLATE/|\.github/pull_request_template\.md|\.github/dependabot\.yml)$' | sha256sum | cut -c1-16)
+          echo "code_hash=$code_hash" >> "$GITHUB_OUTPUT"
+          skip="false"
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            if git fetch -q origin ci-results 2>/dev/null; then
+              last_msg=$(git log -1 --format=%s FETCH_HEAD 2>/dev/null || true)
+              if [[ "$last_msg" == *"code=$code_hash"* ]]; then
+                skip="true"
+              fi
+            fi
+          fi
+          echo "skip_smoke=$skip" >> "$GITHUB_OUTPUT"
       - uses: Swatinem/rust-cache@v2
       # Qualidade: formatação padrão, nenhum aviso do compilador e testes passando.
       - name: Formatação (cargo fmt)
@@ -75,18 +96,92 @@ jobs:
             --title "Versão ${{ github.run_number }}" \
             --notes-file notes.md \
             --latest
-      # Abre a ilha no Windows da máquina de build e guarda screenshots,
-      # para conferir a aparência real sem depender de um PC.
+      # Se o código já foi testado visualmente, só atualiza o SHA na branch ci-results.
+      - name: Reaproveita teste visual anterior
+        if: steps.check.outputs.skip_smoke == 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tree=$(git rev-parse 'FETCH_HEAD^{tree}')
+          commit=$(git -c user.name="github-actions" -c user.email="github-actions@users.noreply.github.com" \
+            commit-tree "$tree" -m "Teste visual de ${{ github.sha }} (code=${{ steps.check.outputs.code_hash }})")
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}" "$commit:refs/heads/ci-results"
       - name: Compila o jogo falso do teste
+        if: steps.check.outputs.skip_smoke != 'true'
         continue-on-error: true
         run: cargo build --release --example fake_game
-      - name: Teste visual
+      - uses: actions/upload-artifact@v7
+        if: steps.check.outputs.skip_smoke != 'true'
+        with:
+          name: smoke-bins
+          path: |
+            target/release/islandbar.exe
+            target/release/examples/fake_game.exe
+
+  # Abre a ilha em duas máquinas Windows ao mesmo tempo e guarda screenshots,
+  # para conferir a aparência real na metade do tempo.
+  smoke:
+    needs: build
+    if: needs.build.outputs.skip_smoke != 'true'
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - uses: actions/download-artifact@v7
+        with:
+          name: smoke-bins
+          path: target/release
+      - uses: actions/cache@v6
+        with:
+          path: mesa-dlls
+          key: mesa-mingw-v1
+      - name: Teste visual (parte ${{ matrix.part }})
         continue-on-error: true
-        timeout-minutes: 10
+        timeout-minutes: 8
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: ./scripts/smoke.ps1
+        run: ./scripts/smoke.ps1 -Part ${{ matrix.part }}
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: smoke-${{ matrix.part }}
+          path: smoke/
+          if-no-files-found: ignore
+
+  # Junta os resultados das duas máquinas no artefato "smoke" e na branch "ci-results".
+  publish-smoke:
+    needs: [build, smoke]
+    if: always() && needs.build.result == 'success' && needs.build.outputs.skip_smoke != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v7
+        continue-on-error: true
+        with:
+          name: smoke-1
+          path: p1
+      - uses: actions/download-artifact@v7
+        continue-on-error: true
+        with:
+          name: smoke-2
+          path: p2
+      - name: Junta resultados
+        shell: bash
+        run: |
+          mkdir -p smoke
+          cp -r p1/* smoke/ 2>/dev/null || true
+          cp -r p2/* smoke/ 2>/dev/null || true
+          {
+            [ -f p1/log.txt ] && cat p1/log.txt || true
+            [ -f p2/log.txt ] && cat p2/log.txt || true
+          } > smoke/log.txt
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -101,9 +196,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          label="Teste visual de ${{ github.sha }}"
+          if [ -f p1/denied-2-requested.png ] && [ -f p2/location-3-answered.png ]; then
+            label="$label (code=${{ needs.build.outputs.code_hash }})"
+          fi
           cd smoke
           git init -q -b ci-results
           git add -A
           git -c user.name="github-actions" -c user.email="github-actions@users.noreply.github.com" \
-            commit -qm "Teste visual de ${{ github.sha }}"
+            commit -qm "$label"
           git push -f "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}" ci-results
