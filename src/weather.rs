@@ -420,35 +420,58 @@ fn read_place(json: &serde_json::Value) -> Option<Place> {
 }
 
 /// O nome da cidade. No Brasil o serviço às vezes chama a cidade de "Região
-/// Geográfica Imediata de Campinas": aí vale o município (nível 8 da lista de
-/// divisões) ou o nome sem esse começo.
+/// Geográfica Imediata de Campinas" (ou "do Rio de Janeiro", "da Baixada…"):
+/// aí vale o município da lista de divisões, ou o nome sem esse começo.
 fn city_name(json: &serde_json::Value) -> String {
-    const REGIONS: [&str; 3] =
-        ["Região Geográfica Imediata de ", "Região Geográfica Intermediária de ", "Região Metropolitana de "];
-    let clean = |name: &str| -> String {
-        let name = name.trim();
-        let name = REGIONS.iter().find_map(|prefix| name.strip_prefix(prefix)).unwrap_or(name);
-        name.chars().filter(|c| !c.is_control()).take(40).collect::<String>().trim().to_string()
-    };
-    let is_region = |name: &&str| REGIONS.iter().any(|prefix| name.trim().starts_with(prefix.trim()));
     let text = |key: &str| json[key].as_str().filter(|name| !name.trim().is_empty());
-
-    // 1. A cidade, se não for uma "região".
-    if let Some(city) = text("city").filter(|name| !is_region(name)) {
-        return clean(city);
-    }
-    // 2. O município na lista de divisões.
     let municipality = json["localityInfo"]["administrative"].as_array().and_then(|list| {
+        let usable =
+            |item: &&serde_json::Value| item["name"].as_str().is_some_and(|n| !n.trim().is_empty() && !is_region(n));
+        let level = |item: &serde_json::Value| item["adminLevel"].as_u64().unwrap_or(0);
+        let described = |item: &serde_json::Value| {
+            let about = item["description"].as_str().unwrap_or_default().to_lowercase();
+            about.contains("município") || about.contains("municipality")
+        };
+        // O nível 8 é o município; senão, o que se descreve como município;
+        // senão, a divisão mais "local" acima do estado.
         list.iter()
-            .filter(|item| item["adminLevel"].as_u64() == Some(8))
-            .filter_map(|item| item["name"].as_str())
-            .find(|name| !name.trim().is_empty() && !is_region(name))
+            .filter(usable)
+            .find(|item| level(item) == 8)
+            .or_else(|| list.iter().filter(usable).find(|item| described(item)))
+            .or_else(|| {
+                list.iter().filter(usable).filter(|item| (5..=8).contains(&level(item))).max_by_key(|item| level(item))
+            })
+            .and_then(|item| item["name"].as_str())
     });
-    if let Some(name) = municipality {
-        return clean(name);
+    let name = text("city")
+        .filter(|name| !is_region(name))
+        .or(municipality)
+        .or_else(|| ["city", "locality", "principalSubdivision"].iter().find_map(|key| text(key)))
+        .unwrap_or_default();
+    crate::perf::line(format!(
+        "weather: place names city={:?} locality={:?} municipality={municipality:?}",
+        text("city"),
+        text("locality")
+    ));
+    strip_region(name).chars().filter(|c| !c.is_control()).take(40).collect::<String>().trim().to_string()
+}
+
+/// "Região Geográfica Imediata de ...", "Região Metropolitana do ...".
+fn is_region(name: &str) -> bool {
+    name.trim().starts_with("Região ")
+}
+
+/// Tira o "Região ... de/do/da/dos/das" do começo.
+fn strip_region(name: &str) -> &str {
+    let name = name.trim();
+    if !is_region(name) {
+        return name;
     }
-    // 3. O que tiver, sem o "Região ... de".
-    ["city", "locality", "principalSubdivision"].iter().find_map(|key| text(key)).map(clean).unwrap_or_default()
+    [" de ", " do ", " da ", " dos ", " das "]
+        .iter()
+        .filter_map(|word| name.find(word).map(|at| at + word.len()))
+        .min()
+        .map_or(name, |at| name[at..].trim())
 }
 
 /// A localização do Windows, se estiver ligada e permitida para a ilha.
@@ -873,6 +896,17 @@ mod tests {
         let json = serde_json::json!({"latitude": -22.9, "longitude": -47.0,
             "city": "Região Geográfica Imediata de Campinas", "locality": ""});
         assert_eq!(read_place(&json).unwrap().city, "Campinas");
+        let json = serde_json::json!({"latitude": -22.9, "longitude": -43.2,
+            "city": "Região Geográfica Imediata do Rio de Janeiro", "locality": "Região Geográfica Imediata do Rio de Janeiro"});
+        assert_eq!(read_place(&json).unwrap().city, "Rio de Janeiro");
+        let json = serde_json::json!({"latitude": -22.9, "longitude": -43.2, "city": "",
+            "locality": "Região Geográfica Imediata da Baixada Santista",
+            "localityInfo": {"administrative": [
+                {"name": "Região Geográfica Imediata da Baixada Santista", "adminLevel": 7},
+                {"name": "Guarujá", "adminLevel": 7, "description": "município do estado de São Paulo, Brasil"}]}});
+        assert_eq!(read_place(&json).unwrap().city, "Guarujá");
+        assert_eq!(strip_region("Região Metropolitana dos Campos Gerais"), "Campos Gerais");
+        assert_eq!(strip_region("Campinas"), "Campinas");
         assert!(read_forecast(&serde_json::json!({}), &place).is_none());
     }
 

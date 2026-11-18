@@ -2684,15 +2684,11 @@ fn draw_weather_page(
             FontId::proportional(10.5),
             fade(TEXT_DIM, a),
         );
-        text_fit(
-            p,
-            pos2(x, rect.center().y + 8.0),
-            Align2::LEFT_CENTER,
-            &value,
-            12.5,
-            fade(TEXT, a),
-            rect.right() - 4.0 - x,
-        );
+        // Sem espaço para tudo (ex.: "9 muito alto"): fica só o número.
+        let room = rect.right() - 4.0 - x;
+        let fits = p.layout_no_wrap(value.clone(), FontId::proportional(12.5), TEXT).size().x <= room;
+        let value = if fits { value.as_str() } else { value.split(' ').next().unwrap_or_default() };
+        text_fit(p, pos2(x, rect.center().y + 8.0), Align2::LEFT_CENTER, value, 12.5, fade(TEXT, a), room);
     }
 
     // ---- Próximas horas: "Agora" e as cinco seguintes ----
