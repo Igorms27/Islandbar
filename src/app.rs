@@ -11,6 +11,7 @@ use eframe::egui::{
 use crate::alarm::{self, Alarm};
 use crate::anim::{meter, smoothstep, Spring};
 use crate::backend::{Backend, Command, Device, FpsAccess, Game, Snapshot, System, TempSource};
+use crate::battery::{self, AlertTracker, LowBatteryAlert, PanelBatteries, Peripheral};
 use crate::delivery::{self, Order, Stage};
 use crate::map::{self, Map};
 use crate::pet;
@@ -25,6 +26,7 @@ pub const WINDOW_SIZE: [f32; 2] = [940.0, 640.0];
 const TOP_MARGIN: f32 = 10.0;
 const PILL_HEIGHT: f32 = 34.0;
 const HUD_SIZE: Vec2 = vec2(300.0, 42.0);
+const BATTERY_HUD_SIZE: Vec2 = vec2(320.0, 42.0);
 const EXPANDED_WIDTH: f32 = 420.0;
 const PADDING: f32 = 18.0;
 const HEADER_HEIGHT: f32 = 52.0;
@@ -36,6 +38,10 @@ const STATS_HEIGHT: f32 = 2.0 * TILE_HEIGHT + TILE_GAP + 12.0;
 const FOOTER_HEIGHT: f32 = 30.0;
 /// Linha do painel que oferece ativar o FPS (só aparece sem a permissão).
 const FPS_ROW_HEIGHT: f32 = 36.0;
+/// Faixinha compacta de periféricos sem fio (mouse, teclado, controle...).
+const BATTERY_ROW_HEIGHT: f32 = 30.0;
+const BATTERIES_PER_ROW: usize = 3;
+const MAX_STRIP_BATTERIES: usize = 6;
 /// Pílula do modo jogo: um pouco menor que a principal.
 const GAME_PILL_HEIGHT: f32 = 30.0;
 const GAME_PILL_GAP: f32 = 8.0;
@@ -72,6 +78,7 @@ const DEVICE_PENDING: Duration = Duration::from_secs(2);
 const BARS: usize = 5;
 
 const HUD_SECONDS: f32 = 1.6;
+const BATTERY_HUD_SECONDS: f32 = 4.5;
 const LEAVE_SECONDS: f32 = 0.45;
 
 // --- Ritmo de desenho ---
@@ -216,6 +223,12 @@ pub struct IslandApp {
     /// Dispositivo clicado que o Windows ainda não confirmou. O destaque já
     /// vai para ele, para o clique responder na hora.
     pending_device: Option<(String, Instant)>,
+    /// Controle de avisos de bateria fraca (20% e 10%) na pílula fechada.
+    battery_alerts: AlertTracker,
+    /// Aviso ativo de bateria fraca sendo exibido no lugar do HUD de volume.
+    battery_hud: Option<LowBatteryAlert>,
+    /// Último contexto (painel aberto, em jogo) informado à thread de bateria.
+    sent_battery_ctx: Option<(bool, bool)>,
 
     window_pos: Option<Pos2>,
     /// Segundos restantes do aviso "Atualizado" na pílula.
@@ -261,6 +274,7 @@ impl IslandApp {
         platform::watch_cursor(wake(cc.egui_ctx.clone()));
         delivery::start(wake(cc.egui_ctx.clone()));
         weather::start(wake(cc.egui_ctx.clone()));
+        battery::start(wake(cc.egui_ctx.clone()));
         Self {
             backend: Backend::spawn(wake(cc.egui_ctx.clone())),
             mode,
@@ -299,6 +313,9 @@ impl IslandApp {
             gauges: [0.0; 4],
             dragging: None,
             pending_device: None,
+            battery_alerts: AlertTracker::default(),
+            battery_hud: None,
+            sent_battery_ctx: None,
             alarm: Alarm::load(),
             page: Spring::smooth(0.0),
             page_drag: None,
@@ -361,7 +378,7 @@ impl IslandApp {
         ctx.pointer_latest_pos().is_some_and(|p| hit.contains(p))
     }
 
-    fn target_size(&self, snap: &Snapshot) -> Vec2 {
+    fn target_size(&self, snap: &Snapshot, strip_len: usize) -> Vec2 {
         match self.mode {
             Mode::Welcome => WELCOME_SIZE,
             Mode::Collapsed => {
@@ -378,16 +395,24 @@ impl IslandApp {
                 }
                 vec2(width, PILL_HEIGHT) + vec2(14.0, 4.0) * self.hover.target
             }
-            Mode::Hud => HUD_SIZE,
-            Mode::Expanded => vec2(EXPANDED_WIDTH, panel_fixed_height(snap) + self.middle_height(snap)),
+            Mode::Hud => {
+                if self.battery_hud.is_some() {
+                    BATTERY_HUD_SIZE
+                } else {
+                    HUD_SIZE
+                }
+            }
+            Mode::Expanded => {
+                vec2(EXPANDED_WIDTH, panel_fixed_height(snap, strip_len) + self.middle_height(snap, strip_len))
+            }
             Mode::Ringing => RINGING_SIZE,
             Mode::Order => vec2(ORDER_WIDTH, order_panel_height(self.last_order.as_ref())),
         }
     }
 
     /// Altura da parte do painel que desliza, conforme a página aparecendo.
-    fn middle_height(&self, snap: &Snapshot) -> f32 {
-        let heights = [sound_page_height(snap), ALARM_PAGE_HEIGHT, weather_page_height()];
+    fn middle_height(&self, snap: &Snapshot, strip_len: usize) -> f32 {
+        let heights = [sound_page_height(snap, strip_len), ALARM_PAGE_HEIGHT, weather_page_height()];
         let t = self.page.value.clamp(0.0, LAST_PAGE);
         let from = (t.floor() as usize).min(heights.len() - 2);
         let k = t - from as f32;
@@ -498,14 +523,34 @@ impl eframe::App for IslandApp {
             let changed = (before.0 - master_now.0).abs() > 0.004 || before.1 != master_now.1;
             let idle = matches!(self.mode, Mode::Collapsed | Mode::Hud);
             if changed && idle && self.uptime > 1.5 {
+                self.battery_hud = None;
                 self.mode = Mode::Hud;
                 self.hud_timer = HUD_SECONDS;
             }
         }
         self.last_master = Some(master_now);
 
+        // --- Bateria dos periféricos sem fio ---
+        let batteries = battery::current();
+        let can_notify_battery = snap.game.is_none()
+            && self.mode == Mode::Collapsed
+            && self.uptime > 1.2
+            && self.notice_timer <= 0.0
+            && !self.pinned;
+        if let Some(alert) = self.battery_alerts.poll(&batteries, can_notify_battery) {
+            self.battery_hud = Some(alert);
+            self.mode = Mode::Hud;
+            self.hud_timer = BATTERY_HUD_SECONDS;
+        }
+        if self.mode != Mode::Hud && self.hud.value < 0.02 {
+            self.battery_hud = None;
+        }
+        let panel_bat = (self.mode == Mode::Expanded || self.open.value > 0.01)
+            .then(|| battery::match_panel_batteries(&batteries, &snap.outputs, &snap.inputs));
+        let strip_len = panel_bat.as_ref().map_or(0, |b| b.strip.len());
+
         // --- Geometria atual da ilha ---
-        let size = self.target_size(&snap);
+        let size = self.target_size(&snap, strip_len);
         self.width.target = size.x;
         self.height.target = size.y;
         self.width.update(dt);
@@ -638,6 +683,11 @@ impl eframe::App for IslandApp {
             self.panel_open = panel_open;
             self.backend.send(Command::Panel(panel_open));
         }
+        let bat_ctx = (panel_open, snap.game.is_some());
+        if self.sent_battery_ctx != Some(bat_ctx) {
+            self.sent_battery_ctx = Some(bat_ctx);
+            battery::set_context(bat_ctx.0, bat_ctx.1);
+        }
         let stats = (self.settings, self.mode == Mode::Welcome);
         if self.sent_stats != Some(stats) {
             self.sent_stats = Some(stats);
@@ -727,7 +777,9 @@ impl eframe::App for IslandApp {
             self.draw_welcome(ui, &content, island, &snap, accent);
         }
         if open > 0.01 {
-            self.draw_panel(ui, &content, island, &snap, accent);
+            if let Some(panel_bat) = panel_bat.as_ref() {
+                self.draw_panel(ui, &content, island, &snap, panel_bat, accent);
+            }
         }
         if ring > 0.01 {
             self.draw_ringing(ui, &content, island, accent, ring, time);
@@ -783,6 +835,9 @@ impl eframe::App for IslandApp {
             let mut wait = REST_FRAME;
             if self.notice_timer > 0.0 {
                 wait = wait.min(Duration::from_secs_f32(self.notice_timer));
+            }
+            if self.uptime < 1.3 && !batteries.is_empty() {
+                wait = wait.min(Duration::from_secs_f32(1.3 - self.uptime));
             }
             // Acorda quando o tempo restante na pílula muda e no segundo em
             // que o alarme deve tocar.
@@ -921,9 +976,30 @@ impl IslandApp {
         }
     }
 
-    /// Aviso de volume: ícone | barra | porcentagem.
+    /// Aviso rápido na pílula: volume ou bateria fraca de periférico.
     fn draw_hud(&self, p: &Painter, island: Rect, snap: &Snapshot, accent: Color32, alpha: f32) {
         let cy = island.center().y;
+        if let Some(alert) = &self.battery_hud {
+            let status_color = battery::battery_color(alert.percent, false, TEXT);
+            battery::draw_kind_icon(p, pos2(island.left() + 24.0, cy), 8.2, alert.kind, fade(status_color, alpha));
+
+            let pct_rect = p.text(
+                pos2(island.right() - 16.0, cy),
+                Align2::RIGHT_CENTER,
+                format!("{}%", alert.percent),
+                FontId::proportional(13.0),
+                fade(status_color, alpha),
+            );
+            battery::draw_mini_battery(p, pos2(pct_rect.left() - 10.0, cy), alert.percent, false, TEXT, alpha);
+
+            let text_x = island.left() + 42.0;
+            let max_w = (pct_rect.left() - 24.0 - text_x).max(40.0);
+            let sub = if alert.percent <= battery::CRITICAL_THRESHOLD { "Bateria crítica" } else { "Bateria fraca" };
+            text_fit(p, pos2(text_x, cy - 6.5), Align2::LEFT_CENTER, &alert.name, 12.0, fade(TEXT, alpha), max_w);
+            text_fit(p, pos2(text_x, cy + 7.5), Align2::LEFT_CENTER, sub, 10.5, fade(status_color, alpha), max_w);
+            return;
+        }
+
         let level = if snap.master_muted { 0.0 } else { snap.master };
         draw_speaker(p, pos2(island.left() + 26.0, cy), 9.0, level, snap.master_muted, fade(TEXT, alpha));
 
@@ -945,7 +1021,16 @@ impl IslandApp {
     }
 
     /// Painel aberto: mídia em cima, mixer embaixo.
-    fn draw_panel(&mut self, ui: &mut Ui, p: &Painter, island: Rect, snap: &Snapshot, accent: Color32) {
+    fn draw_panel(
+        &mut self,
+        ui: &mut Ui,
+        p: &Painter,
+        island: Rect,
+        snap: &Snapshot,
+        panel_bat: &PanelBatteries,
+        accent: Color32,
+    ) {
+        let strip_len = panel_bat.strip.len();
         let interactive = self.mode == Mode::Expanded;
         let left = island.left() + PADDING;
         let right = island.right() - PADDING;
@@ -1023,7 +1108,7 @@ impl IslandApp {
 
         // ---- Meio do painel: páginas que deslizam (Som | Alarme) ----
         let page_top = line_y + 7.0;
-        let middle_bottom = page_top + self.middle_height(snap);
+        let middle_bottom = page_top + self.middle_height(snap, strip_len);
         let clip = Rect::from_min_max(
             pos2(island.left() + 1.0, line_y + 1.0),
             pos2(island.right() - 1.0, middle_bottom + 4.0),
@@ -1053,7 +1138,9 @@ impl IslandApp {
             }
             // As duas fileiras usam a mesma largura de botão, para ficarem alinhadas.
             let columns = snap.outputs.len().max(snap.inputs.len()).clamp(1, DEVICES_PER_ROW);
-            for (devices, is_output) in [(&snap.outputs, true), (&snap.inputs, false)] {
+            for (devices, badges, is_output) in
+                [(&snap.outputs, &panel_bat.output_badges, true), (&snap.inputs, &panel_bat.input_badges, false)]
+            {
                 let shown = &devices[..devices.len().min(MAX_DEVICES)];
                 if shown.is_empty() {
                     continue;
@@ -1085,8 +1172,19 @@ impl IslandApp {
                         let x = chips_left + column as f32 * (chip_width + gap);
                         let chip = Rect::from_min_size(pos2(x, cy - 12.0), vec2(chip_width, 24.0));
                         let current = pending.as_ref().map_or(device.default, |id| *id == device.id);
-                        let clicked =
-                            self.draw_device_chip(ui, p, chip, device, &names[index], current, accent, a, interactive);
+                        let badge = badges.get(index).and_then(Option::as_ref);
+                        let clicked = self.draw_device_chip(
+                            ui,
+                            p,
+                            chip,
+                            device,
+                            &names[index],
+                            badge,
+                            current,
+                            accent,
+                            a,
+                            interactive,
+                        );
                         if clicked && !current {
                             self.backend.send(Command::SetDevice(device.id.clone()));
                             self.pending_device = Some((device.id.clone(), Instant::now()));
@@ -1098,7 +1196,7 @@ impl IslandApp {
             // ---- Mixer ----
             let mut rows: Vec<(String, String, f32, bool, f32)> =
                 vec![(MASTER_KEY.to_string(), "Geral".to_string(), snap.master, snap.master_muted, self.master_peak)];
-            for s in snap.sessions.iter().take(apps_shown(snap)) {
+            for s in snap.sessions.iter().take(apps_shown(snap, strip_len)) {
                 let peak = self.app_peaks.get(&s.name).copied().unwrap_or(0.0);
                 rows.push((s.name.clone(), s.name.clone(), s.volume, s.muted, peak));
             }
@@ -1187,7 +1285,14 @@ impl IslandApp {
             let interactive = interactive && still && self.page.target == 2.0;
             draw_weather_page(ui, p, left + weather_dx, right + weather_dx, page_top, accent, a, interactive);
         }
-        let y = middle_bottom;
+        let mut y = middle_bottom;
+
+        // ---- Periféricos sem fio (mouse, teclado, controle...) ----
+        if !panel_bat.strip.is_empty() {
+            let a = next_alpha(open);
+            self.draw_battery_strip(ui, p, left, right, y + 4.0 + (1.0 - a) * 12.0, &panel_bat.strip, a, interactive);
+            y += strip_height(strip_len);
+        }
 
         // ---- Monitor do sistema ----
         let a = next_alpha(open);
@@ -1561,13 +1666,22 @@ impl IslandApp {
         chip: Rect,
         device: &Device,
         label: &str,
+        battery: Option<&Peripheral>,
         current: bool,
         accent: Color32,
         a: f32,
         interactive: bool,
     ) -> bool {
         let id = ui.scope_id().with(("device", &device.id));
-        let resp = interactive.then(|| ui.interact(chip, id, Sense::click()).on_hover_text(&device.name));
+        let resp = interactive.then(|| {
+            let interact = ui.interact(chip, id, Sense::click());
+            if let Some(bat) = battery {
+                let extra = if bat.charging { " (carregando)" } else { "" };
+                interact.on_hover_text(format!("{} · Bateria: {}%{extra}", device.name, bat.percent))
+            } else {
+                interact.on_hover_text(&device.name)
+            }
+        });
         let hover = ui.ctx().animate_bool_with_time(id, resp.as_ref().is_some_and(|r| r.hovered()), 0.12);
         let radius = chip.height() / 2.0;
         if current {
@@ -1582,9 +1696,109 @@ impl IslandApp {
             text_x += 8.0;
         }
         let color = if current || hover > 0.5 { TEXT } else { TEXT_DIM };
-        let width = chip.right() - 8.0 - text_x;
-        text_fit(p, pos2(text_x, chip.center().y), Align2::LEFT_CENTER, label, 11.5, fade(color, a), width);
+        let cy = chip.center().y;
+        let mut right_limit = chip.right() - 8.0;
+        if let Some(bat) = battery {
+            let bat_col = battery::battery_color(bat.percent, bat.charging, color);
+            let pct_rect = p.text(
+                pos2(chip.right() - 8.0, cy),
+                Align2::RIGHT_CENTER,
+                format!("{}%", bat.percent),
+                FontId::proportional(10.5),
+                fade(bat_col, a),
+            );
+            right_limit = pct_rect.left() - 5.0;
+            if chip.width() >= 96.0 {
+                battery::draw_mini_battery(p, pos2(pct_rect.left() - 8.5, cy), bat.percent, bat.charging, color, a);
+                right_limit = pct_rect.left() - 17.5;
+            }
+        }
+        let width = (right_limit - text_x).max(16.0);
+        text_fit(p, pos2(text_x, cy), Align2::LEFT_CENTER, label, 11.5, fade(color, a), width);
         resp.is_some_and(|r| r.clicked())
+    }
+
+    /// Faixinha compacta acima do monitor do sistema com mouse, teclado e controle sem fio.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_battery_strip(
+        &self,
+        ui: &mut Ui,
+        p: &Painter,
+        left: f32,
+        right: f32,
+        top_y: f32,
+        strip: &[Peripheral],
+        a: f32,
+        interactive: bool,
+    ) {
+        let shown = &strip[..strip.len().min(MAX_STRIP_BATTERIES)];
+        if shown.is_empty() {
+            return;
+        }
+        let cols = shown.len().clamp(1, BATTERIES_PER_ROW);
+        let gap = if cols == 2 { TILE_GAP } else { 6.0 };
+        let chip_w = (right - left - gap * (cols - 1) as f32) / cols as f32;
+
+        for (line, chunk) in shown.chunks(BATTERIES_PER_ROW).enumerate() {
+            let row_top = top_y + line as f32 * BATTERY_ROW_HEIGHT;
+            for (col, item) in chunk.iter().enumerate() {
+                let x = left + col as f32 * (chip_w + gap);
+                let chip = Rect::from_min_size(pos2(x, row_top), vec2(chip_w, 24.0));
+                let id = ui.scope_id().with(("periph", &item.id));
+                let resp = interactive.then(|| {
+                    let extra = if item.charging { " (carregando)" } else { "" };
+                    ui.interact(chip, id, Sense::hover()).on_hover_text(format!(
+                        "{} · {} · {}%{extra}",
+                        item.name,
+                        item.kind.label_pt(),
+                        item.percent
+                    ))
+                });
+                let hover = ui.ctx().animate_bool_with_time(id, resp.as_ref().is_some_and(|r| r.hovered()), 0.12);
+                let low = !item.charging && item.percent <= battery::LOW_THRESHOLD;
+                let bat_col = battery::battery_color(item.percent, item.charging, TEXT);
+
+                if low {
+                    p.rect_filled(chip, 10.0, fade(bat_col, a * (0.12 + 0.05 * hover)));
+                    p.rect_stroke(chip, 10.0, Stroke::new(1.0, fade(bat_col, a * 0.38)), StrokeKind::Inside);
+                } else {
+                    p.rect_filled(chip, 10.0, fade(Color32::WHITE, a * (0.055 + 0.045 * hover)));
+                    p.rect_stroke(chip, 10.0, Stroke::new(1.0, fade(Color32::WHITE, a * 0.07)), StrokeKind::Inside);
+                }
+
+                let cy = chip.center().y;
+                let icon_col = if low {
+                    bat_col
+                } else if hover > 0.5 {
+                    TEXT
+                } else {
+                    TEXT_DIM
+                };
+                battery::draw_kind_icon(p, pos2(chip.left() + 14.0, cy), 6.6, item.kind, fade(icon_col, a));
+
+                let pct_rect = p.text(
+                    pos2(chip.right() - 8.0, cy),
+                    Align2::RIGHT_CENTER,
+                    format!("{}%", item.percent),
+                    FontId::proportional(11.0),
+                    fade(bat_col, a),
+                );
+                battery::draw_mini_battery(
+                    p,
+                    pos2(pct_rect.left() - 8.5, cy),
+                    item.percent,
+                    item.charging,
+                    TEXT_DIM.lerp_to_gamma(TEXT, 0.5),
+                    a,
+                );
+
+                let text_x = chip.left() + 26.0;
+                let max_w = (pct_rect.left() - 18.0 - text_x).max(18.0);
+                let short = battery::short_peripheral_name(&item.name, item.kind);
+                let label_col = if low || hover > 0.5 { TEXT } else { TEXT_DIM.lerp_to_gamma(TEXT, 0.35) };
+                text_fit(p, pos2(text_x, cy), Align2::LEFT_CENTER, &short, 11.2, fade(label_col, a), max_w);
+            }
+        }
     }
 
     /// Modo jogo: uma pílula pequena que "brota" do lado direito da ilha com
@@ -2520,10 +2734,20 @@ fn text_fit(p: &Painter, pos: Pos2, anchor: Align2, text: &str, size: f32, color
     p.galley(rect.min, galley, color);
 }
 
-/// Altura das partes fixas do painel (música, números, rodapé).
-fn panel_fixed_height(snap: &Snapshot) -> f32 {
+/// Altura ocupada pela faixinha de periféricos sem fio (0 quando vazia).
+fn strip_height(strip_len: usize) -> f32 {
+    if strip_len == 0 {
+        0.0
+    } else {
+        let rows = strip_len.min(MAX_STRIP_BATTERIES).div_ceil(BATTERIES_PER_ROW);
+        rows as f32 * BATTERY_ROW_HEIGHT + 2.0
+    }
+}
+
+/// Altura das partes fixas do painel (música, periféricos, números, rodapé).
+fn panel_fixed_height(snap: &Snapshot, strip_len: usize) -> f32 {
     let fps_row = if snap.fps_access == FpsAccess::Granted { 0.0 } else { FPS_ROW_HEIGHT };
-    PADDING + HEADER_HEIGHT + 14.0 + STATS_HEIGHT + fps_row + FOOTER_HEIGHT
+    PADDING + HEADER_HEIGHT + 14.0 + strip_height(strip_len) + STATS_HEIGHT + fps_row + FOOTER_HEIGHT
 }
 
 /// Altura das fileiras de saída de som e microfone.
@@ -2533,13 +2757,13 @@ fn devices_height(snap: &Snapshot) -> f32 {
 }
 
 /// Altura da página Som: dispositivos + "Geral" + apps.
-fn sound_page_height(snap: &Snapshot) -> f32 {
-    devices_height(snap) + (1 + apps_shown(snap)) as f32 * ROW_HEIGHT
+fn sound_page_height(snap: &Snapshot, strip_len: usize) -> f32 {
+    devices_height(snap) + (1 + apps_shown(snap, strip_len)) as f32 * ROW_HEIGHT
 }
 
 /// Quantos apps cabem no mixer (além da linha "Geral").
-fn apps_shown(snap: &Snapshot) -> usize {
-    let room = (PANEL_MAX_HEIGHT - panel_fixed_height(snap) - devices_height(snap)) / ROW_HEIGHT - 1.0;
+fn apps_shown(snap: &Snapshot, strip_len: usize) -> usize {
+    let room = (PANEL_MAX_HEIGHT - panel_fixed_height(snap, strip_len) - devices_height(snap)) / ROW_HEIGHT - 1.0;
     snap.sessions.len().min(MAX_APPS).min(room.max(0.0) as usize)
 }
 

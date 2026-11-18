@@ -5,6 +5,7 @@ mod alarm;
 mod anim;
 mod app;
 mod backend;
+mod battery;
 mod delivery;
 mod map;
 mod perf;

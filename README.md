@@ -48,6 +48,11 @@ E acompanha o seu pedido do iFood numa segunda pílula, com mapa.
   Clique no ícone para deixar no mudo.
 - **Saída de som e microfone**: um botão para cada saída (fone, TV, caixa de som) e para cada
   microfone. Um clique troca o que o Windows usa para música, jogos e chamadas.
+- **Bateria dos periféricos sem fio**: mostra a porcentagem de mouses, teclados, controles, fones
+  e microfones via Bluetooth ou receptor USB 2.4 GHz (Logitech, Razer, HyperX, 8BitDo, Xbox,
+  PlayStation, SteelSeries, Corsair, Pulsar, ATK/VXE/Kysona, Attack Shark e Bluetooth do Windows).
+  Fones e microfones aparecem direto no botão da página Som; mouse, teclado e controle ficam numa
+  faixinha discreta no painel; e a ilha avisa na pílula quando a bateria chega a 20% ou 10% (fora de jogos).
 - **Mídia**: título, artista e os botões anterior / tocar-pausar / próxima. Funciona com Spotify,
   navegadores e qualquer app que apareça no controle de mídia do Windows.
 - **Alarme**: "toca daqui a X horas/minutos", com setinhas, atalhos ou digitando o número. Toca
@@ -290,6 +295,7 @@ mentira (`src/backend/mock.rs`), útil para mexer na interface.
 | `src/settings.rs` | Escolhas do cartão inicial (números da ilha, clima, sensor da temperatura e pet). |
 | `src/pet.rs` | Os pets (fantasma, robô e as barrinhas): desenho e gestos. |
 | `src/weather.rs` | Clima: localização, previsão e os ícones do tempo. |
+| `src/battery/` | Bateria dos periféricos sem fio (Bluetooth, XInput e receptores USB 2.4 GHz). |
 | `src/delivery.rs` | Pedidos do iFood: recebe o andamento da extensão e guarda o pedido mostrado. |
 | `src/map.rs` | Mapa da janela do pedido: baixa e posiciona os pedacinhos do mapa. |
 | `extension/` | A extensão do navegador que acompanha os pedidos do iFood (`reader.js` entende as respostas do site; `page.js` acompanha com a aba aberta; `background.js`, sem aba). Os nomes dos eventos do site vieram do projeto [iFood PiP](https://github.com/luannsr12/ifood-pip) (Apache 2.0); a consulta de pedidos em andamento, do [ifood-mcp](https://github.com/davidmosiah/ifood-mcp). |

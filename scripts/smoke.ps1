@@ -528,6 +528,21 @@ Start-Sleep 1
 Shot "location-3-answered"
 Log ("location lines: " + ((Get-Content "$out\location-stderr.txt" | Select-String '^weather') -join " | "))
 StopIsland "location" $app
+
+# ---- Rodada 8: bateria dos periféricos -------------------------------------
+# Simula fone sem fio (78%), mouse (64%), teclado carregando (92%) e controle
+# 8BitDo com bateria fraca (18%): primeiro aparece o aviso na pílula fechada,
+# depois o painel mostra o % no botão de som e a faixinha dos periféricos.
+$env:ISLANDBAR_DEBUG_BATTERY = "fake"
+$app = StartIsland "battery" $false 1800
+Remove-Item Env:ISLANDBAR_DEBUG_BATTERY
+$r = Styles "battery"
+$cx = [int](($r.L + $r.R) / 2)
+Shot "battery-1-low-pill"
+Click $cx ($r.T + 27)
+Start-Sleep -Milliseconds 1500
+Shot "battery-2-panel"
+StopIsland "battery" $app
 }
 
 exit 0
