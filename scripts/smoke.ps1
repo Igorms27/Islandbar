@@ -477,6 +477,12 @@ Log ("map lines: " + ((Get-Content "$out\ifood-stderr.txt" | Select-String '^map
 [W]::SetCursorPos(900, 700) | Out-Null
 Start-Sleep 2
 Shot "ifood-2d-closed"
+# Clique na pílula central: o painel principal abre e a pílula do pedido continua ao lado.
+Click $cx $pillY
+Start-Sleep -Milliseconds 1200
+Shot "ifood-2e-central-expanded"
+[W]::SetCursorPos(900, 700) | Out-Null
+Start-Sleep 2
 Log ("from a website (expected 403): " + (PostOrder "order=evil`nstage=preparing" "https://example.com"))
 Log ("without origin (expected 403): " + (PostOrder "order=evil`nstage=preparing" ""))
 # Parada com a pílula do pedido: o custo tem que voltar ao de repouso.

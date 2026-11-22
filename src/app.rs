@@ -162,6 +162,7 @@ pub struct IslandApp {
     /// 0 = sem pedido, 1 = pílula do pedido do iFood aberta (à esquerda da ilha).
     order: Spring,
     order_width: Spring,
+    order_height: Spring,
     /// Último pedido visto (continua desenhado enquanto a pílula fecha).
     last_order: Option<Order>,
     /// Novidade do pedido que já ganhou o "pulinho" da pílula.
@@ -170,15 +171,11 @@ pub struct IslandApp {
     extension_opened: bool,
     /// A extensão do iFood já está instalada (conferido ao abrir o cartão inicial).
     extension_installed: bool,
-    /// Onde a pílula do pedido estava no último quadro (para o mouse e o clique).
+    /// Onde a pílula (ou janela) do pedido estava no último quadro (para o mouse e o clique).
     order_rect: Option<Rect>,
     /// Mouse em cima da pílula do pedido.
     order_hovered: bool,
-    /// Onde a pílula do pedido começava quando foi clicada (a janela abre dali).
-    order_anchor: Option<f32>,
-    /// Deslocamento do centro da ilha (só sai de 0 com a janela do pedido aberta).
-    center_offset: Spring,
-    /// 0..1, opacidade da janela do pedido.
+    /// 0..1, quanto a pílula do pedido já abriu na janela do pedido.
     order_open: Spring,
     /// Os pedacinhos do mapa da janela do pedido.
     map: Map,
@@ -295,14 +292,13 @@ impl IslandApp {
             last_game: None,
             order: Spring::bouncy(0.0),
             order_width: Spring::bouncy(160.0),
+            order_height: Spring::bouncy(GAME_PILL_HEIGHT),
             last_order: None,
             order_bumped: None,
             extension_opened: false,
             extension_installed: mode == Mode::Welcome && delivery::extension::installed(),
             order_rect: None,
             order_hovered: false,
-            order_anchor: None,
-            center_offset: Spring::bouncy(0.0),
             order_open: Spring::smooth(0.0),
             map: Map::new(wake(cc.egui_ctx.clone())),
             hud_timer: if mode == Mode::Hud { f32::INFINITY } else { 0.0 },
@@ -389,7 +385,7 @@ impl IslandApp {
     fn target_size(&self, snap: &Snapshot, strip_len: usize) -> Vec2 {
         match self.mode {
             Mode::Welcome => WELCOME_SIZE,
-            Mode::Collapsed => {
+            Mode::Collapsed | Mode::Order => {
                 // Sem música a pílula mostra o uso do PC; quanto mais números, mais larga.
                 // (No modo jogo esses números vão para a pílula ao lado.)
                 let stats = snap.media.is_none() && snap.game.is_none() && self.notice_timer <= 0.0;
@@ -414,7 +410,6 @@ impl IslandApp {
                 vec2(EXPANDED_WIDTH, panel_fixed_height(snap, strip_len) + self.middle_height(snap, strip_len))
             }
             Mode::Ringing => RINGING_SIZE,
-            Mode::Order => vec2(ORDER_WIDTH, order_panel_height(self.last_order.as_ref())),
         }
     }
 
@@ -564,25 +559,15 @@ impl eframe::App for IslandApp {
         self.width.update(dt);
         self.height.update(dt);
         let (w, h) = (self.width.value.max(8.0), self.height.value.max(8.0));
-        // A janela do pedido abre a partir da pílula do pedido (à esquerda),
-        // para ficar embaixo do mouse; o resto fica no meio.
         let middle = ui.max_rect().center().x;
-        let win_width = ui.max_rect().width();
-        let want_center = match (self.mode, self.order_anchor) {
-            (Mode::Order, Some(left)) => (left + ORDER_WIDTH / 2.0)
-                .clamp(ORDER_WIDTH / 2.0 + 12.0, (win_width - ORDER_WIDTH / 2.0 - 12.0).max(ORDER_WIDTH / 2.0 + 12.0))
-                .min(middle),
-            _ => middle,
-        };
-        self.center_offset.target = want_center - middle;
-        self.center_offset.update(dt);
-        let island = Rect::from_min_size(pos2(middle + self.center_offset.value - w / 2.0, TOP_MARGIN), vec2(w, h));
+        let island = Rect::from_min_size(pos2(middle - w / 2.0, TOP_MARGIN), vec2(w, h));
         let radius = (h / 2.0).min(26.0);
 
         // --- Mouse e troca de estados ---
         let pointer_down = ctx.input(|i| i.pointer.any_down());
-        // A pílula do pedido também conta como "em cima da ilha" (Ctrl e clique).
-        let order_area = self.order_rect.filter(|_| matches!(self.mode, Mode::Collapsed | Mode::Hud));
+        // A pílula (ou janela) do pedido também conta como "em cima da ilha" (Ctrl e clique).
+        let order_area =
+            self.order_rect.filter(|_| matches!(self.mode, Mode::Collapsed | Mode::Hud | Mode::Expanded | Mode::Order));
         let hovered = self.cursor_inside(&ctx, island, order_area);
         // Ctrl com o mouse em cima: a ilha sai da frente (some e deixa os
         // cliques passarem) até o mouse sair de cima. Dá para soltar o Ctrl e
@@ -656,7 +641,8 @@ impl eframe::App for IslandApp {
             Mode::Collapsed | Mode::Welcome | Mode::Ringing => {}
         }
 
-        if matches!(self.mode, Mode::Collapsed | Mode::Hud) {
+        let pointer_on_order = order_area.is_some_and(|r| ctx.pointer_latest_pos().is_some_and(|p| r.contains(p)));
+        if matches!(self.mode, Mode::Collapsed | Mode::Hud | Mode::Order) && !pointer_on_order {
             let click = ui.interact(island, ui.scope_id().with("island"), Sense::click());
             if click.clicked() {
                 self.mode = Mode::Expanded;
@@ -666,9 +652,9 @@ impl eframe::App for IslandApp {
                 ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
             }
         }
-        // Clique na pílula do pedido: abre a janela do pedido.
+        // Clique na pílula do pedido: abre a janela do pedido a partir dela mesma.
         self.order_hovered = false;
-        if let Some(area) = order_area.filter(|_| !self.ghost) {
+        if let Some(area) = order_area.filter(|_| !self.ghost && self.mode != Mode::Order) {
             let click = ui.interact(area, ui.scope_id().with("order"), Sense::click());
             self.order_hovered = click.hovered();
             if click.clicked() {
@@ -677,7 +663,6 @@ impl eframe::App for IslandApp {
                     delivery::open_order(delivery::LOGIN);
                 } else {
                     self.mode = Mode::Order;
-                    self.order_anchor = Some(area.left());
                     self.leave_timer = 0.0;
                 }
             }
@@ -706,7 +691,7 @@ impl eframe::App for IslandApp {
 
         self.open.target = if self.mode == Mode::Expanded { 1.0 } else { 0.0 };
         self.hud.target = if self.mode == Mode::Hud { 1.0 } else { 0.0 };
-        self.hover.target = if hovered { 1.0 } else { 0.0 };
+        self.hover.target = if hovered && !pointer_on_order { 1.0 } else { 0.0 };
         self.open.update(dt);
         self.welcome.target = if self.mode == Mode::Welcome { 1.0 } else { 0.0 };
         self.welcome.update(dt);
@@ -763,7 +748,6 @@ impl eframe::App for IslandApp {
         );
 
         self.draw_game_pill(&painter, island, &snap, accent, dt);
-        let order_highlight = self.draw_order_pill(&painter, island, current_order.as_ref(), accent, now, dt);
 
         let content = painter.with_clip_rect(island.shrink(1.0));
         let open = smoothstep(self.open.value);
@@ -771,9 +755,7 @@ impl eframe::App for IslandApp {
 
         let welcome = smoothstep(self.welcome.value);
         let ring = smoothstep(self.ring.value);
-        let order_open = smoothstep(self.order_open.value);
         let pill_alpha = (1.0 - open * 2.0).clamp(0.0, 1.0)
-            * (1.0 - order_open * 2.0).max(0.0)
             * (1.0 - hud)
             * (1.0 - welcome * 2.0).max(0.0)
             * (1.0 - ring * 2.0).max(0.0);
@@ -794,9 +776,8 @@ impl eframe::App for IslandApp {
         if ring > 0.01 {
             self.draw_ringing(ui, &content, island, accent, ring, time);
         }
-        if order_open > 0.01 {
-            self.draw_order_panel(ui, &content, island, accent, order_open, now, time);
-        }
+
+        let order_highlight = self.draw_order_pill(ui, &painter, island, current_order.as_ref(), accent, now, time, dt);
 
         // --- Quando redesenhar ---
         let springs = [
@@ -810,8 +791,8 @@ impl eframe::App for IslandApp {
             &self.game_width,
             &self.order,
             &self.order_width,
+            &self.order_height,
             &self.order_open,
-            &self.center_offset,
             &self.ring,
             &self.page,
             &self.ghost_fade,
@@ -1918,23 +1899,33 @@ impl IslandApp {
     }
 
     /// Pílula do pedido do iFood, à esquerda da ilha: logo, etapa, previsão,
-    /// código de entrega e mensagens. Devolve se ela está chamando atenção
-    /// (acabou de ter novidade), para a ilha desenhar a animação.
+    /// código de entrega e mensagens. Ao clicar, ela mesma se abre na janela
+    /// do pedido (sem mexer na pílula central). Devolve se está chamando
+    /// atenção (acabou de ter novidade), para a ilha desenhar a animação.
+    #[allow(clippy::too_many_arguments)]
     fn draw_order_pill(
         &mut self,
+        ui: &mut Ui,
         painter: &Painter,
         island: Rect,
         current: Option<&Order>,
         accent: Color32,
         now: Instant,
+        time: f32,
         dt: f32,
     ) -> bool {
-        // Como a do modo jogo: com o painel (ou um cartão) aberto ela sai.
-        let visible = current.is_some() && matches!(self.mode, Mode::Collapsed | Mode::Hud);
+        let win_width = painter.clip_rect().width();
+        // Espaço até a beirada esquerda da janela (pela largura final da ilha,
+        // para não ficar trocando no meio da animação).
+        let room = win_width / 2.0 - self.width.target / 2.0 - GAME_PILL_GAP - 14.0;
+        // Continua visível mesmo com o painel central aberto (desde que caiba na tela).
+        let visible = current.is_some()
+            && matches!(self.mode, Mode::Collapsed | Mode::Hud | Mode::Expanded | Mode::Order)
+            && (self.mode != Mode::Expanded || room >= 90.0);
         self.order.target = if visible { 1.0 } else { 0.0 };
-        // Novidade: a pílula dá um pulinho.
+        // Novidade: a pílula dá um pulinho (quando fechada).
         if let Some(changed) = current.and_then(|o| o.changed) {
-            if visible && self.order_bumped != Some(changed) && self.order.value > 0.9 {
+            if visible && self.mode != Mode::Order && self.order_bumped != Some(changed) && self.order.value > 0.9 {
                 self.order.value = 0.82;
             }
             if self.order.value > 0.5 || !visible {
@@ -1948,6 +1939,7 @@ impl IslandApp {
         }
         if grow <= 0.01 {
             self.order_width.finish();
+            self.order_height.finish();
             return false;
         }
         let Some(order) = self.last_order.clone() else { return false };
@@ -1968,10 +1960,8 @@ impl IslandApp {
         let chat = (order.chats > 0).then(|| (order.chats.to_string(), 11.5, chat_color, true));
         let logo = ifood_logo_width(painter, 1.0);
         let (padding, gap, bubble) = (9.0, 10.0, 18.0);
-        // Espaço até a beirada da janela (pela largura final da ilha, para não
-        // ficar trocando no meio da animação). Se faltar, sai primeiro a
-        // previsão, depois as mensagens, depois o código.
-        let room = painter.clip_rect().width() / 2.0 - self.width.target / 2.0 - GAME_PILL_GAP - 14.0;
+        // Se faltar espaço na pílula, sai primeiro a previsão, depois as
+        // mensagens, depois o código.
         let mut galleys = Vec::new();
         let mut content = 0.0;
         for drop in 0..4 {
@@ -1993,45 +1983,65 @@ impl IslandApp {
                 break;
             }
         }
-        self.order_width.target = (((content + padding + 14.0) / 8.0).ceil() * 8.0).min(room.max(80.0));
+        let pill_w = (((content + padding + 14.0) / 8.0).ceil() * 8.0).min(room.max(80.0));
+        if self.mode == Mode::Order {
+            self.order_width.target = ORDER_WIDTH.min((win_width - 24.0).max(240.0));
+            self.order_height.target = order_panel_height(Some(&order));
+        } else {
+            self.order_width.target = pill_w;
+            self.order_height.target = GAME_PILL_HEIGHT;
+        }
         self.order_width.update(dt);
+        self.order_height.update(dt);
 
-        let size = vec2(self.order_width.value * grow.min(1.15), GAME_PILL_HEIGHT * grow.clamp(0.0, 1.0));
+        let open = smoothstep(self.order_open.value);
+        let size = vec2(
+            (self.order_width.value * grow.min(1.15)).max(8.0),
+            (self.order_height.value * grow.clamp(0.0, 1.0)).max(8.0),
+        );
         let right = island.left() - GAME_PILL_GAP * grow.min(1.0);
-        let center_y = TOP_MARGIN + PILL_HEIGHT / 2.0;
-        let rect = Rect::from_min_size(pos2(right - size.x, center_y - size.y / 2.0), size);
+        let left = (right - size.x).max(12.0);
+        let pill_top = TOP_MARGIN + (PILL_HEIGHT - GAME_PILL_HEIGHT) / 2.0;
+        let top = pill_top + (TOP_MARGIN - pill_top) * open;
+        let rect = Rect::from_min_size(pos2(left, top), size);
         if visible {
             self.order_rect = Some(rect);
         }
-        let radius = size.y / 2.0;
-        let alpha = smoothstep((grow - 0.55) / 0.45);
+        let radius = (size.y / 2.0).min(26.0);
+        let pill_alpha = smoothstep((grow - 0.55) / 0.45) * (1.0 - open * 2.0).clamp(0.0, 1.0);
 
         // O mesmo visual da ilha: fundo escuro, borda discreta e sombra.
         painter.add(
             Shadow {
-                offset: [0, 4],
-                blur: 14,
+                offset: [0, (4.0 + 2.0 * open).round() as i8],
+                blur: (14.0 + 4.0 * open).round() as u8,
                 spread: 0,
-                color: Color32::from_black_alpha((90.0 * grow.min(1.0)) as u8),
+                color: Color32::from_black_alpha(((90.0 + 20.0 * open) * grow.min(1.0)) as u8),
             }
             .as_shape(rect, radius),
         );
-        let fill = if self.order_hovered { Color32::from_rgb(22, 22, 26) } else { ISLAND };
+        let fill = if self.order_hovered && self.mode != Mode::Order { Color32::from_rgb(22, 22, 26) } else { ISLAND };
         painter.rect_filled(rect, radius, fill);
         painter.rect_stroke(rect, radius, Stroke::new(1.0, fade(accent, 0.18)), StrokeKind::Inside);
 
         let p = painter.with_clip_rect(rect.shrink(1.0));
-        let mut x = rect.left() + padding;
-        draw_ifood_logo(&p, pos2(x, center_y), 1.0, alpha);
-        x += logo + gap;
-        for (galley, color, is_chat) in galleys {
-            if is_chat {
-                draw_chat(&p, pos2(x + 6.5, center_y), fade(color, alpha));
-                x += bubble;
+        if pill_alpha > 0.01 {
+            let center_y = rect.top() + GAME_PILL_HEIGHT / 2.0;
+            let mut x = rect.left() + padding;
+            draw_ifood_logo(&p, pos2(x, center_y), 1.0, pill_alpha);
+            x += logo + gap;
+            for (galley, color, is_chat) in galleys {
+                if is_chat {
+                    draw_chat(&p, pos2(x + 6.5, center_y), fade(color, pill_alpha));
+                    x += bubble;
+                }
+                let pos = pos2(x, center_y - galley.size().y / 2.0);
+                x += galley.size().x + gap;
+                p.galley_with_override_text_color(pos, galley, fade(color, pill_alpha));
             }
-            let pos = pos2(x, center_y - galley.size().y / 2.0);
-            x += galley.size().x + gap;
-            p.galley_with_override_text_color(pos, galley, fade(color, alpha));
+        }
+        if open > 0.01 {
+            self.draw_order_panel(ui, &p, rect, accent, open, now, time);
         }
         highlight > 0.0
     }
