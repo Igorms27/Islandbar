@@ -20,8 +20,9 @@ use crate::settings::{Pet, Settings, TempChoice};
 use crate::updater;
 use crate::weather::{self, Detail, Weather};
 
-/// Tamanho da janela invisível que contém a ilha.
-pub const WINDOW_SIZE: [f32; 2] = [940.0, 640.0];
+/// Tamanho da janela invisível que contém a ilha (em monitores menores que
+/// isso, encolhe para caber na tela).
+pub const WINDOW_SIZE: [f32; 2] = [1240.0, 640.0];
 
 const TOP_MARGIN: f32 = 10.0;
 const PILL_HEIGHT: f32 = 34.0;
@@ -175,8 +176,8 @@ pub struct IslandApp {
     order_hovered: bool,
     /// Onde a pílula do pedido começava quando foi clicada (a janela abre dali).
     order_anchor: Option<f32>,
-    /// Centro da ilha na janela (só sai do meio com a janela do pedido aberta).
-    center_x: Spring,
+    /// Deslocamento do centro da ilha (só sai de 0 com a janela do pedido aberta).
+    center_offset: Spring,
     /// 0..1, opacidade da janela do pedido.
     order_open: Spring,
     /// Os pedacinhos do mapa da janela do pedido.
@@ -231,6 +232,7 @@ pub struct IslandApp {
     sent_battery_ctx: Option<(bool, bool)>,
 
     window_pos: Option<Pos2>,
+    window_width: f32,
     /// Segundos restantes do aviso "Atualizado" na pílula.
     notice_timer: f32,
     restarting: bool,
@@ -300,7 +302,7 @@ impl IslandApp {
             order_rect: None,
             order_hovered: false,
             order_anchor: None,
-            center_x: Spring::bouncy(WINDOW_SIZE[0] / 2.0),
+            center_offset: Spring::bouncy(0.0),
             order_open: Spring::smooth(0.0),
             map: Map::new(wake(cc.egui_ctx.clone())),
             hud_timer: if mode == Mode::Hud { f32::INFINITY } else { 0.0 },
@@ -330,6 +332,7 @@ impl IslandApp {
             ghost: false,
             ghost_fade: Spring::smooth(0.0),
             window_pos: None,
+            window_width: WINDOW_SIZE[0],
             notice_timer: if updated { 6.0 } else { 0.0 },
             restarting: false,
             nudge_cooldown: 0.0,
@@ -347,10 +350,15 @@ impl IslandApp {
         }
     }
 
-    /// Mantém a janela centralizada no topo do monitor.
+    /// Mantém a janela centralizada no topo do monitor (e dentro da largura dele).
     fn place_window(&mut self, ctx: &egui::Context) {
         let Some(monitor) = ctx.input(|i| i.viewport().monitor_size) else { return };
-        let want = pos2(((monitor.x - WINDOW_SIZE[0]) / 2.0).round(), 0.0);
+        let width = WINDOW_SIZE[0].min(monitor.x).max(EXPANDED_WIDTH + 40.0);
+        if (width - self.window_width).abs() > 0.5 {
+            self.window_width = width;
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(vec2(width, WINDOW_SIZE[1])));
+        }
+        let want = pos2(((monitor.x - width) / 2.0).round(), 0.0);
         if self.window_pos != Some(want) {
             self.window_pos = Some(want);
             ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(want));
@@ -559,14 +567,16 @@ impl eframe::App for IslandApp {
         // A janela do pedido abre a partir da pílula do pedido (à esquerda),
         // para ficar embaixo do mouse; o resto fica no meio.
         let middle = ui.max_rect().center().x;
-        self.center_x.target = match (self.mode, self.order_anchor) {
+        let win_width = ui.max_rect().width();
+        let want_center = match (self.mode, self.order_anchor) {
             (Mode::Order, Some(left)) => (left + ORDER_WIDTH / 2.0)
-                .clamp(ORDER_WIDTH / 2.0 + 12.0, WINDOW_SIZE[0] - ORDER_WIDTH / 2.0 - 12.0)
+                .clamp(ORDER_WIDTH / 2.0 + 12.0, (win_width - ORDER_WIDTH / 2.0 - 12.0).max(ORDER_WIDTH / 2.0 + 12.0))
                 .min(middle),
             _ => middle,
         };
-        self.center_x.update(dt);
-        let island = Rect::from_min_size(pos2(self.center_x.value - w / 2.0, TOP_MARGIN), vec2(w, h));
+        self.center_offset.target = want_center - middle;
+        self.center_offset.update(dt);
+        let island = Rect::from_min_size(pos2(middle + self.center_offset.value - w / 2.0, TOP_MARGIN), vec2(w, h));
         let radius = (h / 2.0).min(26.0);
 
         // --- Mouse e troca de estados ---
@@ -801,7 +811,7 @@ impl eframe::App for IslandApp {
             &self.order,
             &self.order_width,
             &self.order_open,
-            &self.center_x,
+            &self.center_offset,
             &self.ring,
             &self.page,
             &self.ghost_fade,
@@ -1829,13 +1839,17 @@ impl IslandApp {
             parts.push((label, value, if label == "TEMP" { "00°C" } else { "00%" }, TEXT));
         }
 
+        if parts.is_empty() {
+            self.game_width.finish();
+            return;
+        }
+
         let label_font = FontId::proportional(10.0);
         let value_font = FontId::proportional(12.5);
-        let (padding, inner_gap, part_gap) = (14.0, 4.0, 12.0);
         // Cada valor ganha pelo menos o espaço de um valor largo típico
         // ("00%"). Assim a pílula não muda de largura (nem precisa ser
         // reanimada) a cada número novo; só em casos raros, como 100%.
-        let galleys: Vec<_> = parts
+        let mut galleys: Vec<_> = parts
             .iter()
             .map(|(label, value, widest, color)| {
                 let label = painter.layout_no_wrap(label.to_string(), label_font.clone(), TEXT_DIM);
@@ -1845,14 +1859,34 @@ impl IslandApp {
                 (label, value, space)
             })
             .collect();
-        let content_width: f32 =
-            galleys.iter().map(|(label, _, space)| label.size().x + inner_gap + space).sum::<f32>()
-                + part_gap * (galleys.len() as f32 - 1.0);
-        self.game_width.target = ((content_width + 2.0 * padding) / 8.0).ceil() * 8.0;
+        // Espaço até a beirada direita da janela. Em monitores normais cabe com
+        // folga; nos muito estreitos (ou com zoom alto) aperta o respiro antes
+        // de tirar itens do fim, para nunca cortar a pílula no meio.
+        let room = (painter.clip_rect().width() / 2.0 - self.width.target / 2.0 - GAME_PILL_GAP - 14.0).max(80.0);
+        let pill_width = |items: &[(std::sync::Arc<egui::Galley>, std::sync::Arc<egui::Galley>, f32)],
+                          pad: f32,
+                          inner: f32,
+                          gap: f32| {
+            let content: f32 = items.iter().map(|(label, _, space)| label.size().x + inner + space).sum::<f32>()
+                + gap * items.len().saturating_sub(1) as f32;
+            ((content + 2.0 * pad) / 8.0).ceil() * 8.0
+        };
+        let (mut padding, mut inner_gap, mut part_gap) = (14.0, 4.0, 12.0);
+        let mut target_width = pill_width(&galleys, padding, inner_gap, part_gap);
+        if target_width > room {
+            (padding, inner_gap, part_gap) = (10.0, 3.0, 7.0);
+            target_width = pill_width(&galleys, padding, inner_gap, part_gap);
+            while target_width > room && galleys.len() > 1 {
+                galleys.pop();
+                target_width = pill_width(&galleys, padding, inner_gap, part_gap);
+            }
+        }
+        self.game_width.target = target_width;
         self.game_width.update(dt);
 
-        let size = vec2(self.game_width.value * grow.min(1.15), GAME_PILL_HEIGHT * grow.clamp(0.0, 1.0));
         let left = island.right() + GAME_PILL_GAP * grow.min(1.0);
+        let max_w = (painter.clip_rect().right() - left - 10.0).max(0.0);
+        let size = vec2((self.game_width.value * grow.min(1.15)).min(max_w), GAME_PILL_HEIGHT * grow.clamp(0.0, 1.0));
         let center_y = TOP_MARGIN + PILL_HEIGHT / 2.0;
         let rect = Rect::from_min_size(pos2(left, center_y - size.y / 2.0), size);
         let radius = size.y / 2.0;
@@ -1937,7 +1971,7 @@ impl IslandApp {
         // Espaço até a beirada da janela (pela largura final da ilha, para não
         // ficar trocando no meio da animação). Se faltar, sai primeiro a
         // previsão, depois as mensagens, depois o código.
-        let room = WINDOW_SIZE[0] / 2.0 - self.width.target / 2.0 - GAME_PILL_GAP - 14.0;
+        let room = painter.clip_rect().width() / 2.0 - self.width.target / 2.0 - GAME_PILL_GAP - 14.0;
         let mut galleys = Vec::new();
         let mut content = 0.0;
         for drop in 0..4 {
