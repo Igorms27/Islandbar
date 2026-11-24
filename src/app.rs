@@ -227,6 +227,13 @@ pub struct IslandApp {
     battery_hud: Option<LowBatteryAlert>,
     /// Último contexto (painel aberto, em jogo) informado à thread de bateria.
     sent_battery_ctx: Option<(bool, bool)>,
+    /// Lembrete de 1 em 1 hora para o pet avisar de beber um copo d'água.
+    water: pet::WaterReminder,
+    /// 0..1, animação de entrada/saída do balão de mensagem do pet.
+    water_bubble: Spring,
+    /// Área do balão de mensagem no último quadro (para clique e hover).
+    water_rect: Option<Rect>,
+    water_hovered: bool,
 
     window_pos: Option<Pos2>,
     window_width: f32,
@@ -314,6 +321,10 @@ impl IslandApp {
             battery_alerts: AlertTracker::default(),
             battery_hud: None,
             sent_battery_ctx: None,
+            water: pet::WaterReminder::new(Instant::now()),
+            water_bubble: Spring::bouncy(0.0),
+            water_rect: None,
+            water_hovered: false,
             alarm: Alarm::load(),
             page: Spring::smooth(0.0),
             page_drag: None,
@@ -361,13 +372,23 @@ impl IslandApp {
         }
     }
 
-    /// O mouse está em cima da ilha (ou da pílula do pedido, `extra`)?
-    fn cursor_inside(&self, ctx: &egui::Context, island: Rect, extra: Option<Rect>) -> bool {
-        // O vigia do mouse confere um retângulo só: o que cobre as duas pílulas.
-        let hit = extra.map_or(island, |r| island.union(r)).expand(6.0);
-
+    /// O mouse está em cima da ilha (ou da pílula do pedido / balão do pet)?
+    fn cursor_inside(
+        &self,
+        ctx: &egui::Context,
+        island: Rect,
+        order_area: Option<Rect>,
+        water_area: Option<Rect>,
+    ) -> bool {
         #[cfg(windows)]
         {
+            // O vigia do mouse confere um retângulo só: o que cobre todas as peças visíveis.
+            let mut hit = island;
+            for r in [order_area, water_area].into_iter().flatten() {
+                hit = hit.union(r);
+            }
+            let hit = hit.expand(6.0);
+
             let inner = ctx.input(|i| i.viewport().inner_rect);
             if let Some(inner) = inner {
                 // Publica a área da ilha em pixels da tela. O vigia do mouse
@@ -375,11 +396,23 @@ impl IslandApp {
                 let scale = ctx.pixels_per_point();
                 let screen = hit.translate(inner.min.to_vec2()) * scale;
                 platform::set_hover_area(screen.left(), screen.top(), screen.right(), screen.bottom());
-                return platform::cursor_over_island();
+                if !platform::cursor_over_island() {
+                    return false;
+                }
+                if let Some((x, y)) = platform::cursor_pos() {
+                    let pos = pos2(x as f32 / scale, y as f32 / scale) - inner.min.to_vec2();
+                    return [Some(island), order_area, water_area]
+                        .into_iter()
+                        .flatten()
+                        .any(|r| r.expand(6.0).contains(pos));
+                }
+                return false;
             }
         }
 
-        ctx.pointer_latest_pos().is_some_and(|p| hit.contains(p))
+        ctx.pointer_latest_pos().is_some_and(|p| {
+            [Some(island), order_area, water_area].into_iter().flatten().any(|r| r.expand(6.0).contains(p))
+        })
     }
 
     fn target_size(&self, snap: &Snapshot, strip_len: usize) -> Vec2 {
@@ -565,10 +598,11 @@ impl eframe::App for IslandApp {
 
         // --- Mouse e troca de estados ---
         let pointer_down = ctx.input(|i| i.pointer.any_down());
-        // A pílula (ou janela) do pedido também conta como "em cima da ilha" (Ctrl e clique).
+        // A pílula (ou janela) do pedido e o balão do pet também contam como "em cima da ilha".
         let order_area =
             self.order_rect.filter(|_| matches!(self.mode, Mode::Collapsed | Mode::Hud | Mode::Expanded | Mode::Order));
-        let hovered = self.cursor_inside(&ctx, island, order_area);
+        let water_area = self.water_rect.filter(|_| self.water.showing() && self.mode == Mode::Collapsed);
+        let hovered = self.cursor_inside(&ctx, island, order_area, water_area);
         // Ctrl com o mouse em cima: a ilha sai da frente (some e deixa os
         // cliques passarem) até o mouse sair de cima. Dá para soltar o Ctrl e
         // clicar normalmente no que estava atrás.
@@ -591,9 +625,9 @@ impl eframe::App for IslandApp {
         // cursor 1 pixel (alternando o lado, para ele não sair do lugar): o
         // Windows avisa a janela da posição nova e o clique passa a valer.
         self.nudge_cooldown = (self.nudge_cooldown - dt).max(0.0);
-        let pointer_known = ctx
-            .pointer_latest_pos()
-            .is_some_and(|p| island.expand(8.0).contains(p) || order_area.is_some_and(|r| r.expand(8.0).contains(p)));
+        let pointer_known = ctx.pointer_latest_pos().is_some_and(|p| {
+            [Some(island), order_area, water_area].into_iter().flatten().any(|r| r.expand(8.0).contains(p))
+        });
         if cfg!(windows) && hovered && !pointer_known && self.nudge_cooldown == 0.0 {
             self.nudge_step = -self.nudge_step;
             platform::nudge_cursor(self.nudge_step);
@@ -642,7 +676,8 @@ impl eframe::App for IslandApp {
         }
 
         let pointer_on_order = order_area.is_some_and(|r| ctx.pointer_latest_pos().is_some_and(|p| r.contains(p)));
-        if matches!(self.mode, Mode::Collapsed | Mode::Hud | Mode::Order) && !pointer_on_order {
+        let pointer_on_water = water_area.is_some_and(|r| ctx.pointer_latest_pos().is_some_and(|p| r.contains(p)));
+        if matches!(self.mode, Mode::Collapsed | Mode::Hud | Mode::Order) && !pointer_on_order && !pointer_on_water {
             let click = ui.interact(island, ui.scope_id().with("island"), Sense::click());
             if click.clicked() {
                 self.mode = Mode::Expanded;
@@ -670,6 +705,29 @@ impl eframe::App for IslandApp {
                 ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
             }
         }
+        // Clique no balão de água do pet: fecha o lembrete na hora.
+        self.water_hovered = false;
+        if let Some(area) = water_area.filter(|_| !self.ghost) {
+            let click = ui.interact(area, ui.scope_id().with("water"), Sense::click());
+            self.water_hovered = click.hovered();
+            if click.clicked() {
+                self.water.dismiss();
+                self.water_rect = None;
+            }
+            if click.hovered() {
+                ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+        }
+
+        let can_show_water = snap.game.is_none()
+            && self.mode == Mode::Collapsed
+            && self.notice_timer <= 0.0
+            && !self.ghost
+            && !self.pinned;
+        self.water.update(now, can_show_water);
+        self.water_bubble.target = if self.water.showing() { 1.0 } else { 0.0 };
+        self.water_bubble.update(dt);
+        let water_speaking = self.water.speaking(now);
 
         // Avisa o backend quando o painel abre ou fecha: com ele fechado, o
         // backend não lê o que só o painel mostra.
@@ -691,7 +749,7 @@ impl eframe::App for IslandApp {
 
         self.open.target = if self.mode == Mode::Expanded { 1.0 } else { 0.0 };
         self.hud.target = if self.mode == Mode::Hud { 1.0 } else { 0.0 };
-        self.hover.target = if hovered && !pointer_on_order { 1.0 } else { 0.0 };
+        self.hover.target = if hovered && !pointer_on_order && !pointer_on_water { 1.0 } else { 0.0 };
         self.open.update(dt);
         self.welcome.target = if self.mode == Mode::Welcome { 1.0 } else { 0.0 };
         self.welcome.update(dt);
@@ -760,7 +818,7 @@ impl eframe::App for IslandApp {
             * (1.0 - welcome * 2.0).max(0.0)
             * (1.0 - ring * 2.0).max(0.0);
         if pill_alpha > 0.01 {
-            self.draw_pill(&content, island, &snap, accent, pill_alpha);
+            self.draw_pill(&content, island, &snap, accent, pill_alpha, water_speaking, time);
         }
         if hud > 0.01 && open < 0.5 {
             self.draw_hud(&content, island, &snap, accent, hud * (1.0 - open * 2.0));
@@ -778,6 +836,7 @@ impl eframe::App for IslandApp {
         }
 
         let order_highlight = self.draw_order_pill(ui, &painter, island, current_order.as_ref(), accent, now, time, dt);
+        self.draw_water_bubble(&painter, island);
 
         // --- Quando redesenhar ---
         let springs = [
@@ -793,6 +852,7 @@ impl eframe::App for IslandApp {
             &self.order_width,
             &self.order_height,
             &self.order_open,
+            &self.water_bubble,
             &self.ring,
             &self.page,
             &self.ghost_fade,
@@ -808,7 +868,7 @@ impl eframe::App for IslandApp {
         let pet_awake =
             self.settings.pet != Pet::Bars && self.mode == Mode::Collapsed && snap.game.is_none() && !self.ghost;
         let pet_next = pet_awake.then(|| pet::next_gesture_in(ctx.input(|i| i.time)));
-        let gesturing = pet_next == Some(0.0);
+        let gesturing = pet_next == Some(0.0) || (water_speaking && self.settings.pet != Pet::Bars);
 
         let mode = self.mode;
         self.perf.frame(|| {
@@ -838,6 +898,10 @@ impl eframe::App for IslandApp {
             // Acorda para o próximo gesto do pet.
             if let Some(next) = pet_next {
                 wait = wait.min(Duration::from_secs_f64(next));
+            }
+            // Acorda quando o balão de água deve fechar sozinho.
+            if let Some(next) = self.water.next_change(now) {
+                wait = wait.min(next.max(Duration::from_millis(1)));
             }
             // E quando o pedido do iFood deve sumir sozinho.
             if let Some(next) = delivery::next_change(now) {
@@ -874,14 +938,34 @@ impl eframe::App for IslandApp {
 
 impl IslandApp {
     /// Pílula: barrinhas | música atual | relógio.
-    fn draw_pill(&self, p: &Painter, island: Rect, snap: &Snapshot, accent: Color32, alpha: f32) {
+    #[allow(clippy::too_many_arguments)]
+    fn draw_pill(
+        &self,
+        p: &Painter,
+        island: Rect,
+        snap: &Snapshot,
+        accent: Color32,
+        alpha: f32,
+        water_speaking: bool,
+        time: f32,
+    ) {
         let cy = island.center().y;
         let left = island.left() + 16.0;
         let right = island.right() - 14.0;
 
         // O pet (ou as barrinhas) no canto esquerdo. No modo jogo ele fica quieto.
-        let pose = if snap.game.is_some() { pet::Pose::default() } else { pet::gesture(p.ctx().input(|i| i.time)) };
-        pet::draw(p, self.settings.pet, pos2(left + 13.5, cy), 1.0, &self.bars, pose, accent, ISLAND, alpha);
+        let mut pose = if snap.game.is_some() { pet::Pose::default() } else { pet::gesture(p.ctx().input(|i| i.time)) };
+        let mut bars = self.bars;
+        if water_speaking && self.settings.pet != Pet::Bars {
+            pose.hop = pose.hop.max((time * 10.0).sin().abs() * 0.45);
+            pose.glow = 1.0;
+            if bars.iter().all(|b| *b < 0.08) {
+                let s1 = (time * 14.0).sin().abs();
+                let s2 = (time * 18.0 + 1.1).sin().abs();
+                bars = [0.22 * s1, 0.34 * s2, 0.28 * s1, 0.18 * s2, 0.12];
+            }
+        }
+        pet::draw(p, self.settings.pet, pos2(left + 13.5, cy), 1.0, &bars, pose, accent, ISLAND, alpha);
 
         let clock = chrono::Local::now().format("%H:%M").to_string();
         let mut clock_rect =
@@ -2044,6 +2128,64 @@ impl IslandApp {
             self.draw_order_panel(ui, &p, rect, accent, open, now, time);
         }
         highlight > 0.0
+    }
+
+    /// Balão de mensagem saindo do pet a cada 1 h para lembrar de beber água.
+    fn draw_water_bubble(&mut self, painter: &Painter, island: Rect) {
+        let grow = self.water_bubble.value;
+        if grow <= 0.01 {
+            self.water_rect = None;
+            return;
+        }
+        let galley =
+            painter.layout_no_wrap("Hora de tomar um copo d'água!".to_string(), FontId::proportional(12.5), TEXT);
+        let (pad_x, icon_w, gap, full_h) = (13.0, 14.0, 8.0, 34.0);
+        let full_w = pad_x + icon_w + gap + galley.size().x + pad_x;
+        let size = vec2(full_w * grow.clamp(0.18, 1.12), full_h * grow.clamp(0.18, 1.0));
+        let win_width = painter.clip_rect().width();
+        let pet_x = island.left() + 16.0 + 13.5;
+        let left = (island.left() + 4.0).clamp(12.0, (win_width - size.x - 12.0).max(12.0));
+        let top = island.bottom() + 3.0 + 7.0 * grow.clamp(0.0, 1.0);
+        let rect = Rect::from_min_size(pos2(left, top), size);
+        self.water_rect = self.water.showing().then_some(rect);
+
+        let vis = grow.clamp(0.0, 1.0);
+        let water_blue = Color32::from_rgb(90, 200, 250);
+        let fill = if self.water_hovered && self.water.showing() { Color32::from_rgb(22, 22, 26) } else { ISLAND };
+        let border = Stroke::new(1.0, fade(water_blue, 0.35 * vis));
+        let radius = (size.y / 2.0).min(17.0);
+
+        painter.add(
+            Shadow { offset: [0, 4], blur: 14, spread: 0, color: Color32::from_black_alpha((90.0 * vis) as u8) }
+                .as_shape(rect, radius),
+        );
+        painter.rect_filled(rect, radius, fill);
+        painter.rect_stroke(rect, radius, border, StrokeKind::Inside);
+
+        // Pontinha do balão apontando para o pet na pílula.
+        if grow > 0.35 && rect.width() > 2.0 * radius + 14.0 {
+            let tail_x = pet_x.clamp(rect.left() + radius + 6.5, rect.right() - radius - 6.5);
+            let tip = pos2(tail_x, island.bottom() + 3.0);
+            let bl = pos2(tail_x - 5.5, rect.top() + 1.5);
+            let br = pos2(tail_x + 5.5, rect.top() + 1.5);
+            painter.add(Shape::convex_polygon(vec![bl, tip, br], fill, Stroke::NONE));
+            painter.add(Shape::line(
+                vec![pos2(tail_x - 5.5, rect.top() + 0.5), tip, pos2(tail_x + 5.5, rect.top() + 0.5)],
+                border,
+            ));
+        }
+
+        let alpha = smoothstep((grow - 0.35) / 0.65);
+        if alpha > 0.01 {
+            let p = painter.with_clip_rect(rect.shrink(1.0));
+            let cy = rect.center().y;
+            pet::draw_water_glass(&p, pos2(rect.left() + pad_x + icon_w / 2.0, cy), 14.0, alpha);
+            p.galley_with_override_text_color(
+                pos2(rect.left() + pad_x + icon_w + gap, cy - galley.size().y / 2.0),
+                galley,
+                fade(TEXT, alpha),
+            );
+        }
     }
 
     /// Janela do pedido: loja, etapa, previsão, andamento, mapa e entregador.

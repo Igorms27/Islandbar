@@ -549,6 +549,19 @@ Click $cx ($r.T + 27)
 Start-Sleep -Milliseconds 1500
 Shot "battery-2-panel"
 StopIsland "battery" $app
+
+# ---- Rodada 9: balão do pet lembrando de beber água -------------------------
+$env:ISLANDBAR_DEBUG_WATER = "1"
+$app = StartIsland "water" $false 1800
+Remove-Item Env:ISLANDBAR_DEBUG_WATER
+$r = Styles "water"
+$cx = [int](($r.L + $r.R) / 2)
+Shot "water-1-bubble"
+Click ($cx - 40) ($r.T + 70)    # clica no balão para fechar
+Start-Sleep -Milliseconds 900
+Shot "water-2-dismissed"
+Log ("water lines: " + ((Get-Content "$out\water-stderr.txt" | Select-String '^pet:') -join " | "))
+StopIsland "water" $app
 }
 
 exit 0

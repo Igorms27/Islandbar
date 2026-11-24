@@ -239,6 +239,121 @@ fn lighten(color: Color32, amount: f32) -> Color32 {
     Color32::from_rgb(mix(color.r()), mix(color.g()), mix(color.b()))
 }
 
+use std::time::{Duration, Instant};
+
+/// A cada quanto tempo o pet lembra de beber um copo d'água (1 hora).
+pub const WATER_EVERY: Duration = Duration::from_secs(3600);
+/// Quanto tempo o balão de mensagem fica visível antes de sumir sozinho.
+pub const WATER_SHOW: Duration = Duration::from_secs(15);
+/// Nos primeiros instantes do balão, o pet mexe a boca como se estivesse falando.
+pub const WATER_SPEAK: Duration = Duration::from_millis(1400);
+
+/// Controla o lembrete periódico de beber água.
+pub struct WaterReminder {
+    next_due: Instant,
+    visible_until: Option<Instant>,
+    shown_at: Option<Instant>,
+}
+
+impl WaterReminder {
+    pub fn new(now: Instant) -> Self {
+        let first_delay = std::env::var("ISLANDBAR_DEBUG_WATER").ok().and_then(|v| {
+            let trimmed = v.trim();
+            if matches!(trimmed, "1" | "true" | "now") {
+                Some(Duration::from_millis(800))
+            } else {
+                trimmed.parse::<f32>().ok().map(|s| Duration::from_secs_f32(s.max(0.1)))
+            }
+        });
+        Self::with_delay(now, first_delay.unwrap_or(WATER_EVERY))
+    }
+
+    fn with_delay(now: Instant, first_delay: Duration) -> Self {
+        Self { next_due: now + first_delay, visible_until: None, shown_at: None }
+    }
+
+    /// Atualiza o estado do lembrete. Só abre quando `can_show` for verdadeiro
+    /// (pílula fechada, sem jogo em tela cheia, sem estar escondida).
+    pub fn update(&mut self, now: Instant, can_show: bool) -> bool {
+        if let Some(until) = self.visible_until {
+            if !can_show || now >= until {
+                self.dismiss();
+            }
+            return false;
+        }
+        if can_show && now >= self.next_due {
+            self.visible_until = Some(now + WATER_SHOW);
+            self.shown_at = Some(now);
+            self.next_due = now + WATER_EVERY;
+            crate::perf::line("pet: lembrete de beber agua".to_string());
+            return true;
+        }
+        false
+    }
+
+    pub fn dismiss(&mut self) {
+        self.visible_until = None;
+        self.shown_at = None;
+    }
+
+    pub fn showing(&self) -> bool {
+        self.visible_until.is_some()
+    }
+
+    pub fn speaking(&self, now: Instant) -> bool {
+        self.visible_until.is_some() && self.shown_at.is_some_and(|at| now.saturating_duration_since(at) < WATER_SPEAK)
+    }
+
+    pub fn next_change(&self, now: Instant) -> Option<Duration> {
+        self.visible_until.map(|until| until.saturating_duration_since(now))
+    }
+}
+
+/// Copinho de água desenhado com vetores, para o balão do pet.
+pub fn draw_water_glass(p: &Painter, center: Pos2, size: f32, alpha: f32) {
+    let alpha = alpha.clamp(0.0, 1.0);
+    let h = size * 0.5;
+    let tw = size * 0.36;
+    let bw = size * 0.25;
+    let top_y = center.y - h;
+    let bot_y = center.y + h;
+
+    // Água azul clarinha enchendo cerca de 65% do copo.
+    let water_top = center.y - h * 0.22;
+    let water_bot = bot_y - 1.1;
+    let ww = bw + (tw - bw) * 0.61 - 0.9;
+    let wb = bw - 0.9;
+    let water_col = Color32::from_rgb(72, 196, 255).gamma_multiply(alpha * 0.92);
+    let surface_col = Color32::from_rgb(185, 240, 255).gamma_multiply(alpha * 0.95);
+    p.add(Shape::convex_polygon(
+        vec![
+            pos2(center.x - ww, water_top),
+            pos2(center.x + ww, water_top),
+            pos2(center.x + wb, water_bot),
+            pos2(center.x - wb, water_bot),
+        ],
+        water_col,
+        Stroke::NONE,
+    ));
+    p.line_segment([pos2(center.x - ww, water_top), pos2(center.x + ww, water_top)], Stroke::new(1.2, surface_col));
+
+    // Contorno do copo.
+    let rim = Color32::from_rgb(235, 242, 250);
+    p.add(Shape::line(
+        vec![
+            pos2(center.x - tw, top_y),
+            pos2(center.x - bw, bot_y),
+            pos2(center.x + bw, bot_y),
+            pos2(center.x + tw, top_y),
+        ],
+        Stroke::new(1.35, rim.gamma_multiply(alpha * 0.9)),
+    ));
+    p.line_segment(
+        [pos2(center.x - tw, top_y), pos2(center.x + tw, top_y)],
+        Stroke::new(0.9, rim.gamma_multiply(alpha * 0.45)),
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,5 +369,38 @@ mod tests {
         // O gesto maior começa em 7,5 s.
         assert!((next_gesture_in(6.0) - 1.5).abs() < 1e-9);
         assert!(gesture(7.5 + 0.25).look.abs() > 0.5);
+    }
+
+    #[test]
+    fn lembrete_de_agua_espera_uma_hora_e_respeita_jogo() {
+        let start = Instant::now();
+        let mut r = WaterReminder::with_delay(start, WATER_EVERY);
+
+        // Antes de 1h não dispara.
+        assert!(!r.update(start + Duration::from_secs(3599), true));
+        assert!(!r.showing());
+
+        // Em 1h exata, se estiver em jogo (can_show = false), espera sair do jogo.
+        let at_1h = start + WATER_EVERY;
+        assert!(!r.update(at_1h, false));
+        assert!(!r.showing());
+
+        // Saiu do jogo: mostra na hora e começa falando.
+        let after_game = at_1h + Duration::from_secs(30);
+        assert!(r.update(after_game, true));
+        assert!(r.showing());
+        assert!(r.speaking(after_game + Duration::from_millis(400)));
+        assert!(!r.speaking(after_game + WATER_SPEAK));
+
+        // Depois de 15 s some sozinho e só volta 1h depois.
+        assert!(!r.update(after_game + WATER_SHOW, true));
+        assert!(!r.showing());
+        assert!(!r.update(after_game + WATER_EVERY - Duration::from_secs(1), true));
+        assert!(r.update(after_game + WATER_EVERY, true));
+
+        // Se o usuário clicar para fechar antes dos 15 s, fecha na hora e não reabre logo em seguida.
+        r.dismiss();
+        assert!(!r.showing());
+        assert!(!r.update(after_game + WATER_EVERY + Duration::from_secs(10), true));
     }
 }
