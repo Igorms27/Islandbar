@@ -1,0 +1,7 @@
+volume keys: hook installed
+store: Alarm = 1795489290
+ifood: listening on 127.0.0.1:47615
+ui: mode=Collapsed hovered=false down=false pointer_known=false
+alarm: wake-up task set for 03:01:30
+System { cpu: 0.0, ram_used_gb: 2.77779, ram_total_gb: 15.994869, gpu: Some(0.0), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Off }
+System { cpu: 0.0, ram_used_gb: 2.7779045, ram_total_gb: 15.994869, gpu: Some(1.0), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Off }

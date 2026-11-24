@@ -1,0 +1,25 @@
+volume keys: hook installed
+store: Alarm = 1795489273
+ifood: listening on 127.0.0.1:47615
+ui: mode=Collapsed hovered=false down=false pointer_known=false
+alarm: wake-up task set for 03:01:13
+System { cpu: 0.0, ram_used_gb: 2.7829742, ram_total_gb: 15.994869, gpu: Some(0.0), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Off }
+System { cpu: 0.0, ram_used_gb: 2.774887, ram_total_gb: 15.994869, gpu: Some(0.0), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Off }
+store: Alarm removed
+alarm: wake-up task removed
+alarm: ringing (sound started: true)
+ui: mode=Ringing hovered=false down=false pointer_known=false
+System { cpu: 0.090909064, ram_used_gb: 2.771225, ram_total_gb: 15.994869, gpu: Some(0.91544646), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Off }
+ui: mode=Ringing hovered=true down=false pointer_known=false
+System { cpu: 0.13059705, ram_used_gb: 2.7712212, ram_total_gb: 15.994869, gpu: Some(0.8520073), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Off }
+ui: mode=Ringing hovered=true down=false pointer_known=true
+ui: mode=Ringing hovered=true down=true pointer_known=true
+ui: mode=Ringing hovered=true down=false pointer_known=true
+alarm: sound stopped
+ui: mode=Collapsed hovered=true down=false pointer_known=true
+weather: windows location device=Some("Deny") account=None desktop=None
+weather: windows location is off, using the internet
+weather: place names city=Some("Nova Iorque") locality=Some("Manhattan") municipality=Some("Manhattan")
+System { cpu: 0.014705896, ram_used_gb: 2.7709923, ram_total_gb: 15.994869, gpu: Some(0.9808963), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Off }
+weather: Nova Iorque 12° code=3 humidity=54% (Internet)
+System { cpu: 0.030769229, ram_used_gb: 2.7591515, ram_total_gb: 15.994869, gpu: Some(0.96672976), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Off }

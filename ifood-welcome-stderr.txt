@@ -1,0 +1,9 @@
+volume keys: hook installed
+ifood: listening on 127.0.0.1:47615
+ui: mode=Welcome hovered=false down=false pointer_known=false
+System { cpu: 0.0, ram_used_gb: 2.8352127, ram_total_gb: 15.994869, gpu: Some(0.0), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Off }
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+disk temp: Err("query failed: Incorrect function. (0x80070001)")
+System { cpu: 0.25, ram_used_gb: 2.8355217, ram_total_gb: 15.994869, gpu: Some(0.0), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: All }
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.30882353, ram_used_gb: 2.8326378, ram_total_gb: 15.994869, gpu: Some(0.6339481), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: All }

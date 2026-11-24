@@ -1,0 +1,22 @@
+volume keys: hook installed
+ifood: listening on 127.0.0.1:47615
+ui: mode=Collapsed hovered=false down=false pointer_known=false
+System { cpu: 0.0, ram_used_gb: 2.8170547, ram_total_gb: 15.994869, gpu: Some(0.0), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Off }
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.25, ram_used_gb: 2.817356, ram_total_gb: 15.994869, gpu: Some(0.0), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }
+pet: lembrete de beber agua
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.11764705, ram_used_gb: 2.8162308, ram_total_gb: 15.994869, gpu: Some(0.85492545), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }
+ui: mode=Collapsed hovered=true down=false pointer_known=false
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.07720584, ram_used_gb: 2.8162003, ram_total_gb: 15.994869, gpu: Some(0.6079551), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }
+ui: mode=Collapsed hovered=true down=false pointer_known=true
+ui: mode=Collapsed hovered=true down=true pointer_known=true
+ui: mode=Collapsed hovered=true down=false pointer_known=true
+ui: mode=Collapsed hovered=false down=false pointer_known=false
+weather: windows location device=Some("Deny") account=None desktop=Some("Allow")
+weather: windows location is off, using the internet
+weather: place names city=Some("Nova Iorque") locality=Some("Manhattan") municipality=Some("Manhattan")
+weather: Nova Iorque 12° code=3 humidity=54% (Internet)
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.11071432, ram_used_gb: 2.8039818, ram_total_gb: 15.994869, gpu: Some(0.8418162), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Granted audio=false Wanted { gpu: true, temp: Pick(Gpu) }

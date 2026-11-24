@@ -1,0 +1,29 @@
+volume keys: hook installed
+ifood: listening on 127.0.0.1:47615
+ui: mode=Collapsed hovered=false down=false pointer_known=false
+System { cpu: 0.0, ram_used_gb: 2.7787514, ram_total_gb: 15.994869, gpu: Some(0.0), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Denied audio=false Wanted { gpu: true, temp: Off }
+System { cpu: 0.5, ram_used_gb: 2.7790527, ram_total_gb: 15.994869, gpu: Some(1.0), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Denied audio=false Wanted { gpu: true, temp: Off }
+System { cpu: 0.12681162, ram_used_gb: 2.7885246, ram_total_gb: 15.994869, gpu: Some(0.92853004), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Denied audio=false Wanted { gpu: true, temp: Off }
+ui: mode=Collapsed hovered=true down=false pointer_known=false
+ui: mode=Collapsed hovered=true down=false pointer_known=true
+ui: mode=Collapsed hovered=true down=true pointer_known=true
+ui: mode=Collapsed hovered=true down=false pointer_known=true
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+disk temp: Err("query failed: Incorrect function. (0x80070001)")
+System { cpu: 0.023584902, ram_used_gb: 2.7885132, ram_total_gb: 15.994869, gpu: Some(0.6634944), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Denied audio=false Wanted { gpu: true, temp: Pick(Auto) }
+ui: mode=Expanded hovered=true down=false pointer_known=true
+weather: windows location device=Some("Deny") account=None desktop=None
+weather: windows location is off, using the internet
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.14393938, ram_used_gb: 2.7849274, ram_total_gb: 15.994869, gpu: Some(0.8303601), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Denied audio=false Wanted { gpu: true, temp: Pick(Auto) }
+weather: place names city=Some("Hampton District") locality=Some("Washington") municipality=Some("Washington")
+weather: Hampton District 9° code=0 humidity=56% (Internet)
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.24615383, ram_used_gb: 2.7587318, ram_total_gb: 15.994869, gpu: Some(0.79313517), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Denied audio=false Wanted { gpu: true, temp: Pick(Auto) }
+ui: mode=Expanded hovered=true down=true pointer_known=true
+ui: mode=Expanded hovered=true down=false pointer_known=true
+perf: fps=43.8 cpu=55.06% backend=6.22% backend_busy=6.650% ram=17.6MB private=45.8MB | mode=Expanded hovered=true game=false sound=false | backend ms/s: audio=1.07 gpu=62.50 game=0.02 media=1.66 volume=0.01 other=0.02
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.3097015, ram_used_gb: 2.7550125, ram_total_gb: 15.994869, gpu: Some(0.61136794), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Denied audio=false Wanted { gpu: true, temp: Pick(Auto) }
+temp sources: Temps { board: None, gpu: None, disk: None } (1 adapters)
+System { cpu: 0.24615383, ram_used_gb: 2.7552948, ram_total_gb: 15.994869, gpu: Some(0.72418827), temps: Temps { board: None, gpu: None, disk: None } } game=None fps_access=Denied audio=false Wanted { gpu: true, temp: Pick(Auto) }
